@@ -987,12 +987,12 @@ make_sankey(
 
 ## References {#method-1-references}
 
-1.   [ONS, *User guide to birth statistics*](https://www.ons.gov.uk/peoplepopulationandcommunity/birthsdeathsandmarriages/livebirths/methodologies/userguidetobirthstatistics).
-2.   [ONS, *Births in England and Wales: birth registrations*](https://www.ons.gov.uk/peoplepopulationandcommunity/birthsdeathsandmarriages/livebirths/datasets/birthsinenglandandwalesbirthregistrations).
-3.   [ONS live births by local authority, accessed through Nomis](https://www.nomisweb.co.uk/datasets/lebirthsla).
-4.   [ONS, *Methodology used to produce the 2022-based subnational population projections for England*](https://www.ons.gov.uk/peoplepopulationandcommunity/populationandmigration/populationprojections/methodologies/methodologyusedtoproducethe2022basedsubnationalpopulationsprojectionsforengland).
-5.   [ONS, *Birth projections by age of mother: corrected 2022-based migration-category variant*](https://www.ons.gov.uk/peoplepopulationandcommunity/populationandmigration/populationprojections/datasets/birthsbyageofmotherz3).
-6.   [ONS, *Local authority population projections: 2022-based migration-category variant*](https://www.ons.gov.uk/peoplepopulationandcommunity/populationandmigration/populationprojections/datasets/localauthoritiesinenglandz1); [Nomis population extract](https://www.nomisweb.co.uk/datasets/ppsyoala).
+1.  [ONS, *User guide to birth statistics*](https://www.ons.gov.uk/peoplepopulationandcommunity/birthsdeathsandmarriages/livebirths/methodologies/userguidetobirthstatistics).
+2.  [ONS, *Births in England and Wales: birth registrations*](https://www.ons.gov.uk/peoplepopulationandcommunity/birthsdeathsandmarriages/livebirths/datasets/birthsinenglandandwalesbirthregistrations).
+3.  [ONS live births by local authority, accessed through Nomis](https://www.nomisweb.co.uk/datasets/lebirthsla).
+4.  [ONS, *Methodology used to produce the 2022-based subnational population projections for England*](https://www.ons.gov.uk/peoplepopulationandcommunity/populationandmigration/populationprojections/methodologies/methodologyusedtoproducethe2022basedsubnationalpopulationsprojectionsforengland).
+5.  [ONS, *Birth projections by age of mother: corrected 2022-based migration-category variant*](https://www.ons.gov.uk/peoplepopulationandcommunity/populationandmigration/populationprojections/datasets/birthsbyageofmotherz3).
+6.  [ONS, *Local authority population projections: 2022-based migration-category variant*](https://www.ons.gov.uk/peoplepopulationandcommunity/populationandmigration/populationprojections/datasets/localauthoritiesinenglandz1); [Nomis population extract](https://www.nomisweb.co.uk/datasets/ppsyoala).
 
 # Method 2 report {#method-2}
 
@@ -1950,9 +1950,9 @@ make_sankey(
 
 ## References {#method-2-references}
 
-1.   [ONS, *User guide to birth statistics*](https://www.ons.gov.uk/peoplepopulationandcommunity/birthsdeathsandmarriages/livebirths/methodologies/userguidetobirthstatistics).
-2.   [ONS, *Births in England and Wales: birth registrations*](https://www.ons.gov.uk/peoplepopulationandcommunity/birthsdeathsandmarriages/livebirths/datasets/birthsinenglandandwalesbirthregistrations).
-3.   [ONS live births by local authority, accessed through Nomis](https://www.nomisweb.co.uk/datasets/lebirthsla).
-4.   [ONS, *Methodology used to produce the 2022-based subnational population projections for England*](https://www.ons.gov.uk/peoplepopulationandcommunity/populationandmigration/populationprojections/methodologies/methodologyusedtoproducethe2022basedsubnationalpopulationsprojectionsforengland).
-5.   [ONS, *Birth projections by age of mother: corrected 2022-based migration-category variant*](https://www.ons.gov.uk/peoplepopulationandcommunity/populationandmigration/populationprojections/datasets/birthsbyageofmotherz3).
-6.   [ONS, *Local authority population projections: 2022-based migration-category variant*](https://www.ons.gov.uk/peoplepopulationandcommunity/populationandmigration/populationprojections/datasets/localauthoritiesinenglandz1); [Nomis population extract](https://www.nomisweb.co.uk/datasets/ppsyoala).
+1.  [ONS, *User guide to birth statistics*](https://www.ons.gov.uk/peoplepopulationandcommunity/birthsdeathsandmarriages/livebirths/methodologies/userguidetobirthstatistics).
+2.  [ONS, *Births in England and Wales: birth registrations*](https://www.ons.gov.uk/peoplepopulationandcommunity/birthsdeathsandmarriages/livebirths/datasets/birthsinenglandandwalesbirthregistrations).
+3.  [ONS live births by local authority, accessed through Nomis](https://www.nomisweb.co.uk/datasets/lebirthsla).
+4.  [ONS, *Methodology used to produce the 2022-based subnational population projections for England*](https://www.ons.gov.uk/peoplepopulationandcommunity/populationandmigration/populationprojections/methodologies/methodologyusedtoproducethe2022basedsubnationalpopulationsprojectionsforengland).
+5.  [ONS, *Birth projections by age of mother: corrected 2022-based migration-category variant*](https://www.ons.gov.uk/peoplepopulationandcommunity/populationandmigration/populationprojections/datasets/birthsbyageofmotherz3).
+6.  [ONS, *Local authority population projections: 2022-based migration-category variant*](https://www.ons.gov.uk/peoplepopulationandcommunity/populationandmigration/populationprojections/datasets/localauthoritiesinenglandz1); [Nomis population extract](https://www.nomisweb.co.uk/datasets/ppsyoala).

@@ -1,0 +1,30 @@
+project:
+  type: website
+  output-dir: _site
+  render:
+    - index.qmd
+
+website:
+  title: "BBCS maternity: ONS analysis"
+  navbar: false
+  page-footer:
+    left: "The Strategy Unit"
+    right: "ONS data foundation"
+
+format:
+  html:
+    theme: cosmo
+    css: styles.css
+    toc: true
+    toc-location: right
+    smooth-scroll: true
+    code-fold: true
+    code-summary: "Show R code"
+    embed-resources: true
+
+execute:
+  echo: false
+  warning: false
+  message: false
+  freeze: false
+

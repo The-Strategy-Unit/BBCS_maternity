@@ -1,0 +1,1958 @@
+---
+title: "Maternity projections: comparison of two methods"
+subtitle: "BBCS maternity"
+date: last-modified
+brand: _brand.yml
+format:
+  html:
+    toc-depth: 2
+---
+
+# Comparison {#comparison}
+
+Both methods estimate maternities from ONS projected live births using **age-specific modifiers**. Neither applies a single all-age factor. They use the same source files, projection variant, age grouping, observed 2023–2025 maternity counts and chart layout. Birth rates are identical in both method sections and provide secondary context.
+
+- [Method 1: age-specific multiplicity](#method-1) — the original approach.
+- [Method 2: age-specific maternity-to-live-birth ratios](#method-2) — the alternative approach.
+
+## Pros and cons
+
+| Approach | Calculation within each age band | Pros | Cons / assumptions |
+|----|----|----|----|
+| **Method 1: multiplicity** | Average the 2023–2025 annual proportions of singleton, twin, triplet and four-plus maternities. Modifier = 1 / (p1 + 2p2 + 3p3 + 4p4+). | Explicitly shows how multiple births translate babies into maternities. Retains age differences. Each year has equal weight. | Assumes the age-specific multiplicity mix stays constant and applies locally. Four-plus is approximated as four. Applied to live births, it does not separately account for stillbirth-only or mixed-outcome maternities, unlike the published all-maternity count. |
+| **Method 2: count ratio** | Pool 2023–2025 maternity counts and divide by pooled live births. | Retains age differences. Uses actual counts, including all maternities in the numerator. No four-plus approximation. Matches national live births to all maternities in the calibration data. | Assumes the age-specific national ratio stays constant and applies locally. Combines multiplicity and stillbirth effects, making them less explicit. Years with more live births receive more weight. |
+
+**How to compare:** each method section includes published maternities for 2023–2025 and its calculated 2023–2047 maternity series on the same chart. The observed lines are identical. Differences in calculated values reflect the modifier method, including its averaging and outcome coverage; they do not reflect different fertility projections. No method has been selected as preferred.
+
+**Shared limitations:** observed counts cover calendar years while projected births cover years ending mid-year. Both methods hold their age-specific modifiers fixed. ONS folds outlying maternal ages into model ages 15 and 44, so both use under-20 through 40+ bands without adding extra boundary-age births. Neither estimates all pregnancies, unique women or service contacts. Agreement with three recent observed counts alone does not validate future projections.
+
+Definitions and detailed assumptions are included in each method section. See the [ONS definitions](https://www.ons.gov.uk/peoplepopulationandcommunity/birthsdeathsandmarriages/livebirths/methodologies/userguidetobirthstatistics) and [ONS projection method](https://www.ons.gov.uk/peoplepopulationandcommunity/populationandmigration/populationprojections/methodologies/methodologyusedtoproducethe2022basedsubnationalpopulationsprojectionsforengland).
+
+# Method 1 report {#method-1}
+
+```{r}
+#| label: method-1-setup
+source("R/ons_data.R")
+library(gt)
+library(ggplot2)
+library(plotly)
+library(scales)
+
+area_config <- read_area_config()
+analysis_parameters <- read_analysis_parameters()
+sources <- build_source_summary()
+snpp <- read_snpp_births()
+registration_sources <- sources |> filter(grepl("^registrations_", source_id))
+selected_las <- area_config$area_name
+la_maternities <- read_local_authority_maternities(selected_las)
+observed_birth_rates <- read_local_authority_birth_rates(selected_las)
+multiplicity_data <- read_national_multiplicity()
+average_rates <- average_multiplicity_rates(multiplicity_data)
+maternity_modifiers <- births_to_maternities_modifiers(multiplicity_data)
+projection_modifiers <- multiplicity_data |>
+  mutate(age_band = if_else(as.character(age_band) %in% c("40-44", "45+"), "40+", as.character(age_band))) |>
+  births_to_maternities_modifiers()
+historic_live_births <- read_historic_live_births(area_config = area_config)
+historic_trends <- estimate_historic_maternities(
+  historic_live_births,
+  maternity_modifiers,
+  multiplicity_data
+)
+core_age_band_projections <- project_maternities(snpp, projection_modifiers, selected_las)
+female_population_single_age <- read_female_population_single_age(
+  area_config = area_config,
+  parameters = analysis_parameters
+)
+projected_birth_rates <- snpp |>
+  filter(area_name %in% selected_las, age_group == "All ages") |>
+  select(area_code, area_name, year, projected_births) |>
+  left_join(
+    female_population_single_age |>
+      filter(age >= 15, age <= 44) |>
+      group_by(area_code, area_name, year) |>
+      summarise(women_15_to_44 = sum(female_population), .groups = "drop"),
+    by = c("area_code", "area_name", "year")
+  ) |>
+  mutate(general_fertility_rate = projected_births / women_15_to_44 * 1000)
+
+age_band_projections <- core_age_band_projections
+
+total_maternity_projections <- total_projected_maternities(age_band_projections)
+female_population_projections <- read_female_population_projections(
+  area_config = area_config,
+  parameters = analysis_parameters
+)
+workbook_structure <- workbook_catalogue(registration_sources$path[[length(registration_sources$path)]]) |>
+  count(role, name = "Sheets") |>
+  arrange(desc(Sheets))
+
+observed_trajectory <- la_maternities |>
+  transmute(
+    area_name = factor(as.character(local_authority), levels = selected_las),
+    year,
+    maternities
+  )
+
+projected_trajectory <- total_maternity_projections |>
+  transmute(area_name, year, maternities = projected_maternities)
+
+area_colours <- area_colour_palette(area_config)
+
+make_sankey <- function(data, source, target, labels, source_suffix, target_suffix) {
+  links <- data |>
+    transmute(
+      source_code = as.character({{ source }}),
+      target_code = as.character({{ target }}),
+      value = as.numeric(n)
+    ) |>
+    filter(!is.na(source_code), !is.na(target_code), !is.na(value), value > 0)
+
+  source_totals <- links |>
+    group_by(source_code) |>
+    summarise(source_total = sum(value), .groups = "drop")
+  target_totals <- links |>
+    group_by(target_code) |>
+    summarise(target_total = sum(value), .groups = "drop")
+  all_total <- sum(links$value)
+
+  # Keep the same organisation colour on both sides; tint each band by its origin.
+  codes <- unique(c(links$source_code, links$target_code))
+  palette <- c("#005EB8", "#D55E00", "#00856A", "#8E5EA2",
+               "#B07300", "#C44E52", "#4477AA", "#727272")
+  code_colours <- setNames(palette[seq_along(codes)], codes)
+  band_colours <- setNames(
+    grDevices::adjustcolor(unname(code_colours), alpha.f = 0.48), codes
+  )
+
+  code_label <- function(code) {
+    mapped <- unname(labels[code])
+    if_else(is.na(mapped), code, mapped)
+  }
+
+  source_nodes <- links |>
+    distinct(code = source_code) |>
+    left_join(source_totals, by = c("code" = "source_code")) |>
+    mutate(id = paste0("source::", code), label = paste0(code_label(code), source_suffix),
+           share = source_total / all_total)
+  target_nodes <- links |>
+    distinct(code = target_code) |>
+    left_join(target_totals, by = c("code" = "target_code")) |>
+    mutate(id = paste0("target::", code), label = paste0(code_label(code), target_suffix),
+           share = target_total / all_total)
+  nodes <- bind_rows(source_nodes, target_nodes) |>
+    mutate(node_id = row_number() - 1L)
+
+  links <- links |>
+    mutate(
+      source_id = match(paste0("source::", source_code), nodes$id) - 1L,
+      target_id = match(paste0("target::", target_code), nodes$id) - 1L,
+      source_label = code_label(source_code),
+      target_label = code_label(target_code)
+    ) |>
+    left_join(source_totals, by = "source_code") |>
+    mutate(
+      source_share = value / source_total,
+      overall_share = value / all_total,
+      hover = paste0(
+        source_label, " to ", target_label,
+        "<br>Records: ", scales::comma(value),
+        "<br>", scales::percent(source_share, accuracy = 0.1),
+        " of records from this origin",
+        "<br>", scales::percent(overall_share, accuracy = 0.1),
+        " of all records"
+      )
+    )
+
+  node_colours <- unname(code_colours[nodes$code])
+
+  plot_ly(
+    type = "sankey",
+    height = max(500, nrow(nodes) * 38),
+    orientation = "h",
+    arrangement = "snap",
+    node = list(
+      label = nodes$label,
+      color = node_colours,
+      customdata = scales::percent(nodes$share, accuracy = 0.1),
+      pad = 14,
+      thickness = 18,
+      line = list(color = "rgba(44,40,37,0.35)", width = 0.5),
+      hovertemplate = "%{label}<br>Records: %{value:,.0f}<br>%{customdata} of all records<extra></extra>"
+    ),
+    link = list(
+      source = links$source_id,
+      target = links$target_id,
+      value = links$value,
+      color = unname(band_colours[links$source_code]),
+      customdata = links$hover,
+      hovertemplate = "%{customdata}<extra></extra>"
+    )
+  ) |>
+    layout(
+      font = list(family = "Arial", size = 11, color = "#2c2825"),
+      margin = list(l = 12, r = 12, t = 18, b = 18),
+      paper_bgcolor = "white",
+      plot_bgcolor = "white"
+    ) |>
+    config(displayModeBar = FALSE, responsive = TRUE)
+}
+
+projection_plot <- function(data, caption) {
+  ggplot(
+    data,
+    aes(x = year, y = projected_maternities, colour = area_name, group = area_name)
+  ) +
+    geom_line(linewidth = 1.05) +
+    scale_x_continuous(breaks = seq(min(data$year), max(data$year), by = 4)) +
+    scale_y_continuous(labels = label_comma(), expand = expansion(mult = c(0.02, 0.08))) +
+    scale_colour_manual(values = area_colours) +
+    labs(
+      x = NULL,
+      y = "Projected maternities",
+      colour = NULL,
+      caption = caption
+    ) +
+    theme_minimal(base_family = "Arial") +
+    theme(
+      panel.grid.minor = element_blank(),
+      panel.grid.major.x = element_blank(),
+      axis.title.y = element_text(face = "bold"),
+      legend.position = "bottom",
+      legend.text = element_text(size = 9),
+      plot.caption = element_text(colour = "#5f5b58", hjust = 0),
+      plot.margin = margin(8, 12, 8, 8)
+    )
+}
+
+population_plot <- function(data, caption) {
+  ggplot(
+    data,
+    aes(x = year, y = female_population, colour = area_name, group = area_name)
+  ) +
+    geom_line(linewidth = 1.05) +
+    scale_x_continuous(breaks = seq(min(data$year), max(data$year), by = 4)) +
+    scale_y_continuous(labels = label_comma(), expand = expansion(mult = c(0.02, 0.08))) +
+    scale_colour_manual(values = area_colours) +
+    labs(x = NULL, y = "Projected female population", colour = NULL, caption = caption) +
+    theme_minimal(base_family = "Arial") +
+    theme(
+      panel.grid.minor = element_blank(), panel.grid.major.x = element_blank(),
+      axis.title.y = element_text(face = "bold"), legend.position = "bottom",
+      legend.text = element_text(size = 9),
+      plot.caption = element_text(colour = "#5f5b58", hjust = 0),
+      plot.margin = margin(8, 12, 8, 8)
+    )
+}
+
+historic_trend_plot <- function(data, value, y_label, caption) {
+  ggplot(
+    data,
+    aes(x = year, y = {{ value }}, colour = local_authority, group = local_authority)
+  ) +
+    geom_line(linewidth = 1.05) +
+    geom_point(size = 2.1) +
+    scale_x_continuous(breaks = seq(2013, 2025, by = 2)) +
+    scale_y_continuous(labels = label_comma(), expand = expansion(mult = c(0.02, 0.08))) +
+    scale_colour_manual(values = area_colours) +
+    labs(x = NULL, y = y_label, colour = NULL, caption = caption) +
+    theme_minimal(base_family = "Arial") +
+    theme(
+      plot.background = element_rect(fill = "white", colour = NA),
+      panel.background = element_rect(fill = "white", colour = NA),
+      panel.grid.minor = element_blank(),
+      panel.grid.major.x = element_blank(),
+      axis.title.y = element_text(face = "bold"),
+      legend.position = "bottom",
+      legend.text = element_text(size = 9),
+      plot.caption = element_text(colour = "#5f5b58", hjust = 0),
+      plot.margin = margin(8, 12, 8, 8)
+    )
+}
+
+multiplicity_table <- function(data, year = NULL) {
+  if (is.null(year)) {
+    display <- data |>
+      transmute(
+        measure = "Average proportion",
+        multiplicity = as.character(multiplicity),
+        age_band,
+        value = average_proportion
+      )
+  } else {
+    selected <- data |> filter(.data$year == .env$year)
+    display <- bind_rows(
+      selected |>
+        transmute(
+          measure = "Maternities", multiplicity = as.character(multiplicity),
+          age_band, value = maternities
+        ),
+      selected |>
+        filter(multiplicity != "All") |>
+        transmute(
+          measure = "Proportion", multiplicity = as.character(multiplicity),
+          age_band, value = proportion
+        )
+    )
+  }
+
+  display |>
+    mutate(
+      measure = factor(measure, levels = c("Maternities", "Proportion", "Average proportion")),
+      multiplicity = factor(multiplicity, levels = c("1", "2", "3", "4+", "All"))
+    ) |>
+    arrange(measure, multiplicity) |>
+    pivot_wider(names_from = age_band, values_from = value) |>
+    gt(groupname_col = "measure", rowname_col = "multiplicity") |>
+    tab_stubhead(label = "Babies per maternity") |>
+    fmt_integer(columns = where(is.numeric), rows = measure == "Maternities", sep_mark = ",") |>
+    fmt_percent(
+      columns = where(is.numeric), rows = measure %in% c("Proportion", "Average proportion"),
+      decimals = 2
+    ) |>
+    sub_missing(columns = everything(), missing_text = "n.a.") |>
+    tab_options(table.font.names = c("Open Sans", "Arial", "sans-serif"))
+}
+```
+
+<p class="report-kicker">
+
+Method 1 — multiplicity-based estimates
+
+</p>
+
+[Compare methods](#comparison) · [Go to Method 2](#method-2)
+
+This version uses the mean annual age-specific multiplicity proportions for 2023–2025. The observed data, ONS projection variant, age grouping and charts are shared with Method 2; only the maternity conversion changes.
+
+## Purpose and ONS definitions {#method-1-purpose-and-ons-definitions}
+
+The main purpose is to estimate **the number of maternities over time**, using published historical maternity counts where available and converting ONS projected live births into future maternity counts. A maternity is one pregnancy resulting in one or more live births or stillbirths: twins count as two babies but one maternity. It is not a count of unique women, because a woman can have more than one maternity, and it excludes pregnancies ending without a live birth or registrable stillbirth. ONS defines a stillbirth as a baby born without signs of life after at least 24 completed weeks of pregnancy. See [ONS definitions](#method-1-ref-birth-guide).
+
+ONS compiles observed births and maternities from civil registration, mainly by calendar year of occurrence, with some late registrations carried into the following year. Local figures use the mother's usual residence. ONS population projections provide **counts of live-born babies**, which we convert to maternities using a **births-to-maternities modifier**. We multiply those projected babies by an age-specific national multiplicity modifier, then sum across ages. The result is an estimated maternity count. This report uses the 2022-based migration-category birth projection; the modifier is calculated from the mean 2023–2025 national proportions of singleton, twin, triplet and four-plus maternities within each age band. See the [conversion method](#method-1-maternity-conversion) and [ONS projection source](#method-1-ref-birth-projections).
+
+Birth rates are a secondary measure of demographic context. The later rate section shows live births per 1,000 women aged 15–44, using the same age range in every year. This rate is calculated separately from the maternity-count projection. The report therefore presents historical maternities, the conversion method and projected maternity counts before birth rates.
+
+## Terminology key: what are we counting? {#method-1-terminology-key}
+
+**The main output of this analysis is estimated maternities: pregnancies reaching a live birth or stillbirth.** Babies, individual women and appointments are different units.
+
+### Core counting terms {#method-1-core-counting-terms}
+
+| Term | Plain-English meaning | Use in this analysis or pathway model |
+|----|----|----|
+| **Live birth** | One baby born showing signs of life. | The unit in the ONS birth projections used here. Two live-born twins count as two. |
+| **Stillbirth** | One baby born without signs of life at 24 or more completed weeks. | Excluded from live-birth counts; included in the definition of a maternity. |
+| **Total births** | Live births plus stillbirths: a count of babies. | Always specify “live births” or “total births”; the projected input here is live births. |
+| **Maternity** | One pregnancy resulting in at least one live birth or stillbirth. | Our main counting unit. Twins or triplets from one pregnancy count as one maternity. |
+| **All pregnancies** | Pregnancies regardless of outcome. | Broader than maternities. Early losses and terminations without a registrable birth require additional data for pathway modelling. |
+| **Unique women / mothers** | Individual people counted once during a defined period. | Not supplied by the maternity total: one woman can have more than one maternity during that period. |
+| **Singleton / multiple maternity** | One baby / two or more babies from one pregnancy. | “Multiplicity” describes how many babies are involved. It explains why baby and maternity counts differ. |
+| **Contact, appointment or episode** | A unit of recorded healthcare activity, defined by the service dataset. | One maternity can generate many contacts. These are not counted by ONS maternity totals. |
+
+The ONS definitions above follow the [birth statistics user guide](https://www.ons.gov.uk/peoplepopulationandcommunity/birthsdeathsandmarriages/livebirths/methodologies/userguidetobirthstatistics). The final column explains how each measure is used in this analysis or could inform pathway modelling.
+
+### Terms used in the calculations {#method-1-terms-used-in-the-calculations}
+
+| Term | Meaning here |
+|----|----|
+| **Observed / published count** | An ONS figure derived from registered events that have already happened. |
+| **Projected live births** | Future baby counts from the ONS demographic model, conditional on its assumptions. |
+| **Estimated / projected maternities** | Counts calculated by this analysis from observed or projected live births using a maternity modifier. |
+| **Maternity modifier / conversion ratio** | The reciprocal of expected babies per maternity, calculated from the mean 2023–2025 national multiplicity proportions for each age band. It converts baby counts into approximate maternity counts; it is not a fertility rate. |
+| **General fertility rate (GFR)** | Live births per 1,000 women aged 15–44 in this report. It describes frequency relative to population size, not the number needing care. |
+| **Age-specific fertility rate (ASFR)** | Live births per 1,000 women in the relevant age group. |
+| **Total fertility rate (TFR)** | Children per woman if the year's age-specific fertility rates applied throughout childbearing life. Not an annual maternity count. |
+
+**The conversion in one line:** projected live-born babies × maternity modifier = estimated maternities. Calculate this within each maternal age group, then add the results. Birth rates are a separate contextual measure and are not used instead of this conversion.
+
+For illustration only, a modifier of **0.99** means an estimated **99 maternities for every 100 live-born babies**. A projection of 10,000 live births would therefore become 9,900 maternities if that modifier applied throughout. The actual analysis uses different age-specific modifiers. The modifier adjusts for multiple births. Applied to live births, it does not separately estimate stillbirth-only maternities.
+
+### Using these figures for pathway demand and capacity {#method-1-using-these-figures-for-pathway-demand-and-capacity}
+
+Use **maternities as the starting volume for pathways associated with pregnancies reaching birth**. To turn that volume into service activity, specify the proportion using each pathway and the contacts per maternity. For baby-based services, retain baby counts. To model all antenatal or early-pregnancy demand, also account for pregnancies that do not reach an ONS-defined maternity.
+
+Three further distinctions matter:
+
+- **Residence versus provider:** these ONS figures concern mothers living in an area. Allocating demand to trusts requires patient-flow information.
+- **Birth year versus care year:** antenatal care may occur before the year of birth and postnatal care afterwards. Annual maternity counts do not directly give appointments in the same year.
+- **Demand versus capacity:** activity estimates still need pathway mix, staff time and other resource requirements before they become capacity requirements.
+
+## Data coverage and method assumptions {#method-1-data-coverage-and-method-assumptions}
+
+The six authorities are Birmingham, Dudley, Sandwell, Solihull, Walsall and Wolverhampton. The following series are kept distinct:
+
+| Series | Period | Source and use |
+|----|----|----|
+| Observed live births | Calendar years 2013–2025 | Nomis local-authority counts, total and maternal age bands; shown directly and converted to estimated maternities. |
+| Observed GFR and maternities | Calendar years 2023–2025 | ONS registration workbooks, Tables 1 and 3; published values used directly. |
+| National maternities and live births by age and multiplicity | Calendar years 2023–2025 | Table 7; age-specific multiplicity proportions provide the modifiers. |
+| Projected live births | Years ending mid-2023 to mid-2047 | ONS birth component, by modelled maternal age; used for projected rates and estimated maternities. |
+| Projected female population | Mid-2023 to mid-2047 | ONS via Nomis; ages 15–44 form the rate denominator; ages 13–55 are shown separately as population context. |
+
+The following assumptions and differences affect how the series can be compared:
+
+- **ONS projection:** local fertility differentials use the five years ending mid-2018 to mid-2022 initially, then a rolling five-year approach, applied to national fertility assumptions. Projected local births are constrained to England totals. Fertility, mortality and migration assumptions describe a demographic scenario, not future service activity. [ONS method](#method-1-ref-snpp-method).
+- **Maternity conversion:** the mean 2023–2025 national multiplicity proportions are used separately for each maternal age band. The resulting modifiers are applied to every authority and year, assuming each age-specific multiplicity pattern remains constant. The age distribution of projected births can still change.
+- **Comparability:** observed figures refer mainly to calendar-year occurrences; projected births cover successive mid-year periods. Rates and counts are shown with their source year labels, without calendar-year conversion or rebasing. GFR is not age-standardised: the age distribution within the denominator can change.
+
+## Published maternities, 2023–2025 {#method-1-published-maternities-2023-2025}
+
+Table 3 of the [ONS registration workbooks](#method-1-ref-registrations) reports all-age maternities by the mother's usual residence. These are used directly, without a conversion factor. They include pregnancies resulting only in stillbirth, but exclude pregnancies ending without a live birth or registrable stillbirth. They do not identify the provider of care.
+
+The 2023, 2024 and 2025 workbooks use geographical boundaries dated August 2024, May 2025 and February 2026, respectively. The six selected authorities retain the same codes across the extracts. These published counts and the calculated historic estimates are separate series.
+
+::: panel-tabset
+### Trend {#method-1-trend}
+
+```{r}
+#| label: method-1-maternities-plot
+#| fig-alt: "Line chart showing annual maternities from 2023 to 2025 for Birmingham, Dudley, Sandwell, Solihull, Walsall and Wolverhampton."
+#| fig-width: 10
+#| fig-height: 6
+ggplot(
+  la_maternities,
+  aes(x = year, y = maternities, colour = local_authority, group = local_authority)
+) +
+  geom_line(linewidth = 1.15) +
+  geom_point(size = 2.8) +
+  scale_x_continuous(breaks = 2023:2025) +
+  scale_y_continuous(labels = label_comma(), expand = expansion(mult = c(0.02, 0.08))) +
+  scale_colour_manual(values = c(
+    "Birmingham" = "#2c2825",
+    "Dudley" = "#5881c1",
+    "Sandwell" = "#d48b00",
+    "Solihull" = "#7b6aa8",
+    "Walsall" = "#00857c",
+    "Wolverhampton" = "#c44e52"
+  )) +
+  labs(
+    x = NULL,
+    y = "Number of maternities",
+    colour = NULL,
+    caption = "Source: ONS Births in England and Wales: birth registrations, Table 3."
+  ) +
+  theme_minimal(base_family = "Arial") +
+  theme(
+    panel.grid.minor = element_blank(),
+    panel.grid.major.x = element_blank(),
+    axis.title.y = element_text(face = "bold"),
+    legend.position = "bottom",
+    legend.text = element_text(size = 9),
+    plot.caption = element_text(colour = "#5f5b58", hjust = 0),
+    plot.margin = margin(8, 12, 8, 8)
+  )
+```
+
+### Table {#method-1-table}
+
+```{r}
+#| label: method-1-maternities-table
+la_maternities |>
+  select(local_authority, year, maternities) |>
+  pivot_wider(names_from = year, values_from = maternities) |>
+  gt(rowname_col = "local_authority") |>
+  tab_stubhead(label = "Local authority") |>
+  fmt_integer(columns = everything(), sep_mark = ",") |>
+  cols_align(align = "right", columns = everything()) |>
+  tab_source_note(
+    source_note = "Source: ONS Births in England and Wales: birth registrations, Table 3."
+  ) |>
+  tab_options(table.font.names = c("Open Sans", "Arial", "sans-serif"))
+```
+:::
+
+## Historical maternity estimates, 2013–2025 {#method-1-historical-maternity-estimates-2013-2025}
+
+The [Nomis live-birth extract](#method-1-ref-nomis-births) contains counts by the mother's usual local authority of residence, using April 2023 geography. Births are allocated mainly to the calendar year of occurrence, with late registrations handled as described above. These counts describe residents, not the location or provider of their care.
+
+The live-birth tabs reproduce the published totals. For the estimated-maternity tabs, each age-band count is multiplied by its 2023–2025 national age-specific multiplicity modifier and then summed. Age bands are under 20, 20–24, 25–29, 30–34, 35–39, 40–44 and 45+. The [conversion method](#method-1-maternity-conversion) adjusts for the number of babies per pregnancy. It is an approximation applied to live births, without a separate adjustment for stillbirth-only maternities.
+
+Births with unknown maternal age use the ratio pooled across the available age bands (`r sum(historic_live_births$live_births[historic_live_births$age_band == "Unknown"])` births in this extract). The historic age-band counts, including unknown age, reconcile to the published totals. Estimates are rounded only for display.
+
+::: panel-tabset
+### Estimated maternities chart {#method-1-estimated-maternities-chart}
+
+```{r}
+#| label: method-1-historic-estimated-maternities-plot
+#| fig-alt: "Line chart showing estimated maternities from 2013 to 2025 for the six selected local authorities after applying age-specific national maternity conversion ratios."
+#| fig-width: 10
+#| fig-height: 6
+historic_trend_plot(
+  historic_trends,
+  estimated_maternities,
+  "Estimated maternities",
+  "Calculated from ONS live births by maternal age using mean 2023-2025 national age-specific multiplicity modifiers."
+)
+```
+
+### Estimated maternities table {#method-1-estimated-maternities-table}
+
+```{r}
+#| label: method-1-historic-estimated-maternities-table
+historic_trends |>
+  select(local_authority, year, estimated_maternities) |>
+  pivot_wider(names_from = year, values_from = estimated_maternities) |>
+  gt(rowname_col = "local_authority") |>
+  tab_stubhead(label = "Local authority") |>
+  fmt_integer(columns = everything(), sep_mark = ",") |>
+  cols_align(align = "right", columns = everything()) |>
+  tab_source_note(
+    source_note = "Calculated from ONS live births by maternal age using mean 2023-2025 national age-specific multiplicity modifiers."
+  ) |>
+  tab_options(table.font.names = c("Open Sans", "Arial", "sans-serif"))
+```
+
+### Live births chart {#method-1-live-births-chart}
+
+```{r}
+#| label: method-1-historic-live-births-plot
+#| fig-alt: "Line chart showing registered live births from 2013 to 2025 for the six selected local authorities."
+#| fig-width: 10
+#| fig-height: 6
+historic_trend_plot(
+  historic_trends,
+  live_births,
+  "Registered live births",
+  "Source: ONS Live births in England and Wales down to local authority area, via Nomis; mother's usual residence, April 2023 local-authority geography."
+)
+```
+
+### Live births table {#method-1-live-births-table}
+
+```{r}
+#| label: method-1-historic-live-births-table
+historic_trends |>
+  select(local_authority, year, live_births) |>
+  pivot_wider(names_from = year, values_from = live_births) |>
+  gt(rowname_col = "local_authority") |>
+  tab_stubhead(label = "Local authority") |>
+  fmt_integer(columns = everything(), sep_mark = ",") |>
+  cols_align(align = "right", columns = everything()) |>
+  tab_source_note(
+    source_note = "Source: ONS Live births in England and Wales down to local authority area, via Nomis; mother's usual residence."
+  ) |>
+  tab_options(table.font.names = c("Open Sans", "Arial", "sans-serif"))
+```
+:::
+
+## National multiplicity and maternity conversion {#method-1-maternity-conversion}
+
+Table 7 covers births occurring in England and Wales, including mothers resident elsewhere. It reports maternities and live births by maternal age, multiplicity and previous live-born children. We select the **any number of previous live-born children** rows so each category is counted once. Records with missing or implausible maternal ages are excluded from the age breakdowns.
+
+The method uses a **different multiplicity mix for each maternal age band**. For each year from 2023 to 2025, we divide singleton, twin, triplet and four-plus maternity counts by all maternities in that age band. We then average each proportion across the three years, giving each year equal weight.
+
+Let the resulting proportions be p1, p2, p3 and p4+. Within each age band:
+
+**Expected babies per maternity = p1 + 2 × p2 + 3 × p3 + 4 × p4+.**
+
+**Maternity modifier = 1 ÷ expected babies per maternity.**
+
+**Estimated maternities = projected live births × maternity modifier.**
+
+We apply each modifier to the corresponding age group of ONS projected births, then sum the estimated maternities. This preserves differences in multiplicity between age groups and allows changes in the projected age profile to affect the total. The annual and average tables below show the proportions used.
+
+For illustration, if 80% of maternities were singleton and 20% twins, 100 maternities would produce 120 babies. Expected babies per maternity would be 1.2, so 120 projected babies divided by 1.2 would represent 100 estimated maternities. This example illustrates the calculation, not an observed rate.
+
+**Assumptions and comparability:** the national age-specific mix is assumed to apply locally and remain constant over time. Four-plus maternities are represented by four babies, slightly understating their size when there are more than four. The ONS multiplicity categories include live births and stillbirths, while the projection input is live births only. Applying the modifier therefore gives approximate maternity counts; it does not separately add stillbirth-only maternities or resolve mixed live/stillbirth multiple pregnancies. Published Table 3 maternity counts include all these outcomes, so the observed and estimated series are not definitionally identical.
+
+::: panel-tabset
+### Three-year average {#method-1-three-year-average}
+
+The table shows the arithmetic mean of the national maternity proportions reported for 2023, 2024 and 2025. These age-specific averages are used to calculate the maternity modifiers.
+
+```{r}
+#| label: method-1-multiplicity-average
+multiplicity_table(average_rates) |>
+  tab_source_note(
+    source_note = "Source: ONS Births in England and Wales: birth registrations, Table 7; 2023-2025."
+  )
+```
+
+### 2023 {#method-1-2023}
+
+```{r}
+#| label: method-1-multiplicity-2023
+multiplicity_table(multiplicity_data, 2023) |>
+  tab_source_note(source_note = "Source: ONS Births in England and Wales: birth registrations 2023, Table 7.")
+```
+
+### 2024 {#method-1-2024}
+
+```{r}
+#| label: method-1-multiplicity-2024
+multiplicity_table(multiplicity_data, 2024) |>
+  tab_source_note(source_note = "Source: ONS Births in England and Wales: birth registrations 2024, Table 7.")
+```
+
+### 2025 {#method-1-2025}
+
+```{r}
+#| label: method-1-multiplicity-2025
+multiplicity_table(multiplicity_data, 2025) |>
+  tab_source_note(source_note = "Source: ONS Births in England and Wales: birth registrations 2025, Table 7.")
+```
+
+### Maternity conversion ratios {#method-1-maternity-conversion-ratios}
+
+Multiply live births by the ratio for the corresponding age band. The 40+ row is used for projections; historic estimates use 40–44 and 45+ separately.
+
+```{r}
+#| label: method-1-maternity-modifier
+bind_rows(
+  maternity_modifiers |> mutate(age_band = as.character(age_band)),
+  projection_modifiers |> filter(age_band == "40+")
+) |>
+  transmute(
+    `Age band` = age_band,
+    `Expected babies per maternity` = expected_babies_per_maternity,
+    `Maternity modifier` = maternity_modifier
+  ) |>
+  gt() |>
+  fmt_number(columns = where(is.numeric), decimals = 5) |>
+  tab_source_note(
+    source_note = md(
+      "Mean 2023-2025 age-specific multiplicity proportions. Modifier = 1 / (p1 + 2*p2 + 3*p3 + 4*p4+); four-plus is treated as four."
+    )
+  ) |>
+  tab_options(table.font.names = c("Open Sans", "Arial", "sans-serif"))
+```
+:::
+
+::: callout-note
+## Comparable oldest age band {#method-1-comparable-oldest-age-band}
+
+The three-year calculation uses **45+** because the 2023 and 2024 publications do not split this group. For 2025, the published 45–49 and 50+ values are combined.
+:::
+
+## Estimated maternities from projected births {#method-1-estimated-maternities-from-projected-births}
+
+The corrected [ONS migration-category birth projection](#method-1-ref-birth-projections) provides live births for the years ending mid-2023 to mid-2047. Its underlying population base is mid-2022. The birth file and female population series used here are on 2021 local-authority geography; the selected authorities are also present in the observed extracts.
+
+ONS represents fertility at model ages 15–44, assigning births below 15 to age 15 and births above 44 to age 44. Those boundary rows already cover the outlying ages. **We therefore add no extra births at ages 13–14 or 45–55.** The published projection cannot separately identify those ages.
+
+We group the source rows into **under 20, 20–24, 25–29, 30–34, 35–39 and 40+**. Each group is multiplied by its national age-specific multiplicity modifier. For 40+, Table 7 counts for 40–44 and 45+ are combined within each year before calculating the annual multiplicity proportions and their three-year averages. This matches the projection’s boundary-age coverage, although it cannot separately retain the 45+ pattern within the projected 40+ group. The six estimates are summed for the total. Rounding can cause small differences between the sum of the source age groups and the published all-age birth total.
+
+The calculation for each authority and year is **projected live births in each age group × that group's maternity modifier, summed across age groups**. The resulting charts show maternity counts, not baby counts. All calculated age-group modifiers are below one, so the current conversion reduces projected baby counts to allow for multiple births.
+
+Every value here, including 2023–2025, is calculated from projected births. The age profile and total retain the ONS projection assumptions and the fixed national conversion ratios; they are not published ONS maternity counts.
+
+::: panel-tabset
+### Total {#method-1-total}
+
+```{r}
+#| label: method-1-projected-maternities-total
+#| fig-alt: "Projected maternities from 2023 to 2047 for the selected local authorities, calculated by applying age-specific maternity modifiers to ONS projected births."
+#| fig-width: 10
+#| fig-height: 6
+projection_plot(
+  total_maternity_projections,
+  "Source: corrected ONS 2022-based migration-category projected live births; mean 2023-2025 age-specific multiplicity modifiers."
+)
+```
+
+### Under 20 {#method-1-under-20}
+
+```{r}
+#| label: method-1-projected-maternities-15-19
+#| fig-width: 10
+#| fig-height: 6
+projection_plot(
+  age_band_projections |> filter(age_band == "<20"),
+  "Under 20, including births assigned to model age 15. Source: ONS 2022-based SNPP; age-specific maternity modifier applied."
+)
+```
+
+### 20-24 {#method-1-20-24}
+
+```{r}
+#| label: method-1-projected-maternities-20-24
+#| fig-width: 10
+#| fig-height: 6
+projection_plot(
+  age_band_projections |> filter(age_band == "20-24"),
+  "Maternal ages 20-24. Source: ONS 2022-based SNPP; age-specific maternity modifier applied."
+)
+```
+
+### 25-29 {#method-1-25-29}
+
+```{r}
+#| label: method-1-projected-maternities-25-29
+#| fig-width: 10
+#| fig-height: 6
+projection_plot(
+  age_band_projections |> filter(age_band == "25-29"),
+  "Maternal ages 25-29. Source: ONS 2022-based SNPP; age-specific maternity modifier applied."
+)
+```
+
+### 30-34 {#method-1-30-34}
+
+```{r}
+#| label: method-1-projected-maternities-30-34
+#| fig-width: 10
+#| fig-height: 6
+projection_plot(
+  age_band_projections |> filter(age_band == "30-34"),
+  "Maternal ages 30-34. Source: ONS 2022-based SNPP; age-specific maternity modifier applied."
+)
+```
+
+### 35-39 {#method-1-35-39}
+
+```{r}
+#| label: method-1-projected-maternities-35-39
+#| fig-width: 10
+#| fig-height: 6
+projection_plot(
+  age_band_projections |> filter(age_band == "35-39"),
+  "Maternal ages 35-39. Source: ONS 2022-based SNPP; age-specific maternity modifier applied."
+)
+```
+
+### 40 and over {#method-1-40-and-over}
+
+```{r}
+#| label: method-1-projected-maternities-40-44
+#| fig-width: 10
+#| fig-height: 6
+projection_plot(
+  age_band_projections |> filter(age_band == "40+"),
+  "Ages 40+, including births assigned to model age 44. Source: ONS 2022-based SNPP; age-specific maternity modifier applied."
+)
+```
+:::
+
+## Published and calculated maternity series {#method-1-published-and-calculated-maternity-series}
+
+Solid lines and points show Table 3 resident maternities for calendar years 2023–2025. Dashed lines show the calculated series for years ending mid-2023 to mid-2047, including the overlapping years. The dashed lines use the same totals as the preceding projection chart. Each series is plotted independently, without rescaling the projections to match the observed counts.
+
+Both cover all maternal ages, but their periods and outcome coverage differ. Published maternities include live-birth and stillbirth-only pregnancies. The calculated series applies national age-specific multiplicity modifiers to projected live births, without a separate stillbirth adjustment. The chart therefore displays two sources together, rather than one continuous observed-to-forecast series.
+
+```{r}
+#| label: method-1-observed-projected-trajectory
+#| fig-alt: "Published calendar-year maternities for 2023 to 2025 and separate calculated mid-year projections for 2023 to 2047."
+#| fig-width: 11
+#| fig-height: 6.5
+
+
+ggplot() +
+  geom_line(
+    data = observed_trajectory,
+    aes(year, maternities, colour = area_name, group = area_name),
+    linewidth = 1.2
+  ) +
+  geom_point(
+    data = observed_trajectory,
+    aes(year, maternities, colour = area_name),
+    size = 2.7
+  ) +
+  geom_line(
+    data = projected_trajectory,
+    aes(year, maternities, colour = area_name, group = area_name),
+    linewidth = 1.05, linetype = "22"
+  ) +
+
+
+  scale_x_continuous(
+    breaks = c(2023:2026, seq(2030, 2047, by = 4), 2047),
+    expand = expansion(add = c(0.4, 0.4))
+  ) +
+  scale_y_continuous(labels = label_comma(), expand = expansion(mult = c(0.02, 0.1))) +
+  scale_colour_manual(values = area_colours) +
+  labs(
+    x = NULL,
+    y = "Maternities",
+    colour = NULL,
+    caption = paste(
+      "Solid: published calendar-year maternities. Dashed: calculated mid-year projections;",
+      "ONS migration-category births with age-specific multiplicity modifiers."
+    )
+  ) +
+  theme_minimal(base_family = "Arial") +
+  theme(
+    plot.background = element_rect(fill = "white", colour = NA),
+    panel.background = element_rect(fill = "white", colour = NA),
+    panel.grid.minor = element_blank(),
+    panel.grid.major.x = element_blank(),
+    axis.title.y = element_text(face = "bold"),
+    legend.position = "bottom",
+    legend.text = element_text(size = 9),
+    plot.caption = element_text(colour = "#5f5b58", hjust = 0),
+    plot.margin = margin(12, 14, 10, 10)
+  )
+```
+
+## Birth rates: secondary demographic context {#method-1-birth-rates-secondary-demographic-context}
+
+The general fertility rate (GFR) uses all live births as its numerator and women aged 15–44 as its denominator. The 2025 workbook also publishes a 15–49 rate; this report retains 15–44 for comparability. Solid lines show the published 15–44 GFR for 2023–2025, using each workbook's mid-year population estimates. Dashed lines show a **calculated projection ratio**: all projected live births during the year ending mid-year divided by the projected women aged 15–44 at that year's mid-year endpoint, multiplied by 1,000. It is an approximation for comparison, not a published ONS GFR or a calendar-year forecast. Population values in the Nomis extract are rounded to whole people. No maternity conversion is applied to either rate.
+
+The overlapping years are retained to show both sources separately. See the sources for [observed rates](#method-1-ref-registrations), [projected births](#method-1-ref-birth-projections) and the [population denominator](#method-1-ref-population-projections).
+
+```{r}
+#| label: method-1-birth-rate-trend
+#| fig-alt: "Observed and projected general fertility rates by local authority, expressed as live births per 1,000 women aged 15 to 44."
+#| fig-height: 6.5
+
+ggplot() +
+  geom_line(
+    data = projected_birth_rates,
+    aes(year, general_fertility_rate, colour = area_name, group = area_name),
+    linewidth = 1.05, linetype = "22"
+  ) +
+  geom_line(
+    data = observed_birth_rates,
+    aes(year, general_fertility_rate, colour = area_name, group = area_name),
+    linewidth = 1.25
+  ) +
+  geom_point(
+    data = observed_birth_rates,
+    aes(year, general_fertility_rate, colour = area_name),
+    size = 2.7
+  ) +
+  scale_x_continuous(breaks = c(2023:2027, seq(2031, 2047, by = 4))) +
+  scale_y_continuous(labels = label_number(accuracy = 1), expand = expansion(mult = c(0.02, 0.08))) +
+  scale_colour_manual(values = area_colours) +
+  labs(
+    x = NULL,
+    y = "Live births per 1,000 women aged 15–44",
+    colour = NULL,
+    caption = paste(
+      "Solid: observed ONS general fertility rate, 2023–2025.",
+      "Dashed: calculated mid-year projection ratio, 2023–2047; periods differ from observed rates."
+    )
+  ) +
+  theme_minimal(base_family = "Arial") +
+  theme(
+    plot.background = element_rect(fill = "white", colour = NA),
+    panel.background = element_rect(fill = "white", colour = NA),
+    panel.grid.minor = element_blank(), panel.grid.major.x = element_blank(),
+    axis.title.y = element_text(face = "bold"), legend.position = "bottom",
+    legend.text = element_text(size = 9),
+    plot.caption = element_text(colour = "#5f5b58", hjust = 0)
+  )
+```
+
+## Projected female population by age {#method-1-projected-female-population-by-age}
+
+The female population extract from [ONS via Nomis](#method-1-ref-population-projections) matches the corrected 2022-based migration-category variant to whole-person rounding. It contains population counts for each single year of age from 0 to 89, for the six authorities and projection years 2023–2047. Population figures count women living in each area at mid-year.
+
+For the following charts, we select ages **13–55**, sum single ages into five-year groups, and retain partial groups at the limits. The total sums the population aged 13–55. This selected range provides population context; it does not define the ages covered by the birth projection. No maternity conversion or other scaling is applied.
+
+The change table subtracts the 2023 population from the 2047 population. Percentage change is that difference divided by the 2023 population, multiplied by 100.
+
+::: panel-tabset
+### Full configured range {#method-1-full-configured-range}
+
+```{r}
+#| label: method-1-projected-female-population-total
+#| fig-width: 10
+#| fig-height: 6
+population_plot(
+  female_population_projections |>
+    group_by(area_code, area_name, year) |>
+    summarise(female_population = sum(female_population), .groups = "drop"),
+  paste0(
+    "Female population aged ", analysis_parameters[["minimum_maternal_age"]], "-",
+    analysis_parameters[["maximum_maternal_age"]],
+    ". Source: ONS 2022-based subnational population projections via Nomis."
+  )
+)
+```
+
+### Change over projection period {#method-1-change-over-projection-period}
+
+```{r}
+#| label: method-1-projected-female-population-change-table
+female_population_projections |>
+  filter(year %in% range(year)) |>
+  pivot_wider(names_from = year, values_from = female_population) |>
+  mutate(
+    change = .data[[as.character(max(female_population_projections$year))]] -
+      .data[[as.character(min(female_population_projections$year))]],
+    percentage_change = change /
+      .data[[as.character(min(female_population_projections$year))]]
+  ) |>
+  select(area_name, age_band, all_of(as.character(range(female_population_projections$year))), change, percentage_change) |>
+  gt(groupname_col = "area_name") |>
+  cols_label(age_band = "Age band", change = "Change", percentage_change = "% change") |>
+  fmt_integer(columns = c(all_of(as.character(range(female_population_projections$year))), change), sep_mark = ",") |>
+  fmt_percent(columns = percentage_change, decimals = 1) |>
+  tab_source_note(source_note = "Source: ONS 2022-based subnational population projections via Nomis; Strategy Unit aggregation.") |>
+  tab_options(table.font.names = c("Open Sans", "Arial", "sans-serif"))
+```
+
+```{r}
+#| label: method-1-projected-female-population-tabs
+#| output: asis
+for (band in levels(female_population_projections$age_band)) {
+  cat("\n### ", band, "\n\n", sep = "")
+  print(population_plot(
+    female_population_projections |> filter(age_band == band),
+    paste0("Female population aged ", band, ". Source: ONS 2022-based subnational population projections via Nomis.")
+  ))
+  cat("\n")
+}
+```
+:::
+
+## Data supplied {#method-1-data-supplied}
+
+The table identifies the saved ONS inputs used in this report. References below link to the releases.
+
+```{r}
+#| label: method-1-source-register
+sources |>
+  transmute(
+    Source = source_name,
+    Type = source_type,
+    Period = period,
+    File = file_name,
+    `How it is used` = current_use,
+    Status = if_else(available, "Available", "Missing")
+  ) |>
+  gt() |>
+  sub_missing(columns = everything(), missing_text = "n.a.") |>
+  tab_options(table.font.names = c("Open Sans", "Arial", "sans-serif"))
+```
+
+## Patient flows {#method-1-patient-flows}
+
+### ICB of residence to ICB of birth {#method-1-icb-of-residence-to-icb-of-birth}
+
+```{r}
+#| label: method-1-patient-flow-icb
+#| eval: !expr file.exists("sankey data/icb_matrix_data (1).csv")
+#| fig-alt: "Sankey diagram showing supplied record counts from ICB of residence on the left to ICB of birth on the right."
+#| out-width: "100%"
+
+icb_labels <- c(
+  QHL = "Birmingham and Solihull ICB",
+  QUA = "Black Country ICB",
+  QNC = "Staffordshire and Stoke-on-Trent ICB",
+  QWU = "Coventry and Warwickshire ICB",
+  QGH = "Herefordshire and Worcestershire ICB",
+  QOC = "Shropshire, Telford and Wrekin ICB",
+  QJ2 = "Leicester, Leicestershire and Rutland ICB",
+  Other = "Other ICBs"
+)
+
+icb_flows <- read.csv(
+  "sankey data/icb_matrix_data (1).csv",
+  row.names = 1
+)
+
+make_sankey(
+  icb_flows,
+  resident_icb_interest,
+  birth_icb_interest,
+  icb_labels,
+  " (residence)",
+  " (birth)"
+)
+```
+
+### Booking trust to birth trust {#method-1-booking-trust-to-birth-trust}
+
+```{r}
+#| label: method-1-patient-flow-trust
+#| eval: !expr file.exists("sankey data/trust_matrix_data (1).csv")
+#| fig-alt: "Sankey diagram showing supplied record counts from trust at booking appointment on the left to trust responsible for the birth spell on the right."
+#| out-width: "100%"
+
+trust_labels <- c(
+  RBK = "Walsall Healthcare NHS Trust",
+  RL4 = "The Royal Wolverhampton NHS Trust",
+  RNA = "The Dudley Group NHS Foundation Trust",
+  RQ3 = "Birmingham Women's and Children's NHS Foundation Trust",
+  RRK = "University Hospitals Birmingham NHS Foundation Trust",
+  RXK = "Sandwell and West Birmingham NHS Trust",
+  Other = "Other trusts"
+)
+
+trust_flows <- read.csv(
+  "sankey data/trust_matrix_data (1).csv",
+  row.names = 1
+)
+
+make_sankey(
+  trust_flows,
+  booking_provider_grouped,
+  birth_provider_grouped,
+  trust_labels,
+  " (booking)",
+  " (birth)"
+)
+```
+
+## References {#method-1-references}
+
+1.   [ONS, *User guide to birth statistics*](https://www.ons.gov.uk/peoplepopulationandcommunity/birthsdeathsandmarriages/livebirths/methodologies/userguidetobirthstatistics).
+2.   [ONS, *Births in England and Wales: birth registrations*](https://www.ons.gov.uk/peoplepopulationandcommunity/birthsdeathsandmarriages/livebirths/datasets/birthsinenglandandwalesbirthregistrations).
+3.   [ONS live births by local authority, accessed through Nomis](https://www.nomisweb.co.uk/datasets/lebirthsla).
+4.   [ONS, *Methodology used to produce the 2022-based subnational population projections for England*](https://www.ons.gov.uk/peoplepopulationandcommunity/populationandmigration/populationprojections/methodologies/methodologyusedtoproducethe2022basedsubnationalpopulationsprojectionsforengland).
+5.   [ONS, *Birth projections by age of mother: corrected 2022-based migration-category variant*](https://www.ons.gov.uk/peoplepopulationandcommunity/populationandmigration/populationprojections/datasets/birthsbyageofmotherz3).
+6.   [ONS, *Local authority population projections: 2022-based migration-category variant*](https://www.ons.gov.uk/peoplepopulationandcommunity/populationandmigration/populationprojections/datasets/localauthoritiesinenglandz1); [Nomis population extract](https://www.nomisweb.co.uk/datasets/ppsyoala).
+
+# Method 2 report {#method-2}
+
+```{r}
+#| label: method-2-setup
+source("R/ons_data.R")
+library(gt)
+library(ggplot2)
+library(plotly)
+library(scales)
+
+area_config <- read_area_config()
+analysis_parameters <- read_analysis_parameters()
+sources <- build_source_summary()
+snpp <- read_snpp_births()
+registration_sources <- sources |> filter(grepl("^registrations_", source_id))
+selected_las <- area_config$area_name
+la_maternities <- read_local_authority_maternities(selected_las)
+observed_birth_rates <- read_local_authority_birth_rates(selected_las)
+multiplicity_data <- read_national_multiplicity()
+average_rates <- average_multiplicity_rates(multiplicity_data)
+maternity_modifiers <- count_ratio_maternity_modifiers(multiplicity_data)
+projection_modifiers <- multiplicity_data |>
+  mutate(age_band = if_else(as.character(age_band) %in% c("40-44", "45+"), "40+", as.character(age_band))) |>
+  count_ratio_maternity_modifiers()
+historic_live_births <- read_historic_live_births(area_config = area_config)
+historic_trends <- estimate_historic_maternities(
+  historic_live_births,
+  maternity_modifiers,
+  multiplicity_data,
+  unknown_age_modifier = pooled_count_ratio_modifier(multiplicity_data)
+)
+core_age_band_projections <- project_maternities(snpp, projection_modifiers, selected_las)
+female_population_single_age <- read_female_population_single_age(
+  area_config = area_config,
+  parameters = analysis_parameters
+)
+projected_birth_rates <- snpp |>
+  filter(area_name %in% selected_las, age_group == "All ages") |>
+  select(area_code, area_name, year, projected_births) |>
+  left_join(
+    female_population_single_age |>
+      filter(age >= 15, age <= 44) |>
+      group_by(area_code, area_name, year) |>
+      summarise(women_15_to_44 = sum(female_population), .groups = "drop"),
+    by = c("area_code", "area_name", "year")
+  ) |>
+  mutate(general_fertility_rate = projected_births / women_15_to_44 * 1000)
+
+age_band_projections <- core_age_band_projections
+
+total_maternity_projections <- total_projected_maternities(age_band_projections)
+female_population_projections <- read_female_population_projections(
+  area_config = area_config,
+  parameters = analysis_parameters
+)
+workbook_structure <- workbook_catalogue(registration_sources$path[[length(registration_sources$path)]]) |>
+  count(role, name = "Sheets") |>
+  arrange(desc(Sheets))
+
+observed_trajectory <- la_maternities |>
+  transmute(
+    area_name = factor(as.character(local_authority), levels = selected_las),
+    year,
+    maternities
+  )
+
+projected_trajectory <- total_maternity_projections |>
+  transmute(area_name, year, maternities = projected_maternities)
+
+area_colours <- area_colour_palette(area_config)
+
+make_sankey <- function(data, source, target, labels, source_suffix, target_suffix) {
+  links <- data |>
+    transmute(
+      source_code = as.character({{ source }}),
+      target_code = as.character({{ target }}),
+      value = as.numeric(n)
+    ) |>
+    filter(!is.na(source_code), !is.na(target_code), !is.na(value), value > 0)
+
+  source_totals <- links |>
+    group_by(source_code) |>
+    summarise(source_total = sum(value), .groups = "drop")
+  target_totals <- links |>
+    group_by(target_code) |>
+    summarise(target_total = sum(value), .groups = "drop")
+  all_total <- sum(links$value)
+
+  # Keep the same organisation colour on both sides; tint each band by its origin.
+  codes <- unique(c(links$source_code, links$target_code))
+  palette <- c("#005EB8", "#D55E00", "#00856A", "#8E5EA2",
+               "#B07300", "#C44E52", "#4477AA", "#727272")
+  code_colours <- setNames(palette[seq_along(codes)], codes)
+  band_colours <- setNames(
+    grDevices::adjustcolor(unname(code_colours), alpha.f = 0.48), codes
+  )
+
+  code_label <- function(code) {
+    mapped <- unname(labels[code])
+    if_else(is.na(mapped), code, mapped)
+  }
+
+  source_nodes <- links |>
+    distinct(code = source_code) |>
+    left_join(source_totals, by = c("code" = "source_code")) |>
+    mutate(id = paste0("source::", code), label = paste0(code_label(code), source_suffix),
+           share = source_total / all_total)
+  target_nodes <- links |>
+    distinct(code = target_code) |>
+    left_join(target_totals, by = c("code" = "target_code")) |>
+    mutate(id = paste0("target::", code), label = paste0(code_label(code), target_suffix),
+           share = target_total / all_total)
+  nodes <- bind_rows(source_nodes, target_nodes) |>
+    mutate(node_id = row_number() - 1L)
+
+  links <- links |>
+    mutate(
+      source_id = match(paste0("source::", source_code), nodes$id) - 1L,
+      target_id = match(paste0("target::", target_code), nodes$id) - 1L,
+      source_label = code_label(source_code),
+      target_label = code_label(target_code)
+    ) |>
+    left_join(source_totals, by = "source_code") |>
+    mutate(
+      source_share = value / source_total,
+      overall_share = value / all_total,
+      hover = paste0(
+        source_label, " to ", target_label,
+        "<br>Records: ", scales::comma(value),
+        "<br>", scales::percent(source_share, accuracy = 0.1),
+        " of records from this origin",
+        "<br>", scales::percent(overall_share, accuracy = 0.1),
+        " of all records"
+      )
+    )
+
+  node_colours <- unname(code_colours[nodes$code])
+
+  plot_ly(
+    type = "sankey",
+    height = max(500, nrow(nodes) * 38),
+    orientation = "h",
+    arrangement = "snap",
+    node = list(
+      label = nodes$label,
+      color = node_colours,
+      customdata = scales::percent(nodes$share, accuracy = 0.1),
+      pad = 14,
+      thickness = 18,
+      line = list(color = "rgba(44,40,37,0.35)", width = 0.5),
+      hovertemplate = "%{label}<br>Records: %{value:,.0f}<br>%{customdata} of all records<extra></extra>"
+    ),
+    link = list(
+      source = links$source_id,
+      target = links$target_id,
+      value = links$value,
+      color = unname(band_colours[links$source_code]),
+      customdata = links$hover,
+      hovertemplate = "%{customdata}<extra></extra>"
+    )
+  ) |>
+    layout(
+      font = list(family = "Arial", size = 11, color = "#2c2825"),
+      margin = list(l = 12, r = 12, t = 18, b = 18),
+      paper_bgcolor = "white",
+      plot_bgcolor = "white"
+    ) |>
+    config(displayModeBar = FALSE, responsive = TRUE)
+}
+
+projection_plot <- function(data, caption) {
+  ggplot(
+    data,
+    aes(x = year, y = projected_maternities, colour = area_name, group = area_name)
+  ) +
+    geom_line(linewidth = 1.05) +
+    scale_x_continuous(breaks = seq(min(data$year), max(data$year), by = 4)) +
+    scale_y_continuous(labels = label_comma(), expand = expansion(mult = c(0.02, 0.08))) +
+    scale_colour_manual(values = area_colours) +
+    labs(
+      x = NULL,
+      y = "Projected maternities",
+      colour = NULL,
+      caption = caption
+    ) +
+    theme_minimal(base_family = "Arial") +
+    theme(
+      panel.grid.minor = element_blank(),
+      panel.grid.major.x = element_blank(),
+      axis.title.y = element_text(face = "bold"),
+      legend.position = "bottom",
+      legend.text = element_text(size = 9),
+      plot.caption = element_text(colour = "#5f5b58", hjust = 0),
+      plot.margin = margin(8, 12, 8, 8)
+    )
+}
+
+population_plot <- function(data, caption) {
+  ggplot(
+    data,
+    aes(x = year, y = female_population, colour = area_name, group = area_name)
+  ) +
+    geom_line(linewidth = 1.05) +
+    scale_x_continuous(breaks = seq(min(data$year), max(data$year), by = 4)) +
+    scale_y_continuous(labels = label_comma(), expand = expansion(mult = c(0.02, 0.08))) +
+    scale_colour_manual(values = area_colours) +
+    labs(x = NULL, y = "Projected female population", colour = NULL, caption = caption) +
+    theme_minimal(base_family = "Arial") +
+    theme(
+      panel.grid.minor = element_blank(), panel.grid.major.x = element_blank(),
+      axis.title.y = element_text(face = "bold"), legend.position = "bottom",
+      legend.text = element_text(size = 9),
+      plot.caption = element_text(colour = "#5f5b58", hjust = 0),
+      plot.margin = margin(8, 12, 8, 8)
+    )
+}
+
+historic_trend_plot <- function(data, value, y_label, caption) {
+  ggplot(
+    data,
+    aes(x = year, y = {{ value }}, colour = local_authority, group = local_authority)
+  ) +
+    geom_line(linewidth = 1.05) +
+    geom_point(size = 2.1) +
+    scale_x_continuous(breaks = seq(2013, 2025, by = 2)) +
+    scale_y_continuous(labels = label_comma(), expand = expansion(mult = c(0.02, 0.08))) +
+    scale_colour_manual(values = area_colours) +
+    labs(x = NULL, y = y_label, colour = NULL, caption = caption) +
+    theme_minimal(base_family = "Arial") +
+    theme(
+      plot.background = element_rect(fill = "white", colour = NA),
+      panel.background = element_rect(fill = "white", colour = NA),
+      panel.grid.minor = element_blank(),
+      panel.grid.major.x = element_blank(),
+      axis.title.y = element_text(face = "bold"),
+      legend.position = "bottom",
+      legend.text = element_text(size = 9),
+      plot.caption = element_text(colour = "#5f5b58", hjust = 0),
+      plot.margin = margin(8, 12, 8, 8)
+    )
+}
+
+multiplicity_table <- function(data, year = NULL) {
+  if (is.null(year)) {
+    display <- data |>
+      transmute(
+        measure = "Average proportion",
+        multiplicity = as.character(multiplicity),
+        age_band,
+        value = average_proportion
+      )
+  } else {
+    selected <- data |> filter(.data$year == .env$year)
+    display <- bind_rows(
+      selected |>
+        transmute(
+          measure = "Maternities", multiplicity = as.character(multiplicity),
+          age_band, value = maternities
+        ),
+      selected |>
+        filter(multiplicity != "All") |>
+        transmute(
+          measure = "Proportion", multiplicity = as.character(multiplicity),
+          age_band, value = proportion
+        )
+    )
+  }
+
+  display |>
+    mutate(
+      measure = factor(measure, levels = c("Maternities", "Proportion", "Average proportion")),
+      multiplicity = factor(multiplicity, levels = c("1", "2", "3", "4+", "All"))
+    ) |>
+    arrange(measure, multiplicity) |>
+    pivot_wider(names_from = age_band, values_from = value) |>
+    gt(groupname_col = "measure", rowname_col = "multiplicity") |>
+    tab_stubhead(label = "Babies per maternity") |>
+    fmt_integer(columns = where(is.numeric), rows = measure == "Maternities", sep_mark = ",") |>
+    fmt_percent(
+      columns = where(is.numeric), rows = measure %in% c("Proportion", "Average proportion"),
+      decimals = 2
+    ) |>
+    sub_missing(columns = everything(), missing_text = "n.a.") |>
+    tab_options(table.font.names = c("Open Sans", "Arial", "sans-serif"))
+}
+```
+
+<p class="report-kicker">
+
+Method 2 — maternity-to-live-birth ratios
+
+</p>
+
+[Compare methods](#comparison) · [Go to Method 1](#method-1)
+
+This version uses pooled 2023–2025 maternities divided by live births within each age band. The observed data, ONS projection variant, age grouping and charts are shared with Method 1; only the maternity conversion changes.
+
+## Purpose and ONS definitions {#method-2-purpose-and-ons-definitions}
+
+The main purpose is to estimate **the number of maternities over time**, using published historical maternity counts where available and converting ONS projected live births into future maternity counts. A maternity is one pregnancy resulting in one or more live births or stillbirths: twins count as two babies but one maternity. It is not a count of unique women, because a woman can have more than one maternity, and it excludes pregnancies ending without a live birth or registrable stillbirth. ONS defines a stillbirth as a baby born without signs of life after at least 24 completed weeks of pregnancy. See [ONS definitions](#method-2-ref-birth-guide).
+
+ONS compiles observed births and maternities from civil registration, mainly by calendar year of occurrence, with some late registrations carried into the following year. Local figures use the mother's usual residence. ONS population projections provide **counts of live-born babies**, which we convert to maternities using a **births-to-maternities modifier**. We multiply those projected babies by an age-specific national maternity-to-live-birth ratio, then sum across ages. The result is an estimated maternity count. This report uses the 2022-based migration-category birth projection; the modifier is calculated from pooled 2023–2025 ONS maternity and live-birth counts within each age band. See the [conversion method](#method-2-maternity-conversion) and [ONS projection source](#method-2-ref-birth-projections).
+
+Birth rates are a secondary measure of demographic context. The later rate section shows live births per 1,000 women aged 15–44, using the same age range in every year. This rate is calculated separately from the maternity-count projection. The report therefore presents historical maternities, the conversion method and projected maternity counts before birth rates.
+
+## Terminology key: what are we counting? {#method-2-terminology-key}
+
+**The main output of this analysis is estimated maternities: pregnancies reaching a live birth or stillbirth.** Babies, individual women and appointments are different units.
+
+### Core counting terms {#method-2-core-counting-terms}
+
+| Term | Plain-English meaning | Use in this analysis or pathway model |
+|----|----|----|
+| **Live birth** | One baby born showing signs of life. | The unit in the ONS birth projections used here. Two live-born twins count as two. |
+| **Stillbirth** | One baby born without signs of life at 24 or more completed weeks. | Excluded from live-birth counts; included in the definition of a maternity. |
+| **Total births** | Live births plus stillbirths: a count of babies. | Always specify “live births” or “total births”; the projected input here is live births. |
+| **Maternity** | One pregnancy resulting in at least one live birth or stillbirth. | Our main counting unit. Twins or triplets from one pregnancy count as one maternity. |
+| **All pregnancies** | Pregnancies regardless of outcome. | Broader than maternities. Early losses and terminations without a registrable birth require additional data for pathway modelling. |
+| **Unique women / mothers** | Individual people counted once during a defined period. | Not supplied by the maternity total: one woman can have more than one maternity during that period. |
+| **Singleton / multiple maternity** | One baby / two or more babies from one pregnancy. | “Multiplicity” describes how many babies are involved. It explains why baby and maternity counts differ. |
+| **Contact, appointment or episode** | A unit of recorded healthcare activity, defined by the service dataset. | One maternity can generate many contacts. These are not counted by ONS maternity totals. |
+
+The ONS definitions above follow the [birth statistics user guide](https://www.ons.gov.uk/peoplepopulationandcommunity/birthsdeathsandmarriages/livebirths/methodologies/userguidetobirthstatistics). The final column explains how each measure is used in this analysis or could inform pathway modelling.
+
+### Terms used in the calculations {#method-2-terms-used-in-the-calculations}
+
+| Term | Meaning here |
+|----|----|
+| **Observed / published count** | An ONS figure derived from registered events that have already happened. |
+| **Projected live births** | Future baby counts from the ONS demographic model, conditional on its assumptions. |
+| **Estimated / projected maternities** | Counts calculated by this analysis from observed or projected live births using a maternity modifier. |
+| **Maternity modifier / conversion ratio** | Pooled 2023–2025 ONS maternities divided by live births within each age band. It converts projected baby counts to estimated maternities; it is not a fertility rate. |
+| **General fertility rate (GFR)** | Live births per 1,000 women aged 15–44 in this report. It describes frequency relative to population size, not the number needing care. |
+| **Age-specific fertility rate (ASFR)** | Live births per 1,000 women in the relevant age group. |
+| **Total fertility rate (TFR)** | Children per woman if the year's age-specific fertility rates applied throughout childbearing life. Not an annual maternity count. |
+
+**The conversion in one line:** projected live-born babies × maternity modifier = estimated maternities. Calculate this within each maternal age group, then add the results. Birth rates are a separate contextual measure and are not used instead of this conversion.
+
+For illustration only, a modifier of **0.99** means an estimated **99 maternities for every 100 live-born babies**. A projection of 10,000 live births would therefore become 9,900 maternities if that modifier applied throughout. The actual analysis uses different age-specific modifiers. The ratio includes all maternities, including stillbirth-only maternities, in its numerator and live-born babies in its denominator.
+
+### Using these figures for pathway demand and capacity {#method-2-using-these-figures-for-pathway-demand-and-capacity}
+
+Use **maternities as the starting volume for pathways associated with pregnancies reaching birth**. To turn that volume into service activity, specify the proportion using each pathway and the contacts per maternity. For baby-based services, retain baby counts. To model all antenatal or early-pregnancy demand, also account for pregnancies that do not reach an ONS-defined maternity.
+
+Three further distinctions matter:
+
+- **Residence versus provider:** these ONS figures concern mothers living in an area. Allocating demand to trusts requires patient-flow information.
+- **Birth year versus care year:** antenatal care may occur before the year of birth and postnatal care afterwards. Annual maternity counts do not directly give appointments in the same year.
+- **Demand versus capacity:** activity estimates still need pathway mix, staff time and other resource requirements before they become capacity requirements.
+
+## Data coverage and method assumptions {#method-2-data-coverage-and-method-assumptions}
+
+The six authorities are Birmingham, Dudley, Sandwell, Solihull, Walsall and Wolverhampton. The following series are kept distinct:
+
+| Series | Period | Source and use |
+|----|----|----|
+| Observed live births | Calendar years 2013–2025 | Nomis local-authority counts, total and maternal age bands; shown directly and converted to estimated maternities. |
+| Observed GFR and maternities | Calendar years 2023–2025 | ONS registration workbooks, Tables 1 and 3; published values used directly. |
+| National maternities and live births by age and multiplicity | Calendar years 2023–2025 | Table 7; age-specific maternity and live-birth counts provide the modifiers. |
+| Projected live births | Years ending mid-2023 to mid-2047 | ONS birth component, by modelled maternal age; used for projected rates and estimated maternities. |
+| Projected female population | Mid-2023 to mid-2047 | ONS via Nomis; ages 15–44 form the rate denominator; ages 13–55 are shown separately as population context. |
+
+The following assumptions and differences affect how the series can be compared:
+
+- **ONS projection:** local fertility differentials use the five years ending mid-2018 to mid-2022 initially, then a rolling five-year approach, applied to national fertility assumptions. Projected local births are constrained to England totals. Fertility, mortality and migration assumptions describe a demographic scenario, not future service activity. [ONS method](#method-2-ref-snpp-method).
+- **Maternity conversion:** the pooled 2023–2025 national maternity-to-live-birth ratio is calculated separately for each maternal age band and applied to every authority and year. This assumes the age-specific relationship remains constant; the projected maternal age distribution can still change.
+- **Comparability:** observed figures refer mainly to calendar-year occurrences; projected births cover successive mid-year periods. Rates and counts are shown with their source year labels, without calendar-year conversion or rebasing. GFR is not age-standardised: the age distribution within the denominator can change.
+
+## Published maternities, 2023–2025 {#method-2-published-maternities-2023-2025}
+
+Table 3 of the [ONS registration workbooks](#method-2-ref-registrations) reports all-age maternities by the mother's usual residence. These are used directly, without a conversion factor. They include pregnancies resulting only in stillbirth, but exclude pregnancies ending without a live birth or registrable stillbirth. They do not identify the provider of care.
+
+The 2023, 2024 and 2025 workbooks use geographical boundaries dated August 2024, May 2025 and February 2026, respectively. The six selected authorities retain the same codes across the extracts. These published counts and the calculated historic estimates are separate series.
+
+::: panel-tabset
+### Trend {#method-2-trend}
+
+```{r}
+#| label: method-2-maternities-plot
+#| fig-alt: "Line chart showing annual maternities from 2023 to 2025 for Birmingham, Dudley, Sandwell, Solihull, Walsall and Wolverhampton."
+#| fig-width: 10
+#| fig-height: 6
+ggplot(
+  la_maternities,
+  aes(x = year, y = maternities, colour = local_authority, group = local_authority)
+) +
+  geom_line(linewidth = 1.15) +
+  geom_point(size = 2.8) +
+  scale_x_continuous(breaks = 2023:2025) +
+  scale_y_continuous(labels = label_comma(), expand = expansion(mult = c(0.02, 0.08))) +
+  scale_colour_manual(values = c(
+    "Birmingham" = "#2c2825",
+    "Dudley" = "#5881c1",
+    "Sandwell" = "#d48b00",
+    "Solihull" = "#7b6aa8",
+    "Walsall" = "#00857c",
+    "Wolverhampton" = "#c44e52"
+  )) +
+  labs(
+    x = NULL,
+    y = "Number of maternities",
+    colour = NULL,
+    caption = "Source: ONS Births in England and Wales: birth registrations, Table 3."
+  ) +
+  theme_minimal(base_family = "Arial") +
+  theme(
+    panel.grid.minor = element_blank(),
+    panel.grid.major.x = element_blank(),
+    axis.title.y = element_text(face = "bold"),
+    legend.position = "bottom",
+    legend.text = element_text(size = 9),
+    plot.caption = element_text(colour = "#5f5b58", hjust = 0),
+    plot.margin = margin(8, 12, 8, 8)
+  )
+```
+
+### Table {#method-2-table}
+
+```{r}
+#| label: method-2-maternities-table
+la_maternities |>
+  select(local_authority, year, maternities) |>
+  pivot_wider(names_from = year, values_from = maternities) |>
+  gt(rowname_col = "local_authority") |>
+  tab_stubhead(label = "Local authority") |>
+  fmt_integer(columns = everything(), sep_mark = ",") |>
+  cols_align(align = "right", columns = everything()) |>
+  tab_source_note(
+    source_note = "Source: ONS Births in England and Wales: birth registrations, Table 3."
+  ) |>
+  tab_options(table.font.names = c("Open Sans", "Arial", "sans-serif"))
+```
+:::
+
+## Historical maternity estimates, 2013–2025 {#method-2-historical-maternity-estimates-2013-2025}
+
+The [Nomis live-birth extract](#method-2-ref-nomis-births) contains counts by the mother's usual local authority of residence, using April 2023 geography. Births are allocated mainly to the calendar year of occurrence, with late registrations handled as described above. These counts describe residents, not the location or provider of their care.
+
+The live-birth tabs reproduce the published totals. For the estimated-maternity tabs, each age-band count is multiplied by its pooled 2023–2025 national age-specific maternity-to-live-birth ratio and then summed. Age bands are under 20, 20–24, 25–29, 30–34, 35–39, 40–44 and 45+. The [conversion method](#method-2-maternity-conversion) uses all maternities in the numerator, including those resulting only in stillbirth, and live births in the denominator. It is a statistical estimate, not identification of individual pregnancies.
+
+Births with unknown maternal age use all maternities divided by live births, pooled across the available age bands and years (`r sum(historic_live_births$live_births[historic_live_births$age_band == "Unknown"])` births in this extract). The historic age-band counts, including unknown age, reconcile to the published totals. Estimates are rounded only for display.
+
+::: panel-tabset
+### Estimated maternities chart {#method-2-estimated-maternities-chart}
+
+```{r}
+#| label: method-2-historic-estimated-maternities-plot
+#| fig-alt: "Line chart showing estimated maternities from 2013 to 2025 for the six selected local authorities after applying age-specific national maternity conversion ratios."
+#| fig-width: 10
+#| fig-height: 6
+historic_trend_plot(
+  historic_trends,
+  estimated_maternities,
+  "Estimated maternities",
+  "Calculated from ONS live births by maternal age using pooled 2023-2025 national age-specific maternity-to-live-birth ratios."
+)
+```
+
+### Estimated maternities table {#method-2-estimated-maternities-table}
+
+```{r}
+#| label: method-2-historic-estimated-maternities-table
+historic_trends |>
+  select(local_authority, year, estimated_maternities) |>
+  pivot_wider(names_from = year, values_from = estimated_maternities) |>
+  gt(rowname_col = "local_authority") |>
+  tab_stubhead(label = "Local authority") |>
+  fmt_integer(columns = everything(), sep_mark = ",") |>
+  cols_align(align = "right", columns = everything()) |>
+  tab_source_note(
+    source_note = "Calculated from ONS live births by maternal age using pooled 2023-2025 national age-specific maternity-to-live-birth ratios."
+  ) |>
+  tab_options(table.font.names = c("Open Sans", "Arial", "sans-serif"))
+```
+
+### Live births chart {#method-2-live-births-chart}
+
+```{r}
+#| label: method-2-historic-live-births-plot
+#| fig-alt: "Line chart showing registered live births from 2013 to 2025 for the six selected local authorities."
+#| fig-width: 10
+#| fig-height: 6
+historic_trend_plot(
+  historic_trends,
+  live_births,
+  "Registered live births",
+  "Source: ONS Live births in England and Wales down to local authority area, via Nomis; mother's usual residence, April 2023 local-authority geography."
+)
+```
+
+### Live births table {#method-2-live-births-table}
+
+```{r}
+#| label: method-2-historic-live-births-table
+historic_trends |>
+  select(local_authority, year, live_births) |>
+  pivot_wider(names_from = year, values_from = live_births) |>
+  gt(rowname_col = "local_authority") |>
+  tab_stubhead(label = "Local authority") |>
+  fmt_integer(columns = everything(), sep_mark = ",") |>
+  cols_align(align = "right", columns = everything()) |>
+  tab_source_note(
+    source_note = "Source: ONS Live births in England and Wales down to local authority area, via Nomis; mother's usual residence."
+  ) |>
+  tab_options(table.font.names = c("Open Sans", "Arial", "sans-serif"))
+```
+:::
+
+## National multiplicity and maternity conversion {#method-2-maternity-conversion}
+
+Table 7 covers births occurring in England and Wales, including mothers resident elsewhere. It reports maternities and live births by maternal age, multiplicity and previous live-born children. We select the **any number of previous live-born children** rows so each category is counted once. Records with missing or implausible maternal ages are excluded from the age breakdowns.
+
+This method also retains **separate modifiers for each maternal age band**. It pools the 2023–2025 counts of all maternities and live births in each band, then calculates:
+
+**Maternity modifier = total maternities ÷ total live births.**
+
+**Estimated maternities = projected live births × maternity modifier.**
+
+Apply the corresponding ratio to each projected maternal age group and sum the estimates. Pooling counts is equivalent to averaging the annual maternity-to-live-birth ratios with weights proportional to live births. It is not an equal-weight average of annual multiplicity proportions.
+
+The numerator includes maternities resulting only in stillbirth as well as those involving live births. The denominator uses actual live-born babies, including those from multiple pregnancies, so it does not require an assumed number of babies in the four-plus category. Applying this ratio to the national live-birth counts used to calculate it reproduces the corresponding national maternity count.
+
+**Assumptions and comparability:** the national ratio within each age band is assumed to apply locally and remain constant in future years. It captures the combined relationship of multiplicity and stillbirths, without separately projecting either. It is not a forecast of local stillbirths or a count of all pregnancies. Observed and projected periods still differ. The multiplicity tables below are retained for comparison with Method 1; here they are descriptive, while the final tab shows the ratios actually used.
+
+::: panel-tabset
+### Three-year average {#method-2-three-year-average}
+
+The table shows the arithmetic mean of the national maternity proportions reported for 2023, 2024 and 2025. These proportions are descriptive in Method 2; the modifier uses actual maternity and live-birth counts.
+
+```{r}
+#| label: method-2-multiplicity-average
+multiplicity_table(average_rates) |>
+  tab_source_note(
+    source_note = "Source: ONS Births in England and Wales: birth registrations, Table 7; 2023-2025."
+  )
+```
+
+### 2023 {#method-2-2023}
+
+```{r}
+#| label: method-2-multiplicity-2023
+multiplicity_table(multiplicity_data, 2023) |>
+  tab_source_note(source_note = "Source: ONS Births in England and Wales: birth registrations 2023, Table 7.")
+```
+
+### 2024 {#method-2-2024}
+
+```{r}
+#| label: method-2-multiplicity-2024
+multiplicity_table(multiplicity_data, 2024) |>
+  tab_source_note(source_note = "Source: ONS Births in England and Wales: birth registrations 2024, Table 7.")
+```
+
+### 2025 {#method-2-2025}
+
+```{r}
+#| label: method-2-multiplicity-2025
+multiplicity_table(multiplicity_data, 2025) |>
+  tab_source_note(source_note = "Source: ONS Births in England and Wales: birth registrations 2025, Table 7.")
+```
+
+### Maternity conversion ratios {#method-2-maternity-conversion-ratios}
+
+Multiply live births by the ratio for the corresponding age band. The 40+ row is used for projections; historic estimates use 40–44 and 45+ separately.
+
+```{r}
+#| label: method-2-maternity-modifier
+bind_rows(
+  maternity_modifiers |> mutate(age_band = as.character(age_band)),
+  projection_modifiers |> filter(age_band == "40+")
+) |>
+  transmute(
+    `Age band` = age_band,
+    `Live births per maternity` = live_births_per_maternity,
+    `Maternity modifier` = maternity_modifier
+  ) |>
+  gt() |>
+  fmt_number(columns = where(is.numeric), decimals = 5) |>
+  tab_source_note(
+    source_note = md(
+      "Pooled 2023-2025 Table 7 counts: modifier = maternities / live births within each age band."
+    )
+  ) |>
+  tab_options(table.font.names = c("Open Sans", "Arial", "sans-serif"))
+```
+:::
+
+::: callout-note
+## Comparable oldest age band {#method-2-comparable-oldest-age-band}
+
+The three-year calculation uses **45+** because the 2023 and 2024 publications do not split this group. For 2025, the published 45–49 and 50+ values are combined.
+:::
+
+## Estimated maternities from projected births {#method-2-estimated-maternities-from-projected-births}
+
+The corrected [ONS migration-category birth projection](#method-2-ref-birth-projections) provides live births for the years ending mid-2023 to mid-2047. Its underlying population base is mid-2022. The birth file and female population series used here are on 2021 local-authority geography; the selected authorities are also present in the observed extracts.
+
+ONS represents fertility at model ages 15–44, assigning births below 15 to age 15 and births above 44 to age 44. Those boundary rows already cover the outlying ages. **We therefore add no extra births at ages 13–14 or 45–55.** The published projection cannot separately identify those ages.
+
+We group the source rows into **under 20, 20–24, 25–29, 30–34, 35–39 and 40+**. Each group is multiplied by its national age-specific maternity-to-live-birth ratio. For 40+, Table 7 maternity and live-birth counts for 40–44 and 45+ are combined before division. This matches the projection’s boundary-age coverage, although it cannot separately retain the 45+ pattern within the projected 40+ group. The six estimates are summed for the total. Rounding can cause small differences between the sum of the source age groups and the published all-age birth total.
+
+The calculation for each authority and year is **projected live births in each age group × that group's maternity modifier, summed across age groups**. The resulting charts show maternity counts, not baby counts. All calculated age-group modifiers are below one, so the current conversion reduces projected baby counts using the national relationship between live births and all maternities.
+
+Every value here, including 2023–2025, is calculated from projected births. The age profile and total retain the ONS projection assumptions and the fixed national conversion ratios; they are not published ONS maternity counts.
+
+::: panel-tabset
+### Total {#method-2-total}
+
+```{r}
+#| label: method-2-projected-maternities-total
+#| fig-alt: "Projected maternities from 2023 to 2047 for the selected local authorities, calculated by applying age-specific maternity modifiers to ONS projected births."
+#| fig-width: 10
+#| fig-height: 6
+projection_plot(
+  total_maternity_projections,
+  "Source: corrected ONS 2022-based migration-category projected live births; pooled 2023-2025 age-specific maternity-to-live-birth ratios."
+)
+```
+
+### Under 20 {#method-2-under-20}
+
+```{r}
+#| label: method-2-projected-maternities-15-19
+#| fig-width: 10
+#| fig-height: 6
+projection_plot(
+  age_band_projections |> filter(age_band == "<20"),
+  "Under 20, including births assigned to model age 15. Source: ONS 2022-based SNPP; age-specific maternity-to-live-birth ratio applied."
+)
+```
+
+### 20-24 {#method-2-20-24}
+
+```{r}
+#| label: method-2-projected-maternities-20-24
+#| fig-width: 10
+#| fig-height: 6
+projection_plot(
+  age_band_projections |> filter(age_band == "20-24"),
+  "Maternal ages 20-24. Source: ONS 2022-based SNPP; age-specific maternity-to-live-birth ratio applied."
+)
+```
+
+### 25-29 {#method-2-25-29}
+
+```{r}
+#| label: method-2-projected-maternities-25-29
+#| fig-width: 10
+#| fig-height: 6
+projection_plot(
+  age_band_projections |> filter(age_band == "25-29"),
+  "Maternal ages 25-29. Source: ONS 2022-based SNPP; age-specific maternity-to-live-birth ratio applied."
+)
+```
+
+### 30-34 {#method-2-30-34}
+
+```{r}
+#| label: method-2-projected-maternities-30-34
+#| fig-width: 10
+#| fig-height: 6
+projection_plot(
+  age_band_projections |> filter(age_band == "30-34"),
+  "Maternal ages 30-34. Source: ONS 2022-based SNPP; age-specific maternity-to-live-birth ratio applied."
+)
+```
+
+### 35-39 {#method-2-35-39}
+
+```{r}
+#| label: method-2-projected-maternities-35-39
+#| fig-width: 10
+#| fig-height: 6
+projection_plot(
+  age_band_projections |> filter(age_band == "35-39"),
+  "Maternal ages 35-39. Source: ONS 2022-based SNPP; age-specific maternity-to-live-birth ratio applied."
+)
+```
+
+### 40 and over {#method-2-40-and-over}
+
+```{r}
+#| label: method-2-projected-maternities-40-44
+#| fig-width: 10
+#| fig-height: 6
+projection_plot(
+  age_band_projections |> filter(age_band == "40+"),
+  "Ages 40+, including births assigned to model age 44. Source: ONS 2022-based SNPP; age-specific maternity-to-live-birth ratio applied."
+)
+```
+:::
+
+## Published and calculated maternity series {#method-2-published-and-calculated-maternity-series}
+
+Solid lines and points show Table 3 resident maternities for calendar years 2023–2025. Dashed lines show the calculated series for years ending mid-2023 to mid-2047, including the overlapping years. The dashed lines use the same totals as the preceding projection chart. Each series is plotted independently, without rescaling the projections to match the observed counts.
+
+Both cover all maternal ages, but their periods and methods differ. The calculated series includes stillbirth-only maternities through the national conversion ratio; it does not reproduce local outcome patterns. The chart therefore displays two sources together, rather than one continuous observed-to-forecast series.
+
+```{r}
+#| label: method-2-observed-projected-trajectory
+#| fig-alt: "Published calendar-year maternities for 2023 to 2025 and separate calculated mid-year projections for 2023 to 2047."
+#| fig-width: 11
+#| fig-height: 6.5
+
+
+ggplot() +
+  geom_line(
+    data = observed_trajectory,
+    aes(year, maternities, colour = area_name, group = area_name),
+    linewidth = 1.2
+  ) +
+  geom_point(
+    data = observed_trajectory,
+    aes(year, maternities, colour = area_name),
+    size = 2.7
+  ) +
+  geom_line(
+    data = projected_trajectory,
+    aes(year, maternities, colour = area_name, group = area_name),
+    linewidth = 1.05, linetype = "22"
+  ) +
+
+
+  scale_x_continuous(
+    breaks = c(2023:2026, seq(2030, 2047, by = 4), 2047),
+    expand = expansion(add = c(0.4, 0.4))
+  ) +
+  scale_y_continuous(labels = label_comma(), expand = expansion(mult = c(0.02, 0.1))) +
+  scale_colour_manual(values = area_colours) +
+  labs(
+    x = NULL,
+    y = "Maternities",
+    colour = NULL,
+    caption = paste(
+      "Solid: published calendar-year maternities. Dashed: calculated mid-year projections;",
+      "ONS migration-category births with age-specific maternity-to-live-birth ratios."
+    )
+  ) +
+  theme_minimal(base_family = "Arial") +
+  theme(
+    plot.background = element_rect(fill = "white", colour = NA),
+    panel.background = element_rect(fill = "white", colour = NA),
+    panel.grid.minor = element_blank(),
+    panel.grid.major.x = element_blank(),
+    axis.title.y = element_text(face = "bold"),
+    legend.position = "bottom",
+    legend.text = element_text(size = 9),
+    plot.caption = element_text(colour = "#5f5b58", hjust = 0),
+    plot.margin = margin(12, 14, 10, 10)
+  )
+```
+
+## Birth rates: secondary demographic context {#method-2-birth-rates-secondary-demographic-context}
+
+The general fertility rate (GFR) uses all live births as its numerator and women aged 15–44 as its denominator. The 2025 workbook also publishes a 15–49 rate; this report retains 15–44 for comparability. Solid lines show the published 15–44 GFR for 2023–2025, using each workbook's mid-year population estimates. Dashed lines show a **calculated projection ratio**: all projected live births during the year ending mid-year divided by the projected women aged 15–44 at that year's mid-year endpoint, multiplied by 1,000. It is an approximation for comparison, not a published ONS GFR or a calendar-year forecast. Population values in the Nomis extract are rounded to whole people. No maternity conversion is applied to either rate.
+
+The overlapping years are retained to show both sources separately. See the sources for [observed rates](#method-2-ref-registrations), [projected births](#method-2-ref-birth-projections) and the [population denominator](#method-2-ref-population-projections).
+
+```{r}
+#| label: method-2-birth-rate-trend
+#| fig-alt: "Observed and projected general fertility rates by local authority, expressed as live births per 1,000 women aged 15 to 44."
+#| fig-height: 6.5
+
+ggplot() +
+  geom_line(
+    data = projected_birth_rates,
+    aes(year, general_fertility_rate, colour = area_name, group = area_name),
+    linewidth = 1.05, linetype = "22"
+  ) +
+  geom_line(
+    data = observed_birth_rates,
+    aes(year, general_fertility_rate, colour = area_name, group = area_name),
+    linewidth = 1.25
+  ) +
+  geom_point(
+    data = observed_birth_rates,
+    aes(year, general_fertility_rate, colour = area_name),
+    size = 2.7
+  ) +
+  scale_x_continuous(breaks = c(2023:2027, seq(2031, 2047, by = 4))) +
+  scale_y_continuous(labels = label_number(accuracy = 1), expand = expansion(mult = c(0.02, 0.08))) +
+  scale_colour_manual(values = area_colours) +
+  labs(
+    x = NULL,
+    y = "Live births per 1,000 women aged 15–44",
+    colour = NULL,
+    caption = paste(
+      "Solid: observed ONS general fertility rate, 2023–2025.",
+      "Dashed: calculated mid-year projection ratio, 2023–2047; periods differ from observed rates."
+    )
+  ) +
+  theme_minimal(base_family = "Arial") +
+  theme(
+    plot.background = element_rect(fill = "white", colour = NA),
+    panel.background = element_rect(fill = "white", colour = NA),
+    panel.grid.minor = element_blank(), panel.grid.major.x = element_blank(),
+    axis.title.y = element_text(face = "bold"), legend.position = "bottom",
+    legend.text = element_text(size = 9),
+    plot.caption = element_text(colour = "#5f5b58", hjust = 0)
+  )
+```
+
+## Projected female population by age {#method-2-projected-female-population-by-age}
+
+The female population extract from [ONS via Nomis](#method-2-ref-population-projections) matches the corrected 2022-based migration-category variant to whole-person rounding. It contains population counts for each single year of age from 0 to 89, for the six authorities and projection years 2023–2047. Population figures count women living in each area at mid-year.
+
+For the following charts, we select ages **13–55**, sum single ages into five-year groups, and retain partial groups at the limits. The total sums the population aged 13–55. This selected range provides population context; it does not define the ages covered by the birth projection. No maternity conversion or other scaling is applied.
+
+The change table subtracts the 2023 population from the 2047 population. Percentage change is that difference divided by the 2023 population, multiplied by 100.
+
+::: panel-tabset
+### Full configured range {#method-2-full-configured-range}
+
+```{r}
+#| label: method-2-projected-female-population-total
+#| fig-width: 10
+#| fig-height: 6
+population_plot(
+  female_population_projections |>
+    group_by(area_code, area_name, year) |>
+    summarise(female_population = sum(female_population), .groups = "drop"),
+  paste0(
+    "Female population aged ", analysis_parameters[["minimum_maternal_age"]], "-",
+    analysis_parameters[["maximum_maternal_age"]],
+    ". Source: ONS 2022-based subnational population projections via Nomis."
+  )
+)
+```
+
+### Change over projection period {#method-2-change-over-projection-period}
+
+```{r}
+#| label: method-2-projected-female-population-change-table
+female_population_projections |>
+  filter(year %in% range(year)) |>
+  pivot_wider(names_from = year, values_from = female_population) |>
+  mutate(
+    change = .data[[as.character(max(female_population_projections$year))]] -
+      .data[[as.character(min(female_population_projections$year))]],
+    percentage_change = change /
+      .data[[as.character(min(female_population_projections$year))]]
+  ) |>
+  select(area_name, age_band, all_of(as.character(range(female_population_projections$year))), change, percentage_change) |>
+  gt(groupname_col = "area_name") |>
+  cols_label(age_band = "Age band", change = "Change", percentage_change = "% change") |>
+  fmt_integer(columns = c(all_of(as.character(range(female_population_projections$year))), change), sep_mark = ",") |>
+  fmt_percent(columns = percentage_change, decimals = 1) |>
+  tab_source_note(source_note = "Source: ONS 2022-based subnational population projections via Nomis; Strategy Unit aggregation.") |>
+  tab_options(table.font.names = c("Open Sans", "Arial", "sans-serif"))
+```
+
+```{r}
+#| label: method-2-projected-female-population-tabs
+#| output: asis
+for (band in levels(female_population_projections$age_band)) {
+  cat("\n### ", band, "\n\n", sep = "")
+  print(population_plot(
+    female_population_projections |> filter(age_band == band),
+    paste0("Female population aged ", band, ". Source: ONS 2022-based subnational population projections via Nomis.")
+  ))
+  cat("\n")
+}
+```
+:::
+
+## Data supplied {#method-2-data-supplied}
+
+The table identifies the saved ONS inputs used in this report. References below link to the releases.
+
+```{r}
+#| label: method-2-source-register
+sources |>
+  transmute(
+    Source = source_name,
+    Type = source_type,
+    Period = period,
+    File = file_name,
+    `How it is used` = current_use,
+    Status = if_else(available, "Available", "Missing")
+  ) |>
+  gt() |>
+  sub_missing(columns = everything(), missing_text = "n.a.") |>
+  tab_options(table.font.names = c("Open Sans", "Arial", "sans-serif"))
+```
+
+## Patient flows {#method-2-patient-flows}
+
+### ICB of residence to ICB of birth {#method-2-icb-of-residence-to-icb-of-birth}
+
+```{r}
+#| label: method-2-patient-flow-icb
+#| eval: !expr file.exists("sankey data/icb_matrix_data (1).csv")
+#| fig-alt: "Sankey diagram showing supplied record counts from ICB of residence on the left to ICB of birth on the right."
+#| out-width: "100%"
+
+icb_labels <- c(
+  QHL = "Birmingham and Solihull ICB",
+  QUA = "Black Country ICB",
+  QNC = "Staffordshire and Stoke-on-Trent ICB",
+  QWU = "Coventry and Warwickshire ICB",
+  QGH = "Herefordshire and Worcestershire ICB",
+  QOC = "Shropshire, Telford and Wrekin ICB",
+  QJ2 = "Leicester, Leicestershire and Rutland ICB",
+  Other = "Other ICBs"
+)
+
+icb_flows <- read.csv(
+  "sankey data/icb_matrix_data (1).csv",
+  row.names = 1
+)
+
+make_sankey(
+  icb_flows,
+  resident_icb_interest,
+  birth_icb_interest,
+  icb_labels,
+  " (residence)",
+  " (birth)"
+)
+```
+
+### Booking trust to birth trust {#method-2-booking-trust-to-birth-trust}
+
+```{r}
+#| label: method-2-patient-flow-trust
+#| eval: !expr file.exists("sankey data/trust_matrix_data (1).csv")
+#| fig-alt: "Sankey diagram showing supplied record counts from trust at booking appointment on the left to trust responsible for the birth spell on the right."
+#| out-width: "100%"
+
+trust_labels <- c(
+  RBK = "Walsall Healthcare NHS Trust",
+  RL4 = "The Royal Wolverhampton NHS Trust",
+  RNA = "The Dudley Group NHS Foundation Trust",
+  RQ3 = "Birmingham Women's and Children's NHS Foundation Trust",
+  RRK = "University Hospitals Birmingham NHS Foundation Trust",
+  RXK = "Sandwell and West Birmingham NHS Trust",
+  Other = "Other trusts"
+)
+
+trust_flows <- read.csv(
+  "sankey data/trust_matrix_data (1).csv",
+  row.names = 1
+)
+
+make_sankey(
+  trust_flows,
+  booking_provider_grouped,
+  birth_provider_grouped,
+  trust_labels,
+  " (booking)",
+  " (birth)"
+)
+```
+
+## References {#method-2-references}
+
+1.   [ONS, *User guide to birth statistics*](https://www.ons.gov.uk/peoplepopulationandcommunity/birthsdeathsandmarriages/livebirths/methodologies/userguidetobirthstatistics).
+2.   [ONS, *Births in England and Wales: birth registrations*](https://www.ons.gov.uk/peoplepopulationandcommunity/birthsdeathsandmarriages/livebirths/datasets/birthsinenglandandwalesbirthregistrations).
+3.   [ONS live births by local authority, accessed through Nomis](https://www.nomisweb.co.uk/datasets/lebirthsla).
+4.   [ONS, *Methodology used to produce the 2022-based subnational population projections for England*](https://www.ons.gov.uk/peoplepopulationandcommunity/populationandmigration/populationprojections/methodologies/methodologyusedtoproducethe2022basedsubnationalpopulationsprojectionsforengland).
+5.   [ONS, *Birth projections by age of mother: corrected 2022-based migration-category variant*](https://www.ons.gov.uk/peoplepopulationandcommunity/populationandmigration/populationprojections/datasets/birthsbyageofmotherz3).
+6.   [ONS, *Local authority population projections: 2022-based migration-category variant*](https://www.ons.gov.uk/peoplepopulationandcommunity/populationandmigration/populationprojections/datasets/localauthoritiesinenglandz1); [Nomis population extract](https://www.nomisweb.co.uk/datasets/ppsyoala).

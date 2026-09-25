@@ -1,0 +1,29 @@
+# Share only the files needed to reproduce the ONS report.
+# Generated output, private Sankey data, local files and old report copies stay local.
+*
+!/data/
+!/ons/
+!/ons/R/
+!/ons/assets/
+!/ons/config/
+!/.gitignore
+!/CODEOWNERS
+!/LICENSE
+!/README.md
+!/ons/.gitignore
+!/ons/index.qmd
+!/ons/R/ons_data.R
+!/ons/_quarto.yml
+!/ons/_brand.yml
+!/ons/styles.css
+!/ons/config/analysis_parameters.csv
+!/ons/config/local_authorities.csv
+!/ons/assets/logo_black_favicon.png
+!/ons/assets/logo_black_medium.png
+!/ons/assets/logo_yellow_medium.png
+!/data/2023birthregistrations.xlsx
+!/data/2024birthregistrations.xlsx
+!/data/2025birthregistrations.xlsx
+!/data/ons_2022_based_births_migration_category.csv
+!/data/ons_2022_based_female_population_projections.csv
+!/data/ons_live_births_la_2013_2025.csv

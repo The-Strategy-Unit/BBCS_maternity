@@ -10,7 +10,7 @@ format:
 
 # Comparison {#comparison}
 
-Both methods estimate maternities from ONS projected live births using **age-specific modifiers**. Neither applies a single all-age factor. They use the same source files, projection variant, age grouping, observed 2023–2025 maternity counts and chart layout. Birth rates are identical in both method sections and provide secondary context.
+Both methods estimate maternities from ONS projected live births using a factor for each maternal age band. **Method 1 calculates a multiplicity modifier from averaged singleton and multiple-maternity shares; Method 2 calculates a pooled count ratio from all maternities divided by live births.** Neither applies a single all-age factor. They use the same source files, projection variant, age grouping, observed 2023–2025 maternity counts and chart layout. Birth rates are identical in both method sections and provide secondary context.
 
 - [Method 1: age-specific multiplicity](#method-1) — the original approach.
 - [Method 2: age-specific maternity-to-live-birth ratios](#method-2) — the alternative approach.
@@ -18,7 +18,7 @@ Both methods estimate maternities from ONS projected live births using **age-spe
 ## Pros and cons
 
 | Approach | Calculation within each age band | Pros | Cons / assumptions |
-|----|----|----|----|
+|------------------|------------------|------------------|------------------|
 | **Method 1: multiplicity** | Average the 2023–2025 annual proportions of singleton, twin, triplet and four-plus maternities. Modifier = 1 / (p1 + 2p2 + 3p3 + 4p4+). | Explicitly shows how multiple births translate babies into maternities. Retains age differences. Each year has equal weight. | Assumes the age-specific multiplicity mix stays constant and applies locally. Four-plus is approximated as four. Applied to live births, it does not separately account for stillbirth-only or mixed-outcome maternities, unlike the published all-maternity count. |
 | **Method 2: count ratio** | Pool 2023–2025 maternity counts and divide by pooled live births. | Retains age differences. Uses actual counts, including all maternities in the numerator. No four-plus approximation. Matches national live births to all maternities in the calibration data. | Assumes the age-specific national ratio stays constant and applies locally. Combines multiplicity and stillbirth effects, making them less explicit. Years with more live births receive more weight. |
 
@@ -322,13 +322,13 @@ Method 1 — multiplicity-based estimates
 
 [Compare methods](#comparison) · [Go to Method 2](#method-2)
 
-This version uses the mean annual age-specific multiplicity proportions for 2023–2025. The observed data, ONS projection variant, age grouping and charts are shared with Method 2; only the maternity conversion changes.
+Method 1 estimates babies per maternity from the singleton, twin, triplet and four-plus shares in each maternal age band. It averages each year's shares across 2023–2025 with equal weight, takes the reciprocal of expected babies per maternity, and applies that modifier to projected live births. This estimates the effect of multiple births; it does not separately include stillbirth-only maternities. The observed counts, birth projection and age bands are the same as in Method 2.
 
 ## Purpose and ONS definitions {#method-1-purpose-and-ons-definitions}
 
 The main purpose is to estimate **the number of maternities over time**, using published historical maternity counts where available and converting ONS projected live births into future maternity counts. A maternity is one pregnancy resulting in one or more live births or stillbirths: twins count as two babies but one maternity. It is not a count of unique women, because a woman can have more than one maternity, and it excludes pregnancies ending without a live birth or registrable stillbirth. ONS defines a stillbirth as a baby born without signs of life after at least 24 completed weeks of pregnancy. See [ONS definitions](#method-1-ref-birth-guide).
 
-ONS compiles observed births and maternities from civil registration, mainly by calendar year of occurrence, with some late registrations carried into the following year. Local figures use the mother's usual residence. ONS population projections provide **counts of live-born babies**, which we convert to maternities using a **births-to-maternities modifier**. We multiply those projected babies by an age-specific national multiplicity modifier, then sum across ages. The result is an estimated maternity count. This report uses the 2022-based migration-category birth projection; the modifier is calculated from the mean 2023–2025 national proportions of singleton, twin, triplet and four-plus maternities within each age band. See the [conversion method](#method-1-maternity-conversion) and [ONS projection source](#method-1-ref-birth-projections).
+ONS compiles observed births and maternities from civil registration, mainly by calendar year of occurrence, with some late registrations carried into the following year. Local figures use the mother's usual residence. For Method 1, we calculate the 2023–2025 mean proportion of singleton, twin, triplet and four-plus maternities in each maternal age band. Those shares give an expected number of babies per maternity; its reciprocal is the **multiplicity modifier**. We multiply the 2022-based migration-category projection of live-born babies by that modifier in each age band and sum the estimates. Because the shares include stillbirths but the projection counts live births, this is an approximate maternity count. See the [conversion method](#method-1-maternity-conversion) and [ONS projection source](#method-1-ref-birth-projections).
 
 Birth rates are a secondary measure of demographic context. The later rate section shows live births per 1,000 women aged 15–44, using the same age range in every year. This rate is calculated separately from the maternity-count projection. The report therefore presents historical maternities, the conversion method and projected maternity counts before birth rates.
 
@@ -339,7 +339,7 @@ Birth rates are a secondary measure of demographic context. The later rate secti
 ### Core counting terms {#method-1-core-counting-terms}
 
 | Term | Plain-English meaning | Use in this analysis or pathway model |
-|----|----|----|
+|------------------------|------------------------|------------------------|
 | **Live birth** | One baby born showing signs of life. | The unit in the ONS birth projections used here. Two live-born twins count as two. |
 | **Stillbirth** | One baby born without signs of life at 24 or more completed weeks. | Excluded from live-birth counts; included in the definition of a maternity. |
 | **Total births** | Live births plus stillbirths: a count of babies. | Always specify “live births” or “total births”; the projected input here is live births. |
@@ -354,16 +354,16 @@ The ONS definitions above follow the [birth statistics user guide](https://www.o
 ### Terms used in the calculations {#method-1-terms-used-in-the-calculations}
 
 | Term | Meaning here |
-|----|----|
+|------------------------------------|------------------------------------|
 | **Observed / published count** | An ONS figure derived from registered events that have already happened. |
 | **Projected live births** | Future baby counts from the ONS demographic model, conditional on its assumptions. |
-| **Estimated / projected maternities** | Counts calculated by this analysis from observed or projected live births using a maternity modifier. |
-| **Maternity modifier / conversion ratio** | The reciprocal of expected babies per maternity, calculated from the mean 2023–2025 national multiplicity proportions for each age band. It converts baby counts into approximate maternity counts; it is not a fertility rate. |
+| **Estimated / projected maternities** | Counts calculated by this analysis from observed or projected live births using the multiplicity modifier. |
+| **Multiplicity modifier** | The reciprocal of expected babies per maternity, calculated from the mean 2023–2025 national multiplicity proportions for each age band. It converts baby counts into approximate maternity counts; it is not a fertility rate. |
 | **General fertility rate (GFR)** | Live births per 1,000 women aged 15–44 in this report. It describes frequency relative to population size, not the number needing care. |
 | **Age-specific fertility rate (ASFR)** | Live births per 1,000 women in the relevant age group. |
 | **Total fertility rate (TFR)** | Children per woman if the year's age-specific fertility rates applied throughout childbearing life. Not an annual maternity count. |
 
-**The conversion in one line:** projected live-born babies × maternity modifier = estimated maternities. Calculate this within each maternal age group, then add the results. Birth rates are a separate contextual measure and are not used instead of this conversion.
+**The conversion in one line:** projected live-born babies × multiplicity modifier = estimated maternities. Calculate this within each maternal age group, then add the results. Birth rates are a separate contextual measure and are not used instead of this conversion.
 
 For illustration only, a modifier of **0.99** means an estimated **99 maternities for every 100 live-born babies**. A projection of 10,000 live births would therefore become 9,900 maternities if that modifier applied throughout. The actual analysis uses different age-specific modifiers. The modifier adjusts for multiple births. Applied to live births, it does not separately estimate stillbirth-only maternities.
 
@@ -382,7 +382,7 @@ Three further distinctions matter:
 The six authorities are Birmingham, Dudley, Sandwell, Solihull, Walsall and Wolverhampton. The following series are kept distinct:
 
 | Series | Period | Source and use |
-|----|----|----|
+|------------------------|------------------------|------------------------|
 | Observed live births | Calendar years 2013–2025 | Nomis local-authority counts, total and maternal age bands; shown directly and converted to estimated maternities. |
 | Observed GFR and maternities | Calendar years 2023–2025 | ONS registration workbooks, Tables 1 and 3; published values used directly. |
 | National maternities and live births by age and multiplicity | Calendar years 2023–2025 | Table 7; age-specific multiplicity proportions provide the modifiers. |
@@ -535,7 +535,7 @@ historic_trends |>
 ```
 :::
 
-## National multiplicity and maternity conversion {#method-1-maternity-conversion}
+## National multiplicity shares and maternity conversion {#method-1-maternity-conversion}
 
 Table 7 covers births occurring in England and Wales, including mothers resident elsewhere. It reports maternities and live births by maternal age, multiplicity and previous live-born children. We select the **any number of previous live-born children** rows so each category is counted once. Records with missing or implausible maternal ages are excluded from the age breakdowns.
 
@@ -545,9 +545,9 @@ Let the resulting proportions be p1, p2, p3 and p4+. Within each age band:
 
 **Expected babies per maternity = p1 + 2 × p2 + 3 × p3 + 4 × p4+.**
 
-**Maternity modifier = 1 ÷ expected babies per maternity.**
+**Multiplicity modifier = 1 ÷ expected babies per maternity.**
 
-**Estimated maternities = projected live births × maternity modifier.**
+**Estimated maternities = projected live births × multiplicity modifier.**
 
 We apply each modifier to the corresponding age group of ONS projected births, then sum the estimated maternities. This preserves differences in multiplicity between age groups and allows changes in the projected age profile to affect the total. The annual and average tables below show the proportions used.
 
@@ -592,7 +592,7 @@ multiplicity_table(multiplicity_data, 2025) |>
   tab_source_note(source_note = "Source: ONS Births in England and Wales: birth registrations 2025, Table 7.")
 ```
 
-### Maternity conversion ratios {#method-1-maternity-conversion-ratios}
+### Multiplicity modifiers {#method-1-maternity-conversion-ratios}
 
 Multiply live births by the ratio for the corresponding age band. The 40+ row is used for projections; historic estimates use 40–44 and 45+ separately.
 
@@ -605,7 +605,7 @@ bind_rows(
   transmute(
     `Age band` = age_band,
     `Expected babies per maternity` = expected_babies_per_maternity,
-    `Maternity modifier` = maternity_modifier
+    `Multiplicity modifier` = maternity_modifier
   ) |>
   gt() |>
   fmt_number(columns = where(is.numeric), decimals = 5) |>
@@ -916,7 +916,7 @@ sources |>
   tab_options(table.font.names = c("Open Sans", "Arial", "sans-serif"))
 ```
 
-## Patient flows {#method-1-patient-flows}
+# Patient flows {#method-1-patient-flows}
 
 ### ICB of residence to ICB of birth {#method-1-icb-of-residence-to-icb-of-birth}
 
@@ -985,7 +985,7 @@ make_sankey(
 )
 ```
 
-## References {#method-1-references}
+# References {#method-1-references}
 
 1.  [ONS, *User guide to birth statistics*](https://www.ons.gov.uk/peoplepopulationandcommunity/birthsdeathsandmarriages/livebirths/methodologies/userguidetobirthstatistics).
 2.  [ONS, *Births in England and Wales: birth registrations*](https://www.ons.gov.uk/peoplepopulationandcommunity/birthsdeathsandmarriages/livebirths/datasets/birthsinenglandandwalesbirthregistrations).
@@ -1013,7 +1013,6 @@ selected_las <- area_config$area_name
 la_maternities <- read_local_authority_maternities(selected_las)
 observed_birth_rates <- read_local_authority_birth_rates(selected_las)
 multiplicity_data <- read_national_multiplicity()
-average_rates <- average_multiplicity_rates(multiplicity_data)
 maternity_modifiers <- count_ratio_maternity_modifiers(multiplicity_data)
 projection_modifiers <- multiplicity_data |>
   mutate(age_band = if_else(as.character(age_band) %in% c("40-44", "45+"), "40+", as.character(age_band))) |>
@@ -1236,49 +1235,6 @@ historic_trend_plot <- function(data, value, y_label, caption) {
     )
 }
 
-multiplicity_table <- function(data, year = NULL) {
-  if (is.null(year)) {
-    display <- data |>
-      transmute(
-        measure = "Average proportion",
-        multiplicity = as.character(multiplicity),
-        age_band,
-        value = average_proportion
-      )
-  } else {
-    selected <- data |> filter(.data$year == .env$year)
-    display <- bind_rows(
-      selected |>
-        transmute(
-          measure = "Maternities", multiplicity = as.character(multiplicity),
-          age_band, value = maternities
-        ),
-      selected |>
-        filter(multiplicity != "All") |>
-        transmute(
-          measure = "Proportion", multiplicity = as.character(multiplicity),
-          age_band, value = proportion
-        )
-    )
-  }
-
-  display |>
-    mutate(
-      measure = factor(measure, levels = c("Maternities", "Proportion", "Average proportion")),
-      multiplicity = factor(multiplicity, levels = c("1", "2", "3", "4+", "All"))
-    ) |>
-    arrange(measure, multiplicity) |>
-    pivot_wider(names_from = age_band, values_from = value) |>
-    gt(groupname_col = "measure", rowname_col = "multiplicity") |>
-    tab_stubhead(label = "Babies per maternity") |>
-    fmt_integer(columns = where(is.numeric), rows = measure == "Maternities", sep_mark = ",") |>
-    fmt_percent(
-      columns = where(is.numeric), rows = measure %in% c("Proportion", "Average proportion"),
-      decimals = 2
-    ) |>
-    sub_missing(columns = everything(), missing_text = "n.a.") |>
-    tab_options(table.font.names = c("Open Sans", "Arial", "sans-serif"))
-}
 ```
 
 <p class="report-kicker">
@@ -1289,13 +1245,13 @@ Method 2 — maternity-to-live-birth ratios
 
 [Compare methods](#comparison) · [Go to Method 1](#method-1)
 
-This version uses pooled 2023–2025 maternities divided by live births within each age band. The observed data, ONS projection variant, age grouping and charts are shared with Method 1; only the maternity conversion changes.
+Method 2 divides all recorded maternities by recorded live births within each maternal age band, pooling the 2023–2025 counts before division. It applies the resulting ratio to projected live births. This ratio captures both multiplicity and the presence of stillbirth-only maternities in the national calibration counts; it does not estimate those components separately. The observed counts, birth projection and age bands are the same as in Method 1.
 
 ## Purpose and ONS definitions {#method-2-purpose-and-ons-definitions}
 
 The main purpose is to estimate **the number of maternities over time**, using published historical maternity counts where available and converting ONS projected live births into future maternity counts. A maternity is one pregnancy resulting in one or more live births or stillbirths: twins count as two babies but one maternity. It is not a count of unique women, because a woman can have more than one maternity, and it excludes pregnancies ending without a live birth or registrable stillbirth. ONS defines a stillbirth as a baby born without signs of life after at least 24 completed weeks of pregnancy. See [ONS definitions](#method-2-ref-birth-guide).
 
-ONS compiles observed births and maternities from civil registration, mainly by calendar year of occurrence, with some late registrations carried into the following year. Local figures use the mother's usual residence. ONS population projections provide **counts of live-born babies**, which we convert to maternities using a **births-to-maternities modifier**. We multiply those projected babies by an age-specific national maternity-to-live-birth ratio, then sum across ages. The result is an estimated maternity count. This report uses the 2022-based migration-category birth projection; the modifier is calculated from pooled 2023–2025 ONS maternity and live-birth counts within each age band. See the [conversion method](#method-2-maternity-conversion) and [ONS projection source](#method-2-ref-birth-projections).
+ONS compiles observed births and maternities from civil registration, mainly by calendar year of occurrence, with some late registrations carried into the following year. Local figures use the mother's usual residence. For Method 2, we pool the 2023–2025 ONS counts within each maternal age band, then divide **all maternities by live-born babies**. We multiply the 2022-based migration-category projection of live births by that age-specific **maternity-to-live-birth count ratio** and sum the estimates. The national numerator includes stillbirth-only maternities; the denominator contains actual live births. This method does not calculate expected babies from singleton, twin, triplet or four-plus shares. See the [conversion method](#method-2-maternity-conversion) and [ONS projection source](#method-2-ref-birth-projections).
 
 Birth rates are a secondary measure of demographic context. The later rate section shows live births per 1,000 women aged 15–44, using the same age range in every year. This rate is calculated separately from the maternity-count projection. The report therefore presents historical maternities, the conversion method and projected maternity counts before birth rates.
 
@@ -1306,7 +1262,7 @@ Birth rates are a secondary measure of demographic context. The later rate secti
 ### Core counting terms {#method-2-core-counting-terms}
 
 | Term | Plain-English meaning | Use in this analysis or pathway model |
-|----|----|----|
+|------------------------|------------------------|------------------------|
 | **Live birth** | One baby born showing signs of life. | The unit in the ONS birth projections used here. Two live-born twins count as two. |
 | **Stillbirth** | One baby born without signs of life at 24 or more completed weeks. | Excluded from live-birth counts; included in the definition of a maternity. |
 | **Total births** | Live births plus stillbirths: a count of babies. | Always specify “live births” or “total births”; the projected input here is live births. |
@@ -1321,18 +1277,18 @@ The ONS definitions above follow the [birth statistics user guide](https://www.o
 ### Terms used in the calculations {#method-2-terms-used-in-the-calculations}
 
 | Term | Meaning here |
-|----|----|
+|------------------------------------|------------------------------------|
 | **Observed / published count** | An ONS figure derived from registered events that have already happened. |
 | **Projected live births** | Future baby counts from the ONS demographic model, conditional on its assumptions. |
-| **Estimated / projected maternities** | Counts calculated by this analysis from observed or projected live births using a maternity modifier. |
-| **Maternity modifier / conversion ratio** | Pooled 2023–2025 ONS maternities divided by live births within each age band. It converts projected baby counts to estimated maternities; it is not a fertility rate. |
+| **Estimated / projected maternities** | Counts calculated by this analysis from observed or projected live births using the pooled count ratio. |
+| **Pooled count ratio** | Pooled 2023–2025 ONS maternities divided by live births within each age band. It converts projected baby counts to estimated maternities; it is not a fertility rate. |
 | **General fertility rate (GFR)** | Live births per 1,000 women aged 15–44 in this report. It describes frequency relative to population size, not the number needing care. |
 | **Age-specific fertility rate (ASFR)** | Live births per 1,000 women in the relevant age group. |
 | **Total fertility rate (TFR)** | Children per woman if the year's age-specific fertility rates applied throughout childbearing life. Not an annual maternity count. |
 
-**The conversion in one line:** projected live-born babies × maternity modifier = estimated maternities. Calculate this within each maternal age group, then add the results. Birth rates are a separate contextual measure and are not used instead of this conversion.
+**The conversion in one line:** projected live-born babies × pooled count ratio = estimated maternities. Calculate this within each maternal age group, then add the results. Birth rates are a separate contextual measure and are not used instead of this conversion.
 
-For illustration only, a modifier of **0.99** means an estimated **99 maternities for every 100 live-born babies**. A projection of 10,000 live births would therefore become 9,900 maternities if that modifier applied throughout. The actual analysis uses different age-specific modifiers. The ratio includes all maternities, including stillbirth-only maternities, in its numerator and live-born babies in its denominator.
+For illustration only, if the pooled records in one age band contained 98,000 maternities and 100,000 live births, the modifier would be **0.98**. Multiplying 10,000 projected live births in that band by 0.98 would give 9,800 estimated maternities. The analysis calculates this ratio separately for each age band from the actual 2023–2025 counts. Its numerator includes stillbirth-only maternities; its denominator counts live-born babies.
 
 ### Using these figures for pathway demand and capacity {#method-2-using-these-figures-for-pathway-demand-and-capacity}
 
@@ -1349,7 +1305,7 @@ Three further distinctions matter:
 The six authorities are Birmingham, Dudley, Sandwell, Solihull, Walsall and Wolverhampton. The following series are kept distinct:
 
 | Series | Period | Source and use |
-|----|----|----|
+|------------------------|------------------------|------------------------|
 | Observed live births | Calendar years 2013–2025 | Nomis local-authority counts, total and maternal age bands; shown directly and converted to estimated maternities. |
 | Observed GFR and maternities | Calendar years 2023–2025 | ONS registration workbooks, Tables 1 and 3; published values used directly. |
 | National maternities and live births by age and multiplicity | Calendar years 2023–2025 | Table 7; age-specific maternity and live-birth counts provide the modifiers. |
@@ -1502,62 +1458,25 @@ historic_trends |>
 ```
 :::
 
-## National multiplicity and maternity conversion {#method-2-maternity-conversion}
+## National maternity-to-live-birth count ratio {#method-2-maternity-conversion}
 
 Table 7 covers births occurring in England and Wales, including mothers resident elsewhere. It reports maternities and live births by maternal age, multiplicity and previous live-born children. We select the **any number of previous live-born children** rows so each category is counted once. Records with missing or implausible maternal ages are excluded from the age breakdowns.
 
-This method also retains **separate modifiers for each maternal age band**. It pools the 2023–2025 counts of all maternities and live births in each band, then calculates:
+For Method 2, Table 7's **All maternities** row supplies both counts in each maternal age band. We sum the 2023, 2024 and 2025 maternity counts, sum the corresponding live-birth counts, then divide the two pooled totals. The calculation produces a separate modifier for each age band:
 
-**Maternity modifier = total maternities ÷ total live births.**
+**Pooled count ratio = total maternities ÷ total live births.**
 
-**Estimated maternities = projected live births × maternity modifier.**
+**Estimated maternities = projected live births × pooled count ratio.**
 
 Apply the corresponding ratio to each projected maternal age group and sum the estimates. Pooling counts is equivalent to averaging the annual maternity-to-live-birth ratios with weights proportional to live births. It is not an equal-weight average of annual multiplicity proportions.
 
 The numerator includes maternities resulting only in stillbirth as well as those involving live births. The denominator uses actual live-born babies, including those from multiple pregnancies, so it does not require an assumed number of babies in the four-plus category. Applying this ratio to the national live-birth counts used to calculate it reproduces the corresponding national maternity count.
 
-**Assumptions and comparability:** the national ratio within each age band is assumed to apply locally and remain constant in future years. It captures the combined relationship of multiplicity and stillbirths, without separately projecting either. It is not a forecast of local stillbirths or a count of all pregnancies. Observed and projected periods still differ. The multiplicity tables below are retained for comparison with Method 1; here they are descriptive, while the final tab shows the ratios actually used.
+**Assumptions and comparability:** the national ratio within each age band is assumed to apply locally and remain constant in future years. It captures the combined relationship of multiplicity and stillbirths, without separately projecting either. It is not a forecast of local stillbirths or a count of all pregnancies. Observed and projected periods still differ. The table below shows the pooled-count ratios actually used.
 
-::: panel-tabset
-### Three-year average {#method-2-three-year-average}
+### Pooled-count maternity conversion ratios {#method-2-maternity-conversion-ratios}
 
-The table shows the arithmetic mean of the national maternity proportions reported for 2023, 2024 and 2025. These proportions are descriptive in Method 2; the modifier uses actual maternity and live-birth counts.
-
-```{r}
-#| label: method-2-multiplicity-average
-multiplicity_table(average_rates) |>
-  tab_source_note(
-    source_note = "Source: ONS Births in England and Wales: birth registrations, Table 7; 2023-2025."
-  )
-```
-
-### 2023 {#method-2-2023}
-
-```{r}
-#| label: method-2-multiplicity-2023
-multiplicity_table(multiplicity_data, 2023) |>
-  tab_source_note(source_note = "Source: ONS Births in England and Wales: birth registrations 2023, Table 7.")
-```
-
-### 2024 {#method-2-2024}
-
-```{r}
-#| label: method-2-multiplicity-2024
-multiplicity_table(multiplicity_data, 2024) |>
-  tab_source_note(source_note = "Source: ONS Births in England and Wales: birth registrations 2024, Table 7.")
-```
-
-### 2025 {#method-2-2025}
-
-```{r}
-#| label: method-2-multiplicity-2025
-multiplicity_table(multiplicity_data, 2025) |>
-  tab_source_note(source_note = "Source: ONS Births in England and Wales: birth registrations 2025, Table 7.")
-```
-
-### Maternity conversion ratios {#method-2-maternity-conversion-ratios}
-
-Multiply live births by the ratio for the corresponding age band. The 40+ row is used for projections; historic estimates use 40–44 and 45+ separately.
+The table reports the ratio used for each age band. Multiply live births by that band's pooled count ratio. The 40+ row is used for projections; historic estimates use 40–44 and 45+ separately. Unlike Method 1, these modifiers use the observed live-birth totals directly and do not use the average multiplicity proportions.
 
 ```{r}
 #| label: method-2-maternity-modifier
@@ -1568,7 +1487,7 @@ bind_rows(
   transmute(
     `Age band` = age_band,
     `Live births per maternity` = live_births_per_maternity,
-    `Maternity modifier` = maternity_modifier
+    `Pooled count ratio` = maternity_modifier
   ) |>
   gt() |>
   fmt_number(columns = where(is.numeric), decimals = 5) |>
@@ -1579,7 +1498,6 @@ bind_rows(
   ) |>
   tab_options(table.font.names = c("Open Sans", "Arial", "sans-serif"))
 ```
-:::
 
 ::: callout-note
 ## Comparable oldest age band {#method-2-comparable-oldest-age-band}
@@ -1595,7 +1513,7 @@ ONS represents fertility at model ages 15–44, assigning births below 15 to age
 
 We group the source rows into **under 20, 20–24, 25–29, 30–34, 35–39 and 40+**. Each group is multiplied by its national age-specific maternity-to-live-birth ratio. For 40+, Table 7 maternity and live-birth counts for 40–44 and 45+ are combined before division. This matches the projection’s boundary-age coverage, although it cannot separately retain the 45+ pattern within the projected 40+ group. The six estimates are summed for the total. Rounding can cause small differences between the sum of the source age groups and the published all-age birth total.
 
-The calculation for each authority and year is **projected live births in each age group × that group's maternity modifier, summed across age groups**. The resulting charts show maternity counts, not baby counts. All calculated age-group modifiers are below one, so the current conversion reduces projected baby counts using the national relationship between live births and all maternities.
+The calculation for each authority and year is **projected live births in each age group × that group's pooled count ratio, summed across age groups**. The resulting charts show maternity counts, not baby counts. All calculated age-group ratios are below one, so the current conversion reduces projected baby counts using the national relationship between live births and all maternities.
 
 Every value here, including 2023–2025, is calculated from projected births. The age profile and total retain the ONS projection assumptions and the fixed national conversion ratios; they are not published ONS maternity counts.
 
@@ -1879,7 +1797,7 @@ sources |>
   tab_options(table.font.names = c("Open Sans", "Arial", "sans-serif"))
 ```
 
-## Patient flows {#method-2-patient-flows}
+# Patient flows {#method-2-patient-flows}
 
 ### ICB of residence to ICB of birth {#method-2-icb-of-residence-to-icb-of-birth}
 
@@ -1948,7 +1866,7 @@ make_sankey(
 )
 ```
 
-## References {#method-2-references}
+# References {#method-2-references}
 
 1.  [ONS, *User guide to birth statistics*](https://www.ons.gov.uk/peoplepopulationandcommunity/birthsdeathsandmarriages/livebirths/methodologies/userguidetobirthstatistics).
 2.  [ONS, *Births in England and Wales: birth registrations*](https://www.ons.gov.uk/peoplepopulationandcommunity/birthsdeathsandmarriages/livebirths/datasets/birthsinenglandandwalesbirthregistrations).

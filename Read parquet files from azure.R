@@ -163,7 +163,7 @@ final_cohort_2326<- get_su_lakemart_parquet_file(
 )|>    janitor::clean_names()
 
 total_births_by_LA_2326<- get_su_lakemart_parquet_file(
-  "total_births_by_LA_2526.parquet/part",
+  "total_births_by_LA_2326.parquet/part",
   az_files,
   az_container
 )|>    janitor::clean_names()

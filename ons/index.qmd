@@ -1830,4 +1830,28 @@ cluster_activity$pathway_table
 cat(cluster_activity$pathway_text)
 cat("\n\n", cluster_activity$pathway_needed)
 ```
+
+## e. Antenatal start ICB sankeys
+
+```{r}
+#| label: cluster-activity-pathway-icb-sankeys
+#| eval: !expr cluster_activity_ready
+
+if (is.null(cluster_activity$pathway_icb_sankeys)) {
+  stop("Run ons/additional_analysis.R before rendering ons/index.qmd.")
+}
+htmltools::browsable(cluster_activity$pathway_icb_sankeys)
+```
+
+## f. Antenatal starts Trust sankeys
+
+```{r}
+#| label: cluster-activity-pathway-trust-sankeys
+#| eval: !expr cluster_activity_ready
+
+if (is.null(cluster_activity$pathway_trust_sankeys)) {
+  stop("Run ons/additional_analysis.R before rendering ons/index.qmd.")
+}
+htmltools::browsable(cluster_activity$pathway_trust_sankeys)
+```
 :::

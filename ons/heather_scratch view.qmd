@@ -1,6 +1,5 @@
 ---
 title: "Heather's scratch view"
-subtitle: "BBCS maternity: working charts"
 format:
   html:
     toc: true
@@ -19,7 +18,7 @@ scratch_file <- if (file.exists(".heather_scratch_objects.rds")) {
   "ons/.heather_scratch_objects.rds"
 }
 if (!file.exists(scratch_file)) {
-  stop("Run 'ons/additional_analysis.R' after Sarah's scripts, then render this QMD.")
+  stop("Run ons/additional_analysis.R before rendering.")
 }
 scratch <- readRDS(scratch_file)
 ```

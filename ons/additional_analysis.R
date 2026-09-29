@@ -1,14 +1,12 @@
-# Run order: from project root, run the two highlighted R scripts; then source("ons/additional_analysis.R")
-# Render: quarto render "ons/heather_scratch view.qmd" after this script finishes
-# Inputs in memory; save finished chart outputs for Quarto
+#Run Sarah's scripts first
 
 ## 1. Patient flows ----------------------------------------------------------
-# Inputs: existing icb_matrix_data and trust_matrix_data
+# Inputs: icb_matrix_data; trust_matrix_data
 if (!exists("icb_matrix_data") || !exists("trust_matrix_data")) {
   stop("Missing icb_matrix_data or trust_matrix_data in this R session.")
 }
 
-# Column aliases: add the secure table's actual column name here if a check fails
+# Flow columns
 pick_column <- function(data, choices) {
   found <- choices[choices %in% names(data)]
   if (length(found)) found[1] else NA_character_
@@ -84,7 +82,7 @@ trust_flow <- make_flows(
   names(trust_labels)[names(trust_labels) != "Other"]
 )
 
-# Chart: same labels, colours and hover measures as the ONS index Sankeys
+# Sankey charts
 make_sankey <- function(flow, labels, source_suffix, target_suffix) {
   links <- flow$links
   codes <- unique(c(links$source, links$target))
@@ -135,7 +133,7 @@ make_sankey <- function(flow, labels, source_suffix, target_suffix) {
     plotly::config(displayModeBar = FALSE, responsive = TRUE)
 }
 
-# Outputs: ready for the scratch view; add later analyses below this section
+# Chart objects
 icb_sankey <- make_sankey(icb_flow, icb_labels, " (residence)", " (birth)")
 trust_sankey <- make_sankey(trust_flow, trust_labels, " (booking)", " (birth)")
 patient_flow_details <- data.frame(
@@ -147,7 +145,7 @@ patient_flow_details <- data.frame(
   check.names = FALSE
 )
 
-# Quarto uses a new R session: hand over finished outputs, not raw patient records
+# Quarto hand-off: charts and counts
 scratch_dir <- if (file.exists("ons/additional_analysis.R")) "ons" else "."
 saveRDS(
   list(icb_sankey = icb_sankey, trust_sankey = trust_sankey,

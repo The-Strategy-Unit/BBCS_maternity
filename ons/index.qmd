@@ -1563,4 +1563,274 @@ readRDS(".patient_flows.rds")$icb_sankey
 readRDS(".patient_flows.rds")$trust_sankey
 ```
 
-# 5.  {#method-2-references}
+# 5. Patient flows by financial year {#patient-flows-by-year}
+
+2023/24 and 2024/25: birth providers outside the named ICBs grouped as Other ICBs.
+
+```{r}
+#| label: patient-flows-by-year-setup
+#| include: false
+#| eval: !expr file.exists(".patient_flows.rds")
+
+patient_flows_by_year <- readRDS(".patient_flows.rds")$by_year
+flow_years <- c("2023/24", "2024/25", "2025/26")
+if (any(vapply(flow_years, function(year) {
+  is.null(patient_flows_by_year[[year]]$icb_table) ||
+    is.null(patient_flows_by_year[[year]]$trust_table)
+}, logical(1)))) {
+  stop("Run ons/additional_analysis.R before rendering ons/index.qmd.")
+}
+```
+
+## ICB of residence to ICB of birth
+
+::: panel-tabset
+
+### 2023/24 Sankey
+
+```{r}
+#| label: patient-flow-icb-2324
+#| eval: !expr file.exists(".patient_flows.rds")
+#| fig-alt: "Sankey diagram from ICB of residence to ICB of birth, 2023/24."
+#| out-width: "100%"
+
+patient_flows_by_year[["2023/24"]]$icb_sankey
+```
+
+### 2023/24 Table
+
+```{r}
+#| label: patient-flow-icb-table-2324
+#| eval: !expr file.exists(".patient_flows.rds")
+
+patient_flows_by_year[["2023/24"]]$icb_table
+```
+
+### 2024/25 Sankey
+
+```{r}
+#| label: patient-flow-icb-2425
+#| eval: !expr file.exists(".patient_flows.rds")
+#| fig-alt: "Sankey diagram from ICB of residence to ICB of birth, 2024/25."
+#| out-width: "100%"
+
+patient_flows_by_year[["2024/25"]]$icb_sankey
+```
+
+### 2024/25 Table
+
+```{r}
+#| label: patient-flow-icb-table-2425
+#| eval: !expr file.exists(".patient_flows.rds")
+
+patient_flows_by_year[["2024/25"]]$icb_table
+```
+
+### 2025/26 Sankey
+
+```{r}
+#| label: patient-flow-icb-2526
+#| eval: !expr file.exists(".patient_flows.rds")
+#| fig-alt: "Sankey diagram from ICB of residence to ICB of birth, 2025/26."
+#| out-width: "100%"
+
+patient_flows_by_year[["2025/26"]]$icb_sankey
+```
+
+### 2025/26 Table
+
+```{r}
+#| label: patient-flow-icb-table-2526
+#| eval: !expr file.exists(".patient_flows.rds")
+
+patient_flows_by_year[["2025/26"]]$icb_table
+```
+:::
+
+## Booking trust to birth trust
+
+::: panel-tabset
+
+### 2023/24 Sankey
+
+```{r}
+#| label: patient-flow-trust-2324
+#| eval: !expr file.exists(".patient_flows.rds")
+#| fig-alt: "Sankey diagram from booking trust to birth trust, 2023/24."
+#| out-width: "100%"
+
+patient_flows_by_year[["2023/24"]]$trust_sankey
+```
+
+### 2023/24 Table
+
+```{r}
+#| label: patient-flow-trust-table-2324
+#| eval: !expr file.exists(".patient_flows.rds")
+
+patient_flows_by_year[["2023/24"]]$trust_table
+```
+
+### 2024/25 Sankey
+
+```{r}
+#| label: patient-flow-trust-2425
+#| eval: !expr file.exists(".patient_flows.rds")
+#| fig-alt: "Sankey diagram from booking trust to birth trust, 2024/25."
+#| out-width: "100%"
+
+patient_flows_by_year[["2024/25"]]$trust_sankey
+```
+
+### 2024/25 Table
+
+```{r}
+#| label: patient-flow-trust-table-2425
+#| eval: !expr file.exists(".patient_flows.rds")
+
+patient_flows_by_year[["2024/25"]]$trust_table
+```
+
+### 2025/26 Sankey
+
+```{r}
+#| label: patient-flow-trust-2526
+#| eval: !expr file.exists(".patient_flows.rds")
+#| fig-alt: "Sankey diagram from booking trust to birth trust, 2025/26."
+#| out-width: "100%"
+
+patient_flows_by_year[["2025/26"]]$trust_sankey
+```
+
+### 2025/26 Table
+
+```{r}
+#| label: patient-flow-trust-table-2526
+#| eval: !expr file.exists(".patient_flows.rds")
+
+patient_flows_by_year[["2025/26"]]$trust_table
+```
+:::
+
+# 6. Cluster deliveries and antenatal pathways {#cluster-activity}
+
+```{r}
+#| label: cluster-activity-setup
+#| include: false
+
+cluster_activity <- if (file.exists(".patient_flows.rds")) {
+  readRDS(".patient_flows.rds")$cluster_activity
+} else NULL
+cluster_activity_ready <- !is.null(cluster_activity) && isTRUE(cluster_activity$available)
+```
+
+```{r}
+#| label: cluster-activity-notes
+#| results: asis
+
+if (is.null(cluster_activity)) {
+  cat("Run ons/additional_analysis.R before rendering ons/index.qmd.")
+} else if (!cluster_activity_ready) {
+  cat(cluster_activity$missing)
+} else {
+  cat(cluster_activity$note, "\n\n", cluster_activity$excluded)
+}
+```
+
+::: panel-tabset
+
+## Total deliveries
+
+```{r}
+#| label: cluster-activity-total
+#| eval: !expr cluster_activity_ready
+
+cluster_activity$total_table
+```
+
+```{r}
+#| label: cluster-activity-total-text
+#| eval: !expr cluster_activity_ready
+#| results: asis
+
+cat(cluster_activity$total_text)
+```
+
+## a. Cluster residents
+
+```{r}
+#| label: cluster-activity-local
+#| eval: !expr cluster_activity_ready
+
+cluster_activity$local_table
+```
+
+```{r}
+#| label: cluster-activity-local-text
+#| eval: !expr cluster_activity_ready
+#| results: asis
+
+cat(cluster_activity$local_text)
+```
+
+## b. Outside residents — table
+
+```{r}
+#| label: cluster-activity-outside-table
+#| eval: !expr cluster_activity_ready
+
+cluster_activity$outside_table
+```
+
+```{r}
+#| label: cluster-activity-outside-table-text
+#| eval: !expr cluster_activity_ready
+#| results: asis
+
+cat(cluster_activity$outside_text)
+```
+
+## b. Outside residents — diagram
+
+```{r}
+#| label: cluster-activity-outside-diagram
+#| eval: !expr cluster_activity_ready
+
+cluster_activity$outside_diagram
+```
+
+## c. Change over time
+
+```{r}
+#| label: cluster-activity-trend
+#| eval: !expr cluster_activity_ready
+
+cluster_activity$trend_table
+```
+
+```{r}
+#| label: cluster-activity-trend-text
+#| eval: !expr cluster_activity_ready
+#| results: asis
+
+cat(cluster_activity$trend_text)
+```
+
+## d. Antenatal starts
+
+```{r}
+#| label: cluster-activity-pathway
+#| eval: !expr cluster_activity_ready
+
+cluster_activity$pathway_table
+```
+
+```{r}
+#| label: cluster-activity-pathway-text
+#| eval: !expr cluster_activity_ready
+#| results: asis
+
+cat(cluster_activity$pathway_text)
+cat("\n\n", cluster_activity$pathway_needed)
+```
+:::

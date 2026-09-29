@@ -1,5 +1,6 @@
 ---
 title: "Heather's scratch view"
+output-file: heather_scratch_view.html
 format:
   html:
     toc: true
@@ -17,10 +18,7 @@ scratch_file <- if (file.exists(".heather_scratch_objects.rds")) {
 } else {
   "ons/.heather_scratch_objects.rds"
 }
-if (!file.exists(scratch_file)) {
-  stop("Run ons/additional_analysis.R before rendering.")
-}
-scratch <- readRDS(scratch_file)
+scratch <- if (file.exists(scratch_file)) readRDS(scratch_file) else NULL
 ```
 
 # Patient Flows
@@ -31,7 +29,7 @@ scratch <- readRDS(scratch_file)
 #| label: patient-flow-icb
 #| fig-alt: "Sankey of records from ICB of residence to ICB of birth."
 #| out-width: "100%"
-scratch$icb_sankey
+if (!is.null(scratch)) scratch$icb_sankey
 ```
 
 ## Booking trust to birth trust
@@ -40,12 +38,14 @@ scratch$icb_sankey
 #| label: patient-flow-trust
 #| fig-alt: "Sankey of records from booking trust to birth trust."
 #| out-width: "100%"
-scratch$trust_sankey
+if (!is.null(scratch)) scratch$trust_sankey
 ```
 
 ## Counts and sources
 
 ```{r}
 #| label: patient-flow-details
-knitr::kable(scratch$patient_flow_details, format.args = list(big.mark = ","))
+if (!is.null(scratch)) {
+  knitr::kable(scratch$patient_flow_details, format.args = list(big.mark = ","))
+}
 ```

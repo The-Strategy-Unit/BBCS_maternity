@@ -3,6 +3,7 @@ project:
   output-dir: _site
   render:
     - index.qmd
+    - "heather_scratch view.qmd"
 
 website:
   title: "BBCS maternity: ONS analysis"

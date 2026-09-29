@@ -499,7 +499,7 @@ if (cluster_activity$available) {
     chart <- plotly::plot_ly(type = "sankey", height = 170,
       arrangement = "snap", orientation = "h",
       node = list(
-        label = c(paste0(organisation, " (starts)<br>", count_text(total)), percent_text(shares)),
+        label = c(count_text(total), percent_text(shares)),
         color = c("#005EB8", outcome_colours),
         x = c(0.01, rep(0.99, 4)), y = c(0.5, 0.08, 0.35, 0.62, 0.89),
         pad = 18, thickness = 18,
@@ -525,14 +525,16 @@ if (cluster_activity$available) {
     })
   }
 
-  # Two-column grid; independent percentages for each organisation
+  # ICBs: two columns; trusts: three columns
   pathway_grid <- function(level) {
     rows <- pathways[pathways$Level == level, ]
+    columns <- if (level == "Trust") 3L else 2L
     htmltools::tagList(pathway_legend,
-      htmltools::div(style = "display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px;",
+      htmltools::div(style = paste0("display: grid; grid-template-columns: repeat(",
+                                    columns, ", minmax(0, 1fr)); gap: 24px;"),
       htmltools::tagList(lapply(seq_len(nrow(rows)), function(i) {
         htmltools::div(style = "min-width: 0;",
-          htmltools::h3(rows$Organisation[i]),
+          htmltools::h3(htmltools::span(style = "font-size: calc(1em - 2px);", rows$Organisation[i])),
           make_pathway_sankey(rows[i, , drop = FALSE]))
       }))))
   }

@@ -18,7 +18,7 @@ Both methods estimate maternities from ONS projected live births using a factor 
 ## Pros and cons
 
 | Approach | Calculation within each age band | Pros | Cons / assumptions |
-|------------------|------------------|------------------|------------------|
+|----|----|----|----|
 | **Method 1: multiplicity** | Average the 2023–2025 annual proportions of singleton, twin, triplet and four-plus maternities. Modifier = 1 / (p1 + 2p2 + 3p3 + 4p4+). | Explicitly shows how multiple births translate babies into maternities. Retains age differences. Each year has equal weight. | Assumes the age-specific multiplicity mix stays constant and applies locally. Four-plus is approximated as four. Applied to live births, it does not separately account for stillbirth-only or mixed-outcome maternities, unlike the published all-maternity count. |
 | **Method 2: count ratio** | Pool 2023–2025 maternity counts and divide by pooled live births. | Retains age differences. Uses actual counts, including all maternities in the numerator. No four-plus approximation. Matches national live births to all maternities in the calibration data. | Assumes the age-specific national ratio stays constant and applies locally. Combines multiplicity and stillbirth effects, making them less explicit. Years with more live births receive more weight. |
 
@@ -240,7 +240,7 @@ Birth rates are a secondary measure of demographic context. The later rate secti
 ### Core counting terms {#method-1-core-counting-terms}
 
 | Term | Plain-English meaning | Use in this analysis or pathway model |
-|------------------------|------------------------|------------------------|
+|----|----|----|
 | **Live birth** | One baby born showing signs of life. | The unit in the ONS birth projections used here. Two live-born twins count as two. |
 | **Stillbirth** | One baby born without signs of life at 24 or more completed weeks. | Excluded from live-birth counts; included in the definition of a maternity. |
 | **Total births** | Live births plus stillbirths: a count of babies. | Always specify “live births” or “total births”; the projected input here is live births. |
@@ -255,7 +255,7 @@ The ONS definitions above follow the [birth statistics user guide](https://www.o
 ### Terms used in the calculations {#method-1-terms-used-in-the-calculations}
 
 | Term | Meaning here |
-|------------------------------------|------------------------------------|
+|----|----|
 | **Observed / published count** | An ONS figure derived from registered events that have already happened. |
 | **Projected live births** | Future baby counts from the ONS demographic model, conditional on its assumptions. |
 | **Estimated / projected maternities** | Counts calculated by this analysis from observed or projected live births using the multiplicity modifier. |
@@ -283,7 +283,7 @@ Three further distinctions matter:
 The six authorities are Birmingham, Dudley, Sandwell, Solihull, Walsall and Wolverhampton. The following series are kept distinct:
 
 | Series | Period | Source and use |
-|------------------------|------------------------|------------------------|
+|----|----|----|
 | Observed live births | Calendar years 2013–2025 | Nomis local-authority counts, total and maternal age bands; shown directly and converted to estimated maternities. |
 | Observed GFR and maternities | Calendar years 2023–2025 | ONS registration workbooks, Tables 1 and 3; published values used directly. |
 | National maternities and live births by age and multiplicity | Calendar years 2023–2025 | Table 7; age-specific multiplicity proportions provide the modifiers. |
@@ -995,7 +995,7 @@ Birth rates are a secondary measure of demographic context. The later rate secti
 ### Core counting terms {#method-2-core-counting-terms}
 
 | Term | Plain-English meaning | Use in this analysis or pathway model |
-|------------------------|------------------------|------------------------|
+|----|----|----|
 | **Live birth** | One baby born showing signs of life. | The unit in the ONS birth projections used here. Two live-born twins count as two. |
 | **Stillbirth** | One baby born without signs of life at 24 or more completed weeks. | Excluded from live-birth counts; included in the definition of a maternity. |
 | **Total births** | Live births plus stillbirths: a count of babies. | Always specify “live births” or “total births”; the projected input here is live births. |
@@ -1010,7 +1010,7 @@ The ONS definitions above follow the [birth statistics user guide](https://www.o
 ### Terms used in the calculations {#method-2-terms-used-in-the-calculations}
 
 | Term | Meaning here |
-|------------------------------------|------------------------------------|
+|----|----|
 | **Observed / published count** | An ONS figure derived from registered events that have already happened. |
 | **Projected live births** | Future baby counts from the ONS demographic model, conditional on its assumptions. |
 | **Estimated / projected maternities** | Counts calculated by this analysis from observed or projected live births using the pooled count ratio. |
@@ -1038,7 +1038,7 @@ Three further distinctions matter:
 The six authorities are Birmingham, Dudley, Sandwell, Solihull, Walsall and Wolverhampton. The following series are kept distinct:
 
 | Series | Period | Source and use |
-|------------------------|------------------------|------------------------|
+|----|----|----|
 | Observed live births | Calendar years 2013–2025 | Nomis local-authority counts, total and maternal age bands; shown directly and converted to estimated maternities. |
 | Observed GFR and maternities | Calendar years 2023–2025 | ONS registration workbooks, Tables 1 and 3; published values used directly. |
 | National maternities and live births by age and multiplicity | Calendar years 2023–2025 | Table 7; age-specific maternity and live-birth counts provide the modifiers. |
@@ -1585,7 +1585,6 @@ if (any(vapply(flow_years, function(year) {
 ## ICB of residence to ICB of birth
 
 ::: panel-tabset
-
 ### 2023/24 Sankey
 
 ```{r}
@@ -1650,7 +1649,6 @@ patient_flows_by_year[["2025/26"]]$icb_table
 ## Booking trust to birth trust
 
 ::: panel-tabset
-
 ### 2023/24 Sankey
 
 ```{r}
@@ -1738,7 +1736,6 @@ if (is.null(cluster_activity)) {
 ```
 
 ::: panel-tabset
-
 ## Total deliveries
 
 ```{r}

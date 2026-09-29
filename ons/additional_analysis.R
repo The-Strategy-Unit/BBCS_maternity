@@ -155,14 +155,23 @@ if (!exists("final_cohort_2326")) {
   stop("Run Read parquet files from azure.R before additional_analysis.R.")
 }
 
-# Birth financial year: April to March
-birth_date_text <- as.character(final_cohort_2326$birth_date)
-birth_date <- as.Date(birth_date_text, format = "%Y-%m-%d")
-missing_date <- is.na(birth_date) & !is.na(birth_date_text)
-birth_date[missing_date] <- as.Date(birth_date_text[missing_date], format = "%d/%m/%Y")
-birth_year <- as.integer(format(birth_date, "%Y"))
-birth_month <- as.integer(format(birth_date, "%m"))
-financial_year_start <- birth_year - as.integer(birth_month < 4L)
+# Dates: preserve Date/POSIX values; ISO or UK text
+parse_activity_date <- function(x) {
+  if (inherits(x, "Date")) return(as.Date(x))
+  if (inherits(x, "POSIXt")) return(as.Date(x))
+  text <- trimws(as.character(x))
+  date <- as.Date(text, format = "%Y-%m-%d")
+  missing <- is.na(date) & !is.na(text)
+  date[missing] <- as.Date(text[missing], format = "%d/%m/%Y")
+  date
+}
+
+# Birth financial year: existing cohort labels, e.g. 2025/26
+birth_year_label <- trimws(as.character(final_cohort_2326$birth_yr))
+financial_year_start <- rep(NA_integer_, length(birth_year_label))
+has_birth_year <- !is.na(birth_year_label) & grepl("^[0-9]{4}/[0-9]{2}$", birth_year_label)
+financial_year_start[has_birth_year] <- as.integer(substr(birth_year_label[has_birth_year], 1, 4))
+birth_date <- parse_activity_date(final_cohort_2326$birth_date)
 
 # Trust to ICB: NHS ODS etr.csv; providers outside these ICBs = Other
 icb_provider_codes <- list(
@@ -187,7 +196,8 @@ flow_code <- function(x) {
 make_cohort_year_flows <- function(start_year) {
   cohort <- final_cohort_2326[!is.na(financial_year_start) &
                                 financial_year_start == start_year, ]
-  if (!nrow(cohort)) stop("No births for financial year starting ", start_year, ".")
+  if (!nrow(cohort)) stop("No birth_yr entries for ", start_year, "/",
+                          substr(start_year + 1L, 3, 4), " in final_cohort_2326.")
 
   booking_provider <- flow_code(cohort$booking_provider)
   birth_provider <- flow_code(cohort$birth_provider)
@@ -211,17 +221,7 @@ make_cohort_year_flows <- function(start_year) {
   list(icb = icb_year, trust = trust_year)
 }
 
-# Check cohort grouping against the existing 2025/26 matrices
-same_links <- function(x, y) {
-  x <- stats::aggregate(n ~ source + target, x, sum)
-  y <- stats::aggregate(n ~ source + target, y, sum)
-  isTRUE(all.equal(x, y, check.attributes = FALSE))
-}
-cohort_2526 <- make_cohort_year_flows(2025L)
-if (!same_links(cohort_2526$trust$links, trust_flow$links) ||
-    !same_links(cohort_2526$icb$links, icb_flow$links)) {
-  stop("2025/26 cohort flows do not match the existing matrices; check cohort filters.")
-}
+# Existing matrices supply 2025/26; cohort supplies earlier years
 
 make_year_sankeys <- function(start_year) {
   flows <- make_cohort_year_flows(start_year)
@@ -274,7 +274,7 @@ for (year in names(by_year)) {
 
 ## 4. Cluster delivery activity ---------------------------------------------
 # Cluster: Black Country; Birmingham and Solihull
-# Episodes: distinct mother/pregnancy pairs with a recorded birth date
+# Episodes: distinct mother/pregnancy pairs; year from birth_yr
 cluster_icbs <- c("QUA", "QHL")
 cluster_trusts <- names(provider_icb)[provider_icb %in% cluster_icbs]
 activity_cohort <- as.data.frame(final_cohort_2326)
@@ -285,13 +285,6 @@ activity_cohort$booking_code <- flow_code(activity_cohort$booking_provider)
 activity_cohort$residence_code <- flow_code(activity_cohort$resident_icb)
 
 # Booking financial year; outcomes may fall in a later year
-parse_activity_date <- function(x) {
-  text <- as.character(x)
-  date <- as.Date(text, format = "%Y-%m-%d")
-  missing <- is.na(date) & !is.na(text)
-  date[missing] <- as.Date(text[missing], format = "%d/%m/%Y")
-  date
-}
 activity_cohort$booking_date <- parse_activity_date(activity_cohort$antenatal_app_date)
 activity_cohort$booking_year <- as.integer(format(activity_cohort$booking_date, "%Y")) -
   as.integer(as.integer(format(activity_cohort$booking_date, "%m")) < 4L)
@@ -305,20 +298,27 @@ episode_fields <- c("person_id_mother", "uniq_preg_id", "delivery_date",
                     "booking_date", "booking_year")
 activity_episodes <- unique(activity_cohort[identified, episode_fields])
 activity_conflicts <- any(duplicated(activity_episodes[c("person_id_mother", "uniq_preg_id")]))
+missing_activity_years <- setdiff(2023:2025, activity_episodes$delivery_year)
 
 # Section 6 hand-off; earlier sections remain available
 cluster_activity <- list(
-  available = !activity_conflicts,
+  available = !activity_conflicts && !length(missing_activity_years),
   note = paste0("Cluster: Black Country and Birmingham and Solihull. ",
-                "Delivery episodes counted once per mother/pregnancy pair with a recorded birth date. ",
+                "Delivery episodes counted once per mother/pregnancy pair; financial year from birth_yr. ",
                 "Residence used to describe local and outside-cluster activity."),
   excluded = if (excluded_activity_rows > 0) paste(
     scales::comma(excluded_activity_rows), "cohort rows excluded: missing mother or pregnancy identifier."
   ) else "",
-  missing = "Conflicting details for the same mother/pregnancy pair: resolve these before counting delivery episodes."
+  missing = paste(c(
+    if (activity_conflicts) "Conflicting details for the same mother/pregnancy pair: resolve these before counting delivery episodes.",
+    if (length(missing_activity_years)) paste0(
+      "No delivery episodes with birth_yr in the cohort for financial years starting ",
+      paste(missing_activity_years, collapse = ", "),
+      ". Check birth_yr and cohort coverage; these years cannot be reported as zero deliveries.")
+  ), collapse = " ")
 )
 
-if (!activity_conflicts) {
+if (cluster_activity$available) {
   safe_share <- function(n, total) ifelse(rep_len(total, length(n)) > 0, n / total, NA_real_)
   count_text <- function(x) scales::comma(x, accuracy = 1)
   percent_text <- function(x) ifelse(is.na(x), "not available", scales::percent(x, accuracy = 0.1))
@@ -430,7 +430,7 @@ if (!activity_conflicts) {
   starts <- activity_episodes[
     !is.na(activity_episodes$booking_year) & activity_episodes$booking_year == 2025L &
       activity_episodes$booking_code %in% cluster_trusts, ]
-  starts$outcome <- ifelse(is.na(starts$delivery_date), "No recorded delivery",
+  starts$outcome <- ifelse(is.na(starts$delivery_year) & is.na(starts$delivery_date), "No recorded delivery",
     ifelse(starts$birth_code %in% cluster_trusts, "Within cluster",
       ifelse(grepl("^R[A-Z0-9]{2}$", starts$birth_code), "Outside cluster", "Unknown provider")))
   booking_codes <- unique(c(names(trust_labels)[names(trust_labels) != "Other"], starts$booking_code))

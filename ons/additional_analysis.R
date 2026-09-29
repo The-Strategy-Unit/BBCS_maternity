@@ -1,4 +1,5 @@
-#Run Sarah's scripts first
+# Run: Read parquet files from azure.R; matrix of booking appts and births.R
+# Then: source("ons/additional_analysis.R")
 
 ## 1. Patient flows ----------------------------------------------------------
 # Inputs: icb_matrix_data; trust_matrix_data
@@ -41,9 +42,8 @@ make_flows <- function(tables, source_choices, target_choices, keep_codes) {
                           source_code[valid], "Other")
     target_code <- ifelse(target_code[valid] %in% keep_codes,
                           target_code[valid], "Other")
-    links <- aggregate(count[valid],
-                       by = list(source = source_code, target = target_code), sum)
-    names(links)[3] <- "n"
+    links <- data.frame(source = source_code, target = target_code,
+                        n = count[valid])
     return(list(links = links, table = table_name, count_basis = count_basis,
                 source_column = from, target_column = to))
   }
@@ -83,17 +83,23 @@ trust_flow <- make_flows(
 )
 
 # Sankey charts
-make_sankey <- function(flow, labels, source_suffix, target_suffix) {
+icb_source_order <- c("QJ2", "QWU", "QUA", "QHL", "Other", "QGH", "QOC", "QNC")
+icb_target_order <- c("Other", "QUA", "QWU", "QJ2", "QHL", "QNC", "QGH", "QOC")
+trust_source_order <- c("RNA", "RXK", "RBK", "RL4", "Other", "RRK", "RQ3")
+trust_target_order <- c("RNA", "RL4", "RQ3", "RXK", "Other", "RBK", "RRK")
+
+make_sankey <- function(flow, labels, source_suffix, target_suffix,
+                        source_order, target_order) {
   links <- flow$links
-  codes <- unique(c(links$source, links$target))
+  codes <- unique(c(source_order, target_order))
   palette <- c("#005EB8", "#D55E00", "#00856A", "#8E5EA2",
                "#B07300", "#C44E52", "#4477AA", "#727272")
   colours <- setNames(palette[seq_along(codes)], codes)
   display_label <- function(x) unname(labels[x])
   total <- sum(links$n)
 
-  source_nodes <- unique(links$source)
-  target_nodes <- unique(links$target)
+  source_nodes <- source_order[source_order %in% links$source]
+  target_nodes <- target_order[target_order %in% links$target]
   node_codes <- c(source_nodes, target_nodes)
   node_labels <- c(paste0(display_label(source_nodes), source_suffix),
                    paste0(display_label(target_nodes), target_suffix))
@@ -134,21 +140,18 @@ make_sankey <- function(flow, labels, source_suffix, target_suffix) {
 }
 
 # Chart objects
-icb_sankey <- make_sankey(icb_flow, icb_labels, " (residence)", " (birth)")
-trust_sankey <- make_sankey(trust_flow, trust_labels, " (booking)", " (birth)")
-patient_flow_details <- data.frame(
-  Chart = c("ICB residence to birth", "Booking to birth trust"),
-  `Source table` = c(icb_flow$table, trust_flow$table),
-  `Count basis` = c(icb_flow$count_basis, trust_flow$count_basis),
-  Records = c(sum(icb_flow$links$n), sum(trust_flow$links$n)),
-  Links = c(nrow(icb_flow$links), nrow(trust_flow$links)),
-  check.names = FALSE
+icb_sankey <- make_sankey(
+  icb_flow, icb_labels, " (residence)", " (birth)",
+  icb_source_order, icb_target_order
+)
+trust_sankey <- make_sankey(
+  trust_flow, trust_labels, " (booking)", " (birth)",
+  trust_source_order, trust_target_order
 )
 
-# Quarto hand-off: charts and counts
-scratch_dir <- if (file.exists("ons/additional_analysis.R")) "ons" else "."
+# Index report hand-off
+analysis_dir <- if (file.exists("ons/additional_analysis.R")) "ons" else "."
 saveRDS(
-  list(icb_sankey = icb_sankey, trust_sankey = trust_sankey,
-       patient_flow_details = patient_flow_details),
-  file.path(scratch_dir, ".heather_scratch_objects.rds")
+  list(icb_sankey = icb_sankey, trust_sankey = trust_sankey),
+  file.path(analysis_dir, ".patient_flows.rds")
 )

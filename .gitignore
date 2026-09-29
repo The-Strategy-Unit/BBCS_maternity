@@ -15,7 +15,6 @@
 !/ons/.gitignore
 !/ons/index.qmd
 !/ons/additional_analysis.R
-!/ons/heather_scratch view.qmd
 !/ons/R/ons_data.R
 !/ons/_quarto.yml
 !/ons/_brand.yml

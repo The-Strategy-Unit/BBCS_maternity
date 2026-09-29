@@ -8,7 +8,7 @@ format:
     toc-depth: 2
 ---
 
-# Comparison {#comparison}
+# 1. Comparison {#comparison}
 
 Both methods estimate maternities from ONS projected live births using a factor for each maternal age band. **Method 1 calculates a multiplicity modifier from averaged singleton and multiple-maternity shares; Method 2 calculates a pooled count ratio from all maternities divided by live births.** Neither applies a single all-age factor. They use the same source files, projection variant, age grouping, observed 2023–2025 maternity counts and chart layout. Birth rates are identical in both method sections and provide secondary context.
 
@@ -18,7 +18,7 @@ Both methods estimate maternities from ONS projected live births using a factor 
 ## Pros and cons
 
 | Approach | Calculation within each age band | Pros | Cons / assumptions |
-|----|----|----|----|
+|------------------|------------------|------------------|------------------|
 | **Method 1: multiplicity** | Average the 2023–2025 annual proportions of singleton, twin, triplet and four-plus maternities. Modifier = 1 / (p1 + 2p2 + 3p3 + 4p4+). | Explicitly shows how multiple births translate babies into maternities. Retains age differences. Each year has equal weight. | Assumes the age-specific multiplicity mix stays constant and applies locally. Four-plus is approximated as four. Applied to live births, it does not separately account for stillbirth-only or mixed-outcome maternities, unlike the published all-maternity count. |
 | **Method 2: count ratio** | Pool 2023–2025 maternity counts and divide by pooled live births. | Retains age differences. Uses actual counts, including all maternities in the numerator. No four-plus approximation. Matches national live births to all maternities in the calibration data. | Assumes the age-specific national ratio stays constant and applies locally. Combines multiplicity and stillbirth effects, making them less explicit. Years with more live births receive more weight. |
 
@@ -28,7 +28,7 @@ Both methods estimate maternities from ONS projected live births using a factor 
 
 Definitions and detailed assumptions are included in each method section. See the [ONS definitions](https://www.ons.gov.uk/peoplepopulationandcommunity/birthsdeathsandmarriages/livebirths/methodologies/userguidetobirthstatistics) and [ONS projection method](https://www.ons.gov.uk/peoplepopulationandcommunity/populationandmigration/populationprojections/methodologies/methodologyusedtoproducethe2022basedsubnationalpopulationsprojectionsforengland).
 
-# Method 1 report {#method-1}
+# 2. Method 1 report {#method-1}
 
 ```{r}
 #| label: method-1-setup
@@ -97,105 +97,6 @@ projected_trajectory <- total_maternity_projections |>
   transmute(area_name, year, maternities = projected_maternities)
 
 area_colours <- area_colour_palette(area_config)
-
-make_sankey <- function(data, source, target, labels, source_suffix, target_suffix) {
-  links <- data |>
-    transmute(
-      source_code = as.character({{ source }}),
-      target_code = as.character({{ target }}),
-      value = as.numeric(n)
-    ) |>
-    filter(!is.na(source_code), !is.na(target_code), !is.na(value), value > 0)
-
-  source_totals <- links |>
-    group_by(source_code) |>
-    summarise(source_total = sum(value), .groups = "drop")
-  target_totals <- links |>
-    group_by(target_code) |>
-    summarise(target_total = sum(value), .groups = "drop")
-  all_total <- sum(links$value)
-
-  # Keep the same organisation colour on both sides; tint each band by its origin.
-  codes <- unique(c(links$source_code, links$target_code))
-  palette <- c("#005EB8", "#D55E00", "#00856A", "#8E5EA2",
-               "#B07300", "#C44E52", "#4477AA", "#727272")
-  code_colours <- setNames(palette[seq_along(codes)], codes)
-  band_colours <- setNames(
-    grDevices::adjustcolor(unname(code_colours), alpha.f = 0.48), codes
-  )
-
-  code_label <- function(code) {
-    mapped <- unname(labels[code])
-    if_else(is.na(mapped), code, mapped)
-  }
-
-  source_nodes <- links |>
-    distinct(code = source_code) |>
-    left_join(source_totals, by = c("code" = "source_code")) |>
-    mutate(id = paste0("source::", code), label = paste0(code_label(code), source_suffix),
-           share = source_total / all_total)
-  target_nodes <- links |>
-    distinct(code = target_code) |>
-    left_join(target_totals, by = c("code" = "target_code")) |>
-    mutate(id = paste0("target::", code), label = paste0(code_label(code), target_suffix),
-           share = target_total / all_total)
-  nodes <- bind_rows(source_nodes, target_nodes) |>
-    mutate(node_id = row_number() - 1L)
-
-  links <- links |>
-    mutate(
-      source_id = match(paste0("source::", source_code), nodes$id) - 1L,
-      target_id = match(paste0("target::", target_code), nodes$id) - 1L,
-      source_label = code_label(source_code),
-      target_label = code_label(target_code)
-    ) |>
-    left_join(source_totals, by = "source_code") |>
-    mutate(
-      source_share = value / source_total,
-      overall_share = value / all_total,
-      hover = paste0(
-        source_label, " to ", target_label,
-        "<br>Records: ", scales::comma(value),
-        "<br>", scales::percent(source_share, accuracy = 0.1),
-        " of records from this origin",
-        "<br>", scales::percent(overall_share, accuracy = 0.1),
-        " of all records"
-      )
-    )
-
-  node_colours <- unname(code_colours[nodes$code])
-
-  plot_ly(
-    type = "sankey",
-    height = max(500, nrow(nodes) * 38),
-    orientation = "h",
-    arrangement = "snap",
-    node = list(
-      label = nodes$label,
-      color = node_colours,
-      customdata = scales::percent(nodes$share, accuracy = 0.1),
-      pad = 14,
-      thickness = 18,
-      line = list(color = "rgba(44,40,37,0.35)", width = 0.5),
-      hovertemplate = "%{label}<br>Records: %{value:,.0f}<br>%{customdata} of all records<extra></extra>"
-    ),
-    link = list(
-      source = links$source_id,
-      target = links$target_id,
-      value = links$value,
-      color = unname(band_colours[links$source_code]),
-      customdata = links$hover,
-      hovertemplate = "%{customdata}<extra></extra>"
-    )
-  ) |>
-    layout(
-      font = list(family = "Arial", size = 11, color = "#2c2825"),
-      margin = list(l = 12, r = 12, t = 18, b = 18),
-      paper_bgcolor = "white",
-      plot_bgcolor = "white"
-    ) |>
-    config(displayModeBar = FALSE, responsive = TRUE)
-}
 
 projection_plot <- function(data, caption) {
   ggplot(
@@ -339,7 +240,7 @@ Birth rates are a secondary measure of demographic context. The later rate secti
 ### Core counting terms {#method-1-core-counting-terms}
 
 | Term | Plain-English meaning | Use in this analysis or pathway model |
-|----|----|----|
+|------------------------|------------------------|------------------------|
 | **Live birth** | One baby born showing signs of life. | The unit in the ONS birth projections used here. Two live-born twins count as two. |
 | **Stillbirth** | One baby born without signs of life at 24 or more completed weeks. | Excluded from live-birth counts; included in the definition of a maternity. |
 | **Total births** | Live births plus stillbirths: a count of babies. | Always specify “live births” or “total births”; the projected input here is live births. |
@@ -354,7 +255,7 @@ The ONS definitions above follow the [birth statistics user guide](https://www.o
 ### Terms used in the calculations {#method-1-terms-used-in-the-calculations}
 
 | Term | Meaning here |
-|----|----|
+|------------------------------------|------------------------------------|
 | **Observed / published count** | An ONS figure derived from registered events that have already happened. |
 | **Projected live births** | Future baby counts from the ONS demographic model, conditional on its assumptions. |
 | **Estimated / projected maternities** | Counts calculated by this analysis from observed or projected live births using the multiplicity modifier. |
@@ -382,7 +283,7 @@ Three further distinctions matter:
 The six authorities are Birmingham, Dudley, Sandwell, Solihull, Walsall and Wolverhampton. The following series are kept distinct:
 
 | Series | Period | Source and use |
-|----|----|----|
+|------------------------|------------------------|------------------------|
 | Observed live births | Calendar years 2013–2025 | Nomis local-authority counts, total and maternal age bands; shown directly and converted to estimated maternities. |
 | Observed GFR and maternities | Calendar years 2023–2025 | ONS registration workbooks, Tables 1 and 3; published values used directly. |
 | National maternities and live births by age and multiplicity | Calendar years 2023–2025 | Table 7; age-specific multiplicity proportions provide the modifiers. |
@@ -916,76 +817,7 @@ sources |>
   tab_options(table.font.names = c("Open Sans", "Arial", "sans-serif"))
 ```
 
-# Patient flows {#method-1-patient-flows}
-
-### ICB of residence to ICB of birth {#method-1-icb-of-residence-to-icb-of-birth}
-
-```{r}
-#| label: method-1-patient-flow-icb
-#| eval: !expr file.exists("sankey data/icb_matrix_data (1).csv")
-#| fig-alt: "Sankey diagram showing supplied record counts from ICB of residence on the left to ICB of birth on the right."
-#| out-width: "100%"
-
-icb_labels <- c(
-  QHL = "Birmingham and Solihull ICB",
-  QUA = "Black Country ICB",
-  QNC = "Staffordshire and Stoke-on-Trent ICB",
-  QWU = "Coventry and Warwickshire ICB",
-  QGH = "Herefordshire and Worcestershire ICB",
-  QOC = "Shropshire, Telford and Wrekin ICB",
-  QJ2 = "Leicester, Leicestershire and Rutland ICB",
-  Other = "Other ICBs"
-)
-
-icb_flows <- read.csv(
-  "sankey data/icb_matrix_data (1).csv",
-  row.names = 1
-)
-
-make_sankey(
-  icb_flows,
-  resident_icb_interest,
-  birth_icb_interest,
-  icb_labels,
-  " (residence)",
-  " (birth)"
-)
-```
-
-### Booking trust to birth trust {#method-1-booking-trust-to-birth-trust}
-
-```{r}
-#| label: method-1-patient-flow-trust
-#| eval: !expr file.exists("sankey data/trust_matrix_data (1).csv")
-#| fig-alt: "Sankey diagram showing supplied record counts from trust at booking appointment on the left to trust responsible for the birth spell on the right."
-#| out-width: "100%"
-
-trust_labels <- c(
-  RBK = "Walsall Healthcare NHS Trust",
-  RL4 = "The Royal Wolverhampton NHS Trust",
-  RNA = "The Dudley Group NHS Foundation Trust",
-  RQ3 = "Birmingham Women's and Children's NHS Foundation Trust",
-  RRK = "University Hospitals Birmingham NHS Foundation Trust",
-  RXK = "Sandwell and West Birmingham NHS Trust",
-  Other = "Other trusts"
-)
-
-trust_flows <- read.csv(
-  "sankey data/trust_matrix_data (1).csv",
-  row.names = 1
-)
-
-make_sankey(
-  trust_flows,
-  booking_provider_grouped,
-  birth_provider_grouped,
-  trust_labels,
-  " (booking)",
-  " (birth)"
-)
-```
-
-# References {#method-1-references}
+## References {#method-1-references}
 
 1.  [ONS, *User guide to birth statistics*](https://www.ons.gov.uk/peoplepopulationandcommunity/birthsdeathsandmarriages/livebirths/methodologies/userguidetobirthstatistics).
 2.  [ONS, *Births in England and Wales: birth registrations*](https://www.ons.gov.uk/peoplepopulationandcommunity/birthsdeathsandmarriages/livebirths/datasets/birthsinenglandandwalesbirthregistrations).
@@ -994,7 +826,7 @@ make_sankey(
 5.  [ONS, *Birth projections by age of mother: corrected 2022-based migration-category variant*](https://www.ons.gov.uk/peoplepopulationandcommunity/populationandmigration/populationprojections/datasets/birthsbyageofmotherz3).
 6.  [ONS, *Local authority population projections: 2022-based migration-category variant*](https://www.ons.gov.uk/peoplepopulationandcommunity/populationandmigration/populationprojections/datasets/localauthoritiesinenglandz1); [Nomis population extract](https://www.nomisweb.co.uk/datasets/ppsyoala).
 
-# Method 2 report {#method-2}
+# 3. Method 2 report {#method-2}
 
 ```{r}
 #| label: method-2-setup
@@ -1063,105 +895,6 @@ projected_trajectory <- total_maternity_projections |>
   transmute(area_name, year, maternities = projected_maternities)
 
 area_colours <- area_colour_palette(area_config)
-
-make_sankey <- function(data, source, target, labels, source_suffix, target_suffix) {
-  links <- data |>
-    transmute(
-      source_code = as.character({{ source }}),
-      target_code = as.character({{ target }}),
-      value = as.numeric(n)
-    ) |>
-    filter(!is.na(source_code), !is.na(target_code), !is.na(value), value > 0)
-
-  source_totals <- links |>
-    group_by(source_code) |>
-    summarise(source_total = sum(value), .groups = "drop")
-  target_totals <- links |>
-    group_by(target_code) |>
-    summarise(target_total = sum(value), .groups = "drop")
-  all_total <- sum(links$value)
-
-  # Keep the same organisation colour on both sides; tint each band by its origin.
-  codes <- unique(c(links$source_code, links$target_code))
-  palette <- c("#005EB8", "#D55E00", "#00856A", "#8E5EA2",
-               "#B07300", "#C44E52", "#4477AA", "#727272")
-  code_colours <- setNames(palette[seq_along(codes)], codes)
-  band_colours <- setNames(
-    grDevices::adjustcolor(unname(code_colours), alpha.f = 0.48), codes
-  )
-
-  code_label <- function(code) {
-    mapped <- unname(labels[code])
-    if_else(is.na(mapped), code, mapped)
-  }
-
-  source_nodes <- links |>
-    distinct(code = source_code) |>
-    left_join(source_totals, by = c("code" = "source_code")) |>
-    mutate(id = paste0("source::", code), label = paste0(code_label(code), source_suffix),
-           share = source_total / all_total)
-  target_nodes <- links |>
-    distinct(code = target_code) |>
-    left_join(target_totals, by = c("code" = "target_code")) |>
-    mutate(id = paste0("target::", code), label = paste0(code_label(code), target_suffix),
-           share = target_total / all_total)
-  nodes <- bind_rows(source_nodes, target_nodes) |>
-    mutate(node_id = row_number() - 1L)
-
-  links <- links |>
-    mutate(
-      source_id = match(paste0("source::", source_code), nodes$id) - 1L,
-      target_id = match(paste0("target::", target_code), nodes$id) - 1L,
-      source_label = code_label(source_code),
-      target_label = code_label(target_code)
-    ) |>
-    left_join(source_totals, by = "source_code") |>
-    mutate(
-      source_share = value / source_total,
-      overall_share = value / all_total,
-      hover = paste0(
-        source_label, " to ", target_label,
-        "<br>Records: ", scales::comma(value),
-        "<br>", scales::percent(source_share, accuracy = 0.1),
-        " of records from this origin",
-        "<br>", scales::percent(overall_share, accuracy = 0.1),
-        " of all records"
-      )
-    )
-
-  node_colours <- unname(code_colours[nodes$code])
-
-  plot_ly(
-    type = "sankey",
-    height = max(500, nrow(nodes) * 38),
-    orientation = "h",
-    arrangement = "snap",
-    node = list(
-      label = nodes$label,
-      color = node_colours,
-      customdata = scales::percent(nodes$share, accuracy = 0.1),
-      pad = 14,
-      thickness = 18,
-      line = list(color = "rgba(44,40,37,0.35)", width = 0.5),
-      hovertemplate = "%{label}<br>Records: %{value:,.0f}<br>%{customdata} of all records<extra></extra>"
-    ),
-    link = list(
-      source = links$source_id,
-      target = links$target_id,
-      value = links$value,
-      color = unname(band_colours[links$source_code]),
-      customdata = links$hover,
-      hovertemplate = "%{customdata}<extra></extra>"
-    )
-  ) |>
-    layout(
-      font = list(family = "Arial", size = 11, color = "#2c2825"),
-      margin = list(l = 12, r = 12, t = 18, b = 18),
-      paper_bgcolor = "white",
-      plot_bgcolor = "white"
-    ) |>
-    config(displayModeBar = FALSE, responsive = TRUE)
-}
 
 projection_plot <- function(data, caption) {
   ggplot(
@@ -1262,7 +995,7 @@ Birth rates are a secondary measure of demographic context. The later rate secti
 ### Core counting terms {#method-2-core-counting-terms}
 
 | Term | Plain-English meaning | Use in this analysis or pathway model |
-|----|----|----|
+|------------------------|------------------------|------------------------|
 | **Live birth** | One baby born showing signs of life. | The unit in the ONS birth projections used here. Two live-born twins count as two. |
 | **Stillbirth** | One baby born without signs of life at 24 or more completed weeks. | Excluded from live-birth counts; included in the definition of a maternity. |
 | **Total births** | Live births plus stillbirths: a count of babies. | Always specify “live births” or “total births”; the projected input here is live births. |
@@ -1277,7 +1010,7 @@ The ONS definitions above follow the [birth statistics user guide](https://www.o
 ### Terms used in the calculations {#method-2-terms-used-in-the-calculations}
 
 | Term | Meaning here |
-|----|----|
+|------------------------------------|------------------------------------|
 | **Observed / published count** | An ONS figure derived from registered events that have already happened. |
 | **Projected live births** | Future baby counts from the ONS demographic model, conditional on its assumptions. |
 | **Estimated / projected maternities** | Counts calculated by this analysis from observed or projected live births using the pooled count ratio. |
@@ -1305,7 +1038,7 @@ Three further distinctions matter:
 The six authorities are Birmingham, Dudley, Sandwell, Solihull, Walsall and Wolverhampton. The following series are kept distinct:
 
 | Series | Period | Source and use |
-|----|----|----|
+|------------------------|------------------------|------------------------|
 | Observed live births | Calendar years 2013–2025 | Nomis local-authority counts, total and maternal age bands; shown directly and converted to estimated maternities. |
 | Observed GFR and maternities | Calendar years 2023–2025 | ONS registration workbooks, Tables 1 and 3; published values used directly. |
 | National maternities and live births by age and multiplicity | Calendar years 2023–2025 | Table 7; age-specific maternity and live-birth counts provide the modifiers. |
@@ -1797,76 +1530,7 @@ sources |>
   tab_options(table.font.names = c("Open Sans", "Arial", "sans-serif"))
 ```
 
-# Patient flows {#method-2-patient-flows}
-
-### ICB of residence to ICB of birth {#method-2-icb-of-residence-to-icb-of-birth}
-
-```{r}
-#| label: method-2-patient-flow-icb
-#| eval: !expr file.exists("sankey data/icb_matrix_data (1).csv")
-#| fig-alt: "Sankey diagram showing supplied record counts from ICB of residence on the left to ICB of birth on the right."
-#| out-width: "100%"
-
-icb_labels <- c(
-  QHL = "Birmingham and Solihull ICB",
-  QUA = "Black Country ICB",
-  QNC = "Staffordshire and Stoke-on-Trent ICB",
-  QWU = "Coventry and Warwickshire ICB",
-  QGH = "Herefordshire and Worcestershire ICB",
-  QOC = "Shropshire, Telford and Wrekin ICB",
-  QJ2 = "Leicester, Leicestershire and Rutland ICB",
-  Other = "Other ICBs"
-)
-
-icb_flows <- read.csv(
-  "sankey data/icb_matrix_data (1).csv",
-  row.names = 1
-)
-
-make_sankey(
-  icb_flows,
-  resident_icb_interest,
-  birth_icb_interest,
-  icb_labels,
-  " (residence)",
-  " (birth)"
-)
-```
-
-### Booking trust to birth trust {#method-2-booking-trust-to-birth-trust}
-
-```{r}
-#| label: method-2-patient-flow-trust
-#| eval: !expr file.exists("sankey data/trust_matrix_data (1).csv")
-#| fig-alt: "Sankey diagram showing supplied record counts from trust at booking appointment on the left to trust responsible for the birth spell on the right."
-#| out-width: "100%"
-
-trust_labels <- c(
-  RBK = "Walsall Healthcare NHS Trust",
-  RL4 = "The Royal Wolverhampton NHS Trust",
-  RNA = "The Dudley Group NHS Foundation Trust",
-  RQ3 = "Birmingham Women's and Children's NHS Foundation Trust",
-  RRK = "University Hospitals Birmingham NHS Foundation Trust",
-  RXK = "Sandwell and West Birmingham NHS Trust",
-  Other = "Other trusts"
-)
-
-trust_flows <- read.csv(
-  "sankey data/trust_matrix_data (1).csv",
-  row.names = 1
-)
-
-make_sankey(
-  trust_flows,
-  booking_provider_grouped,
-  birth_provider_grouped,
-  trust_labels,
-  " (booking)",
-  " (birth)"
-)
-```
-
-# References {#method-2-references}
+## References {#method-2-patient-flows}
 
 1.  [ONS, *User guide to birth statistics*](https://www.ons.gov.uk/peoplepopulationandcommunity/birthsdeathsandmarriages/livebirths/methodologies/userguidetobirthstatistics).
 2.  [ONS, *Births in England and Wales: birth registrations*](https://www.ons.gov.uk/peoplepopulationandcommunity/birthsdeathsandmarriages/livebirths/datasets/birthsinenglandandwalesbirthregistrations).
@@ -1874,3 +1538,29 @@ make_sankey(
 4.  [ONS, *Methodology used to produce the 2022-based subnational population projections for England*](https://www.ons.gov.uk/peoplepopulationandcommunity/populationandmigration/populationprojections/methodologies/methodologyusedtoproducethe2022basedsubnationalpopulationsprojectionsforengland).
 5.  [ONS, *Birth projections by age of mother: corrected 2022-based migration-category variant*](https://www.ons.gov.uk/peoplepopulationandcommunity/populationandmigration/populationprojections/datasets/birthsbyageofmotherz3).
 6.  [ONS, *Local authority population projections: 2022-based migration-category variant*](https://www.ons.gov.uk/peoplepopulationandcommunity/populationandmigration/populationprojections/datasets/localauthoritiesinenglandz1); [Nomis population extract](https://www.nomisweb.co.uk/datasets/ppsyoala).
+
+# 4. Patient flows {#method-2-icb-of-residence-to-icb-of-birth}
+
+### ICB of residence to ICB of birth
+
+```{r}
+#| label: method-2-patient-flow-icb
+#| eval: !expr file.exists(".patient_flows.rds")
+#| fig-alt: "Sankey diagram showing supplied record counts from ICB of residence on the left to ICB of birth on the right."
+#| out-width: "100%"
+
+readRDS(".patient_flows.rds")$icb_sankey
+```
+
+### Booking trust to birth trust {#method-2-booking-trust-to-birth-trust}
+
+```{r}
+#| label: method-2-patient-flow-trust
+#| eval: !expr file.exists(".patient_flows.rds")
+#| fig-alt: "Sankey diagram showing supplied record counts from trust at booking appointment on the left to trust responsible for the birth spell on the right."
+#| out-width: "100%"
+
+readRDS(".patient_flows.rds")$trust_sankey
+```
+
+# 5.  {#method-2-references}

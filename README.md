@@ -19,21 +19,23 @@ quarto render ons
 ```
 
 Open `ons/_site/index.html` to see the result. Generated files are ignored by Git.
-The report executes the current source and input files on every render; freezing
-is disabled. Edit `ons/index.qmd` for report changes and `ons/R/ons_data.R` for
-data preparation. Area and population-age settings are in `ons/config/`.
+The ONS calculations run on every render; freezing is disabled. Edit
+`ons/index.qmd` for report changes and `ons/R/ons_data.R` for ONS data
+preparation. Area and population-age settings are in `ons/config/`.
 
-## Separately supplied data
+## Patient flows
 
-To include the optional Sankey diagrams, copy the separately emailed folder to
-`ons/sankey data/`, containing:
+From the repository root, run these in the secure R session before rendering:
 
-- `icb_matrix_data (1).csv`
-- `trust_matrix_data (1).csv`
+```r
+source("Read parquet files from azure.R")
+source("matrix of booking appts and births.R")
+source("ons/additional_analysis.R")
+```
 
-Without these files, their chart chunks are skipped and the ONS report still runs.
-The folder and its contents are excluded from Git. Do not force-add them or generated
-HTML: rendered diagrams can embed their input values.
+`additional_analysis.R` saves `ons/.patient_flows.rds` for the Sankeys in
+`ons/index.qmd`. Without this file, those charts are skipped. The generated RDS
+and HTML are ignored by Git.
 
 ## ONS inputs
 

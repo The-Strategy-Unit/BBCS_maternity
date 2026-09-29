@@ -476,6 +476,18 @@ if (cluster_activity$available) {
                        "No recorded delivery", "Delivery provider unknown")
   outcome_colours <- c("#00856A", "#D55E00", "#727272", "#8E5EA2")
 
+  outcome_key <- function(i, text) {
+    htmltools::span(style = "display: inline-flex; align-items: center; gap: 6px;",
+      title = outcome_labels[i],
+      htmltools::span(style = paste0("display: inline-block; width: 14px; height: 14px; background: ",
+                                     outcome_colours[i], ";"), `aria-hidden` = "true"),
+      text)
+  }
+  pathway_legend <- htmltools::div(
+    style = "display: flex; flex-wrap: wrap; gap: 12px 24px; margin-bottom: 20px; font-size: 14px;",
+    htmltools::tagList(lapply(seq_along(outcome_labels), function(i) outcome_key(i, outcome_labels[i])))
+  )
+
   make_pathway_sankey <- function(row) {
     organisation <- row$Organisation[[1]]
     counts <- as.numeric(unlist(row[outcome_columns], use.names = FALSE))
@@ -484,10 +496,10 @@ if (cluster_activity$available) {
     outcome_text <- paste0(outcome_labels, " (", organisation, ")")
     labels <- paste0(outcome_text, "<br>", count_text(counts), " (",
                      percent_text(shares), ")")
-    chart <- plotly::plot_ly(type = "sankey", height = 340,
+    chart <- plotly::plot_ly(type = "sankey", height = 170,
       arrangement = "snap", orientation = "h",
       node = list(
-        label = c(paste0(organisation, " (starts)<br>", count_text(total)), labels),
+        label = c(paste0(organisation, " (starts)<br>", count_text(total)), percent_text(shares)),
         color = c("#005EB8", outcome_colours),
         x = c(0.01, rep(0.99, 4)), y = c(0.5, 0.08, 0.35, 0.62, 0.89),
         pad = 18, thickness = 18,
@@ -499,28 +511,30 @@ if (cluster_activity$available) {
         customdata = labels,
         hovertemplate = "%{customdata}<extra></extra>")
     ) |>
-      plotly::layout(font = list(family = "Arial", size = 11),
+      plotly::layout(font = list(family = "Arial", size = 14),
         margin = list(l = 12, r = 12, t = 20, b = 20),
         paper_bgcolor = "white", plot_bgcolor = "white") |>
       plotly::config(displayModeBar = FALSE, responsive = TRUE)
     if (total == 0) {
       return(htmltools::div("No antenatal starts recorded for this organisation in 2025/26."))
     }
-    # Zero-width flows cannot show nodes; retain their labels below the chart
+    # Zero-width flows: colour keys and percentages below the chart
     htmltools::tagList(chart, if (any(counts == 0)) {
-      htmltools::p(paste(paste0(outcome_text[counts == 0], ": 0 (0%)"), collapse = "; "))
+      htmltools::div(style = "display: flex; gap: 16px; font-size: 14px;",
+        htmltools::tagList(lapply(which(counts == 0), function(i) outcome_key(i, "0%"))))
     })
   }
 
-  # Single-column grid; independent percentages for each organisation
+  # Two-column grid; independent percentages for each organisation
   pathway_grid <- function(level) {
     rows <- pathways[pathways$Level == level, ]
-    htmltools::div(style = "display: grid; grid-template-columns: minmax(0, 1fr); gap: 24px;",
+    htmltools::tagList(pathway_legend,
+      htmltools::div(style = "display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px;",
       htmltools::tagList(lapply(seq_len(nrow(rows)), function(i) {
         htmltools::div(style = "min-width: 0;",
           htmltools::h3(rows$Organisation[i]),
           make_pathway_sankey(rows[i, , drop = FALSE]))
-      })))
+      }))))
   }
   cluster_activity$pathway_icb_sankeys <- pathway_grid("ICB")
   cluster_activity$pathway_trust_sankeys <- pathway_grid("Trust")

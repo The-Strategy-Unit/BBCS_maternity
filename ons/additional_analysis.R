@@ -1,11 +1,11 @@
 # Run order: from project root, run the two highlighted R scripts; then source("ons/additional_analysis.R")
 # Render: quarto render "ons/heather_scratch view.qmd" after this script finishes
-# Secure data: use Sarah's objects in memory; save only chart outputs for Quarto
+# Inputs in memory; save finished chart outputs for Quarto
 
 ## 1. Patient flows ----------------------------------------------------------
-# Inputs: Sarah's Azure script creates cohort_IDs and trust_booking_and_birth_location_matrix
-if (!exists("cohort_IDs") || !exists("trust_booking_and_birth_location_matrix")) {
-  stop("Run 'Read parquet files from azure.R' first; its two table objects are needed.")
+# Inputs: existing icb_matrix_data and trust_matrix_data
+if (!exists("icb_matrix_data") || !exists("trust_matrix_data")) {
+  stop("Missing icb_matrix_data or trust_matrix_data in this R session.")
 }
 
 # Column aliases: add the secure table's actual column name here if a check fails
@@ -72,17 +72,15 @@ trust_labels <- c(
 )
 
 icb_flow <- make_flows(
-  list(cohort_IDs = cohort_IDs,
-       trust_booking_and_birth_location_matrix = trust_booking_and_birth_location_matrix),
-  c("resident_icb_interest", "resident_icb", "icb_residence"),
-  c("birth_icb_interest", "birth_icb", "icb_birth"),
+  list(icb_matrix_data = icb_matrix_data),
+  "resident_icb_interest",
+  "birth_icb_interest",
   names(icb_labels)[names(icb_labels) != "Other"]
 )
 trust_flow <- make_flows(
-  list(trust_booking_and_birth_location_matrix = trust_booking_and_birth_location_matrix,
-       cohort_IDs = cohort_IDs),
-  c("booking_provider_grouped", "trust_booking", "booking_provider"),
-  c("birth_provider_grouped", "trust_birth_spell", "birth_provider"),
+  list(trust_matrix_data = trust_matrix_data),
+  "booking_provider_grouped",
+  "birth_provider_grouped",
   names(trust_labels)[names(trust_labels) != "Other"]
 )
 

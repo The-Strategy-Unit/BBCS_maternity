@@ -1,0 +1,52 @@
+---
+title: "Heather's scratch view"
+subtitle: "BBCS maternity: working charts"
+format:
+  html:
+    toc: true
+    embed-resources: true
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r}
+#| label: setup
+scratch_file <- if (file.exists(".heather_scratch_objects.rds")) {
+  ".heather_scratch_objects.rds"
+} else {
+  "ons/.heather_scratch_objects.rds"
+}
+if (!file.exists(scratch_file)) {
+  stop("Run 'ons/additional_analysis.R' after Sarah's scripts, then render this QMD.")
+}
+scratch <- readRDS(scratch_file)
+```
+
+# Patient Flows
+
+## ICB of residence to ICB of birth
+
+```{r}
+#| label: patient-flow-icb
+#| fig-alt: "Sankey of records from ICB of residence to ICB of birth."
+#| out-width: "100%"
+scratch$icb_sankey
+```
+
+## Booking trust to birth trust
+
+```{r}
+#| label: patient-flow-trust
+#| fig-alt: "Sankey of records from booking trust to birth trust."
+#| out-width: "100%"
+scratch$trust_sankey
+```
+
+## Counts and sources
+
+```{r}
+#| label: patient-flow-details
+knitr::kable(scratch$patient_flow_details, format.args = list(big.mark = ","))
+```

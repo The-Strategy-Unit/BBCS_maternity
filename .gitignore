@@ -4,6 +4,9 @@
 !/data/
 !/ons/
 !/ons/R/
+!/ons/*.R
+!/ons/*.qmd
+!/ons/R/*.R
 !/ons/assets/
 !/ons/config/
 !/.gitignore

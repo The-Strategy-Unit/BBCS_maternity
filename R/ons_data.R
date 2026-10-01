@@ -74,8 +74,8 @@ configured_age_band <- function(age, parameters = read_analysis_parameters()) {
 ons_source_files <- function(data_dir = ons_data_dir()) {
   tibble::tribble(
     ~source_id, ~file_name, ~source_name, ~source_type, ~period, ~current_use,
-    "snpp_2022", "ons_2022_based_births_migration_category.csv", "ONS 2022-based subnational population projections: births by age of mother", "Projection", "2023–2047", "Corrected migration-category variant on 2021 geography; projected rates and estimated maternities.",
-    "snpp_female_population_2022", "ons_2022_based_female_population_projections.csv", "ONS 2022-based subnational population projections: female population by single year of age", "Projection", "2023–2047", "Migration-category population: denominator for the projected ratio and female-population context.",
+    "snpp_2022", "2022 SNPP Births persons.csv", "ONS 2022-based subnational population projections: births by age of mother", "Projection", "2023–2047", "Existing supplied migration-category variant on 2023 geography; projected rates and estimated maternities.",
+    "snpp_female_population_2022", "ons_2022_based_female_population_projections_2023_geography.csv", "ONS 2022-based subnational population projections: female population by single year of age", "Projection", "2023–2047", "Direct ONS migration-category population on matching 2023 geography: denominator for the projected ratio and female-population context.",
     "historic_live_births", "ons_live_births_la_2013_2025.csv", "ONS live births in England and Wales down to local authority area, via Nomis", "Observed", "2013–2025", "Show registered live-birth trends and prepare age-adjusted maternity estimates.",
     "registrations_2023", "2023birthregistrations.xlsx", "ONS Births in England and Wales: birth registrations", "Observed", "2023", "Table 1: published GFR; Table 3: maternities; Table 7: national conversion counts.",
     "registrations_2024", "2024birthregistrations.xlsx", "ONS Births in England and Wales: birth registrations", "Observed", "2024", "Table 1: published GFR; Table 3: maternities; Table 7: national conversion counts.",
@@ -85,7 +85,7 @@ ons_source_files <- function(data_dir = ons_data_dir()) {
 }
 
 read_female_population_single_age <- function(
-    path = file.path(ons_data_dir(), "ons_2022_based_female_population_projections.csv"),
+    path = file.path(ons_data_dir(), "ons_2022_based_female_population_projections_2023_geography.csv"),
     area_config = read_area_config(),
     parameters = read_analysis_parameters()) {
   minimum_age <- unname(parameters[["minimum_maternal_age"]])
@@ -112,7 +112,7 @@ read_female_population_single_age <- function(
     stop(
       "Female population projection snapshot does not contain configured area code(s): ",
       paste(missing_areas, collapse = ", "),
-      ". Refresh the Nomis extract after changing the area configuration."
+      ". Refresh the official ONS female-population extract after changing the area configuration."
     )
   }
 
@@ -120,7 +120,7 @@ read_female_population_single_age <- function(
 }
 
 read_female_population_projections <- function(
-    path = file.path(ons_data_dir(), "ons_2022_based_female_population_projections.csv"),
+    path = file.path(ons_data_dir(), "ons_2022_based_female_population_projections_2023_geography.csv"),
     area_config = read_area_config(),
     parameters = read_analysis_parameters()) {
   minimum_age <- unname(parameters[["minimum_maternal_age"]])
@@ -133,7 +133,7 @@ read_female_population_projections <- function(
     arrange(age_band, area_name, year)
 }
 
-read_snpp_births <- function(path = file.path(ons_data_dir(), "ons_2022_based_births_migration_category.csv")) {
+read_snpp_births <- function(path = file.path(ons_data_dir(), "2022 SNPP Births persons.csv")) {
   read_csv(path, show_col_types = FALSE) |>
     clean_names() |>
     pivot_longer(

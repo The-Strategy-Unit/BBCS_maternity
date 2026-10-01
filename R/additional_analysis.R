@@ -392,13 +392,13 @@ if (cluster_activity$available) {
     gt::fmt_number(columns = "Episodes", decimals = 0) |>
     gt::fmt_percent(columns = c("Share", "Cluster_share"), decimals = 1)
   cluster_activity$outside_diagram <- plotly::plot_ly(
-    outside_summary, x = ~Episodes, y = ~ICB, type = "bar", orientation = "h",
+    outside_summary, x = ~Episodes, y = ~ICB, type = "bar", orientation = "h", height = 420,
     marker = list(color = "#005EB8"),
     hovertemplate = "%{y}<br>Delivery episodes: %{x:,.0f}<extra></extra>"
   ) |>
     plotly::layout(xaxis = list(title = "Delivery episodes"),
       yaxis = list(title = "", categoryorder = "array", categoryarray = rev(outside_summary$ICB)),
-      margin = list(l = 300), font = list(family = "Arial"), height = 420) |>
+      margin = list(l = 300), font = list(family = "Arial")) |>
     plotly::config(displayModeBar = FALSE, responsive = TRUE)
   cluster_activity$outside_text <- paste0(count_text(nrow(outside)), " (",
     percent_text(safe_share(nrow(outside), total_2526)),
@@ -645,11 +645,11 @@ if (delivery_over_time$available) {
   stopifnot(isTRUE(all.equal(totals_for_level("Trust"), totals_for_level("Cluster"))),
             isTRUE(all.equal(totals_for_level("ICB"), totals_for_level("Cluster"))))
 
-  make_delivery_trend_chart <- function(key, measure = c("share", "base_change")) {
+  make_delivery_trend_chart <- function(key, measure = c("share", "base_change"), compact = FALSE) {
     measure <- match.arg(measure)
     show_change <- measure == "base_change"
     data <- trend_summary[trend_summary$Key == key, , drop = FALSE]
-    chart <- plotly::plot_ly(height = 480)
+    chart <- plotly::plot_ly(height = if (compact) 300 else 480)
     for (i in seq_along(trend_labels)) {
       line <- data[data$Outcome == trend_labels[i], , drop = FALSE]
       hover <- paste0(line$Year, "<br>", line$Outcome,
@@ -665,6 +665,7 @@ if (delivery_over_time$available) {
                                              scales::percent(line$Base_change, accuracy = 0.1)))
       }
       values <- if (show_change) line$Base_change else line$Share
+      if (all(is.na(values))) next
       chart <- plotly::add_trace(chart, x = line$Year_start, y = values,
         type = "scatter", mode = "lines+markers", name = trend_labels[i],
         line = list(color = trend_colours[i], width = 2),
@@ -672,15 +673,18 @@ if (delivery_over_time$available) {
         text = hover, hovertemplate = "%{text}<extra></extra>", connectgaps = FALSE)
     }
     chart <- plotly::layout(chart,
-      xaxis = list(title = "Booking financial year", tickmode = "array",
+      xaxis = list(title = if (compact) "Booking year" else "Booking financial year", tickmode = "array",
         tickvals = pathway_years, ticktext = c("2023/24", "2024/25", "2025/26")),
       yaxis = if (show_change) {
         list(title = "% change in share from 2023/24", tickformat = ".0%",
              rangemode = "tozero", zeroline = TRUE, zerolinecolor = "#727272", zerolinewidth = 1)
       } else list(title = "% of all starts", range = c(0, 1), tickformat = ".0%"),
+      showlegend = !compact,
       legend = list(orientation = "h", x = 0, y = -0.22),
-      margin = list(l = 75, r = 20, t = 25, b = 125),
-      font = list(family = "Arial"), paper_bgcolor = "white", plot_bgcolor = "white") |>
+      margin = if (compact) list(l = 65, r = 12, t = 15, b = 55) else
+        list(l = 75, r = 20, t = 25, b = 125),
+      font = list(family = "Arial", size = if (compact) 11 else 12),
+      paper_bgcolor = "white", plot_bgcolor = "white") |>
       plotly::config(displayModeBar = FALSE, responsive = TRUE)
     empty_years <- unique(data$Year[data$Denominator == 0])
     chart_notes <- if (length(empty_years)) paste0(
@@ -691,6 +695,12 @@ if (delivery_over_time$available) {
       if (length(unavailable_outcomes)) chart_notes <- c(chart_notes,
         paste0("Zero or unavailable 2023/24 share; change unavailable for:<br>",
                paste(unavailable_outcomes, collapse = "<br>"), "."))
+    }
+    if (compact) {
+      return(htmltools::tagList(chart, if (length(chart_notes)) {
+        htmltools::div(style = "font-size: 11px; margin-top: 4px;",
+          htmltools::HTML(paste(chart_notes, collapse = "<br>")))
+      }))
     }
     if (length(chart_notes)) {
       chart <- plotly::layout(chart, annotations = list(list(
@@ -706,6 +716,32 @@ if (delivery_over_time$available) {
     lapply(organisations$Key, make_delivery_trend_chart), organisations$Key)
   delivery_over_time$change_charts <- stats::setNames(
     lapply(organisations$Key, make_delivery_trend_chart, measure = "base_change"), organisations$Key)
+  trend_legend <- htmltools::div(
+    style = "display: flex; flex-wrap: wrap; gap: 12px 24px; margin-bottom: 20px; font-size: 14px;",
+    htmltools::tagList(lapply(seq_along(trend_labels), function(i) {
+      htmltools::span(style = "display: inline-flex; align-items: center; gap: 6px;",
+        htmltools::span(style = paste0("display: inline-block; width: 18px; height: 3px; background: ",
+                                       trend_colours[i], ";"), `aria-hidden` = "true"),
+        trend_labels[i])
+    }))
+  )
+  make_delivery_trend_grid <- function(level, measure = "share") {
+    rows <- organisations[organisations$Level == level, , drop = FALSE]
+    columns <- switch(level, Trust = 3L, ICB = 2L, Cluster = 1L)
+    htmltools::tagList(trend_legend,
+      htmltools::div(style = paste0("display: grid; grid-template-columns: repeat(",
+                                    columns, ", minmax(0, 1fr)); gap: 24px;"),
+        htmltools::tagList(lapply(seq_len(nrow(rows)), function(i) {
+          htmltools::div(style = "min-width: 0;",
+            htmltools::h3(htmltools::span(style = "font-size: 14px;", rows$Organisation[i])),
+            make_delivery_trend_chart(rows$Key[i], measure = measure, compact = TRUE))
+        }))))
+  }
+  trend_levels <- c("Trust", "ICB", "Cluster")
+  delivery_over_time$chart_grids <- stats::setNames(
+    lapply(trend_levels, make_delivery_trend_grid), trend_levels)
+  delivery_over_time$change_chart_grids <- stats::setNames(
+    lapply(trend_levels, make_delivery_trend_grid, measure = "base_change"), trend_levels)
   delivery_over_time$table <- trend_summary |>
     dplyr::mutate(Group = paste(Level, Organisation, sep = ": ")) |>
     dplyr::select(Group, Year, Outcome, Numerator, Denominator,

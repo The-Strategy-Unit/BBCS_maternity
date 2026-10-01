@@ -2,7 +2,7 @@
 # Or, from the project root:
 # source("R/Run these to get needed objects.R")
 # Creates the data/analysis objects in the Global Environment and refreshes
-# .patient_flows.rds and .projections.rds for index.qmd.
+# .patient_flows.rds, .delivery_geography.rds and .projections.rds for index.qmd.
 # Azure authentication may prompt as usual.
 
 local({
@@ -10,6 +10,7 @@ local({
     "R/Read parquet files from azure.R",
     "R/matrix of booking appts and births.R",
     "R/additional_analysis.R",
+    "R/Deliveries by LA and Age Bands.R",
     "R/Projections.R",
     "R/Imaginary Example.R"
   )

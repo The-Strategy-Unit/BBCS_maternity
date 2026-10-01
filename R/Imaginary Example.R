@@ -1,7 +1,26 @@
-# Standalone fictional example: no MSDS, Azure or real ONS data is used.
+# Standalone fictional example: no MSDS or Azure data is used.
+# Public Method 1 ONS growth sets the rounded ten-year change; other inputs are fictional.
 # The report shows every input and calculation needed to follow the example.
 
 make_imaginary_example <- function() {
+  source("R/ons_data.R", local = TRUE)
+  areas <- read_area_config()
+  public_modifiers <- read_national_multiplicity() |>
+    dplyr::mutate(age_band = ifelse(as.character(age_band) %in% c("40-44", "45+"),
+                                   "40+", as.character(age_band))) |>
+    births_to_maternities_modifiers()
+  public_totals <- project_maternities(read_snpp_births(), public_modifiers,
+                                      local_authorities = areas$area_name) |>
+    dplyr::filter(year %in% c(2026L, 2036L)) |>
+    dplyr::group_by(year) |>
+    dplyr::summarise(Maternities = sum(projected_maternities), .groups = "drop") |>
+    dplyr::arrange(year)
+  stopifnot(identical(public_totals$year, c(2026L, 2036L)),
+            all(is.finite(public_totals$Maternities)), all(public_totals$Maternities > 0))
+  ons_change <- public_totals$Maternities[2] / public_totals$Maternities[1] - 1
+  ten_year_change <- round(ons_change / 0.05) * 0.05
+  if (abs(ten_year_change) < 1e-12) ten_year_change <- 0
+
   table_style <- function(data) {
     gt::gt(data) |>
       gt::tab_options(table.font.names = c("Open Sans", "Arial", "sans-serif"),
@@ -15,8 +34,7 @@ make_imaginary_example <- function() {
     Cell = c("b-younger", "b-older", "c-younger", "c-older"),
     LA = c("B", "B", "C", "C"), Age = c("25-29", "30-34", "25-29", "30-34"),
     All_LA_maternities = c(50, 50, 50, 50), At_Trust_A = c(40, 40, 20, 10),
-    Modifier = c(0.5, 1, 0.5, 1), Reference_births = c(100, 50, 100, 50),
-    Added_births_per_year = c(10, 10, 0, 5))
+    Modifier = c(0.5, 1, 0.5, 1), Reference_births = c(100, 50, 100, 50))
   mapping$Share <- mapping$At_Trust_A / mapping$All_LA_maternities
   modifiers <- data.frame(Age = c("25-29", "30-34"),
                           Babies_per_maternity = c(2, 1), Modifier = c(0.5, 1))
@@ -25,8 +43,9 @@ make_imaginary_example <- function() {
     data <- mapping
     data$Future_year <- year
     data$Year <- if (year == 0) "2025/26: actual" else paste("Year", year)
-    # Fixed additions create easy, invented ONS trajectories, not compounded rates.
-    data$ONS_births <- data$Reference_births + year * data$Added_births_per_year
+    # A shared, linear path reaches the rounded public ONS change exactly in Year 10.
+    data$Future_multiplier <- 1 + ten_year_change * year / 10
+    data$ONS_births <- data$Reference_births * data$Future_multiplier
     data$ONS_maternities <- data$ONS_births * data$Modifier
     data$Reference_maternities <- data$Reference_births * data$Modifier
     data$Growth <- data$ONS_maternities / data$Reference_maternities
@@ -35,29 +54,24 @@ make_imaginary_example <- function() {
   }))
   totals <- do.call(rbind, lapply(0:10, function(year) {
     data <- calculations[calculations$Future_year == year, ]
-    data.frame(Future_year = year, Year = data$Year[1],
+    data.frame(Future_year = year, Year = data$Year[1], Future_multiplier = data$Future_multiplier[1],
       B_younger = data$Projected_flow[data$Cell == "b-younger"],
       B_older = data$Projected_flow[data$Cell == "b-older"],
       C_younger = data$Projected_flow[data$Cell == "c-younger"],
       C_older = data$Projected_flow[data$Cell == "c-older"], Total = sum(data$Projected_flow))
   }))
   totals$Percent_change <- totals$Total / 110 - 1
-  first_year <- calculations[calculations$Future_year == 1, ]
-  first_year_display <- data.frame(
-    LA = first_year$LA, Age = first_year$Age,
-    Births = paste(first_year$Reference_births, "to", first_year$ONS_births),
-    Multiply_by = first_year$Modifier,
-    Maternities = paste(first_year$Reference_maternities, "to", first_year$ONS_maternities),
-    Growth = first_year$Growth - 1,
-    Trust_A = paste(first_year$At_Trust_A, "to", first_year$Projected_flow))
+  stopifnot(abs(totals$Total[1] - 110) < 1e-8,
+            abs(tail(totals$Total, 1) - 110 * (1 + ten_year_change)) < 1e-8)
 
-  projection_table <- totals[, c("Year", "B_younger", "B_older", "C_younger", "C_older", "Total", "Percent_change")] |>
+  projection_table <- totals[, c("Year", "Future_multiplier", "B_younger", "B_older", "C_younger", "C_older", "Total", "Percent_change")] |>
     table_style() |>
     gt::cols_label(B_younger = "25-29", B_older = "30-34", C_younger = "25-29", C_older = "30-34",
-      Total = "Trust A total", Percent_change = "% change from 110") |>
+      Future_multiplier = "Common future multiplier", Total = "Trust A total", Percent_change = "% change from 110") |>
     gt::tab_spanner(label = "Catchment LA B", columns = c("B_younger", "B_older")) |>
     gt::tab_spanner(label = "Outside LA C", columns = c("C_younger", "C_older")) |>
     gt::fmt_number(columns = c("B_younger", "B_older", "C_younger", "C_older", "Total"), decimals = 0) |>
+    gt::fmt_number(columns = "Future_multiplier", decimals = 3) |>
     gt::fmt_percent(columns = "Percent_change", decimals = 1)
   ons_wide <- data.frame(Year = ifelse(totals$Future_year == 0, "Reference: mid-2026",
     paste0("Year ", totals$Future_year, ": mid-", 2026 + totals$Future_year)))
@@ -68,7 +82,7 @@ make_imaginary_example <- function() {
                                 `c-younger` = "25-29", `c-older` = "30-34")) |>
     gt::tab_spanner(label = "Catchment LA B: ONS births", columns = c("b-younger", "b-older")) |>
     gt::tab_spanner(label = "Outside LA C: ONS births", columns = c("c-younger", "c-older")) |>
-    gt::fmt_number(columns = mapping$Cell, decimals = 0)
+    gt::fmt_number(columns = mapping$Cell, decimals = 1)
 
   chart <- plotly::plot_ly(height = 430) |>
     plotly::add_trace(x = -2:0, y = observed$Maternities, type = "scatter", mode = "lines+markers",
@@ -90,6 +104,8 @@ make_imaginary_example <- function() {
 
   list(
     observed = observed, mapping = mapping, calculations = calculations, totals = totals,
+    ons_change = ons_change, ten_year_change = ten_year_change, public_totals = public_totals,
+    public_areas = areas$area_name,
     observed_table = observed |> table_style(),
     destinations_table = destinations |>
       table_style() |>
@@ -105,13 +121,6 @@ make_imaginary_example <- function() {
       gt::cols_label(Age = "Age band", Babies_per_maternity = "Imaginary babies per maternity",
                      Modifier = "Multiply ONS births by") |>
       gt::fmt_number(columns = "Modifier", decimals = 1),
-    first_year_table = first_year_display |>
-      table_style() |>
-      gt::cols_label(LA = "Resident LA", Age = "Age band", Births = "ONS births: base to Year 1",
-        Multiply_by = "x modifier", Maternities = "ONS maternities: base to Year 1",
-        Growth = "Growth", Trust_A = "Trust A flow: actual to projected") |>
-      gt::fmt_number(columns = "Multiply_by", decimals = 1) |>
-      gt::fmt_percent(columns = "Growth", decimals = 0),
     projection_table = projection_table, ons_table = ons_table, chart = chart)
 }
 

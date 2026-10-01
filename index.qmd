@@ -22,7 +22,7 @@ Both methods estimate maternities from ONS projected live births using a factor 
 | **Method 1: multiplicity** | Average the 2023–2025 annual proportions of singleton, twin, triplet and four-plus maternities. Modifier = 1 / (p1 + 2p2 + 3p3 + 4p4+). | Explicitly shows how multiple births translate babies into maternities. Retains age differences. Each year has equal weight. | Assumes the age-specific multiplicity mix stays constant and applies locally. Four-plus is approximated as four. Applied to live births, it does not separately account for stillbirth-only or mixed-outcome maternities, unlike the published all-maternity count. |
 | **Method 2: count ratio** | Pool 2023–2025 maternity counts and divide by pooled live births. | Retains age differences. Uses actual counts, including all maternities in the numerator. No four-plus approximation. Matches national live births to all maternities in the calibration data. | Assumes the age-specific national ratio stays constant and applies locally. Combines multiplicity and stillbirth effects, making them less explicit. Years with more live births receive more weight. |
 
-**How to compare:** each method section includes published maternities for 2023–2025 and its calculated 2023–2047 maternity series on the same chart. The observed lines are identical. Differences in calculated values reflect the modifier method, including its averaging and outcome coverage; they do not reflect different fertility projections. No method has been selected as preferred.
+**How to compare:** each method section includes published maternities for 2023–2025 and its calculated 2023–2047 maternity series on the same chart. The observed lines are identical. Differences in calculated values reflect the modifier method, including its averaging and outcome coverage; they do not reflect different fertility projections. Method 1 is used for the first-draft service projections.
 
 **Shared limitations:** observed counts cover calendar years while projected births cover years ending mid-year. Both methods hold their age-specific modifiers fixed. ONS folds outlying maternal ages into model ages 15 and 44, so both use under-20 through 40+ bands without adding extra boundary-age births. Neither estimates all pregnancies, unique women or service contacts. Agreement with three recent observed counts alone does not validate future projections.
 
@@ -288,7 +288,7 @@ The six authorities are Birmingham, Dudley, Sandwell, Solihull, Walsall and Wolv
 | Observed GFR and maternities | Calendar years 2023–2025 | ONS registration workbooks, Tables 1 and 3; published values used directly. |
 | National maternities and live births by age and multiplicity | Calendar years 2023–2025 | Table 7; age-specific multiplicity proportions provide the modifiers. |
 | Projected live births | Years ending mid-2023 to mid-2047 | ONS birth component, by modelled maternal age; used for projected rates and estimated maternities. |
-| Projected female population | Mid-2023 to mid-2047 | ONS via Nomis; ages 15–44 form the rate denominator; ages 13–55 are shown separately as population context. |
+| Projected female population | Mid-2023 to mid-2047 | ONS migration-category variant on 2023 geography; ages 15–44 form the rate denominator; ages 13–55 are shown separately as population context. |
 
 The following assumptions and differences affect how the series can be compared:
 
@@ -533,7 +533,7 @@ The three-year calculation uses **45+** because the 2023 and 2024 publications d
 
 ## Estimated maternities from projected births {#method-1-estimated-maternities-from-projected-births}
 
-The corrected [ONS migration-category birth projection](#method-1-ref-birth-projections) provides live births for the years ending mid-2023 to mid-2047. Its underlying population base is mid-2022. The birth file and female population series used here are on 2021 local-authority geography; the selected authorities are also present in the observed extracts.
+The corrected [ONS migration-category birth projection](#method-1-ref-birth-projections) provides live births for the years ending mid-2023 to mid-2047. Its underlying population base is mid-2022. The birth file and female population series used here are on 2023 local-authority geography; the selected authorities are also present in the observed extracts.
 
 ONS represents fertility at model ages 15–44, assigning births below 15 to age 15 and births above 44 to age 44. Those boundary rows already cover the outlying ages. **We therefore add no extra births at ages 13–14 or 45–55.** The published projection cannot separately identify those ages.
 
@@ -553,7 +553,7 @@ Every value here, including 2023–2025, is calculated from projected births. Th
 #| fig-height: 6
 projection_plot(
   total_maternity_projections,
-  "Source: corrected ONS 2022-based migration-category projected live births; mean 2023-2025 age-specific multiplicity modifiers."
+  "Source: ONS 2022-based migration-category projected live births, 2023 geography; mean 2023-2025 age-specific multiplicity modifiers."
 )
 ```
 
@@ -673,7 +673,7 @@ ggplot() +
     colour = NULL,
     caption = paste(
       "Solid: published calendar-year maternities. Dashed: calculated mid-year projections;",
-      "ONS migration-category births with age-specific multiplicity modifiers."
+      "ONS migration-category births on 2023 geography with age-specific multiplicity modifiers."
     )
   ) +
   theme_minimal(base_family = "Arial") +
@@ -696,7 +696,7 @@ ggplot() +
 
 [Fertility rates already enter the [ONS birth projection](#method-1-ref-snpp-method): age-specific fertility rates are applied to the population of women of the corresponding ages. We then convert the resulting projected live-birth counts into maternities. The GFR charts below provide context; their displayed rates are not a further input to that conversion. (LM edit)]{.lm-edit}
 
-The general fertility rate (GFR) uses all live births as its numerator and women aged 15–44 as its denominator. The 2025 workbook also publishes a 15–49 rate; this report retains 15–44 for comparability. Solid lines show the published 15–44 GFR for 2023–2025, using each workbook's mid-year population estimates. Dashed lines show a **calculated projection ratio**: all projected live births during the year ending mid-year divided by the projected women aged 15–44 at that year's mid-year endpoint, multiplied by 1,000. It is an approximation for comparison, not a published ONS GFR or a calendar-year forecast. Population values in the Nomis extract are rounded to whole people. No maternity conversion is applied to either rate.
+The general fertility rate (GFR) uses all live births as its numerator and women aged 15–44 as its denominator. The 2025 workbook also publishes a 15–49 rate; this report retains 15–44 for comparability. Solid lines show the published 15–44 GFR for 2023–2025, using each workbook's mid-year population estimates. Dashed lines show a **calculated projection ratio**: all projected live births during the year ending mid-year divided by the projected women aged 15–44 at that year's mid-year endpoint, multiplied by 1,000. It is an approximation for comparison, not a published ONS GFR or a calendar-year forecast. Population values come directly from the matching 2023-geography ONS archive, retaining its published precision. No maternity conversion is applied to either rate.
 
 The overlapping years are retained to show both sources separately. See the sources for [observed rates](#method-1-ref-registrations), [projected births](#method-1-ref-birth-projections) and the [population denominator](#method-1-ref-population-projections).
 
@@ -746,7 +746,7 @@ ggplot() +
 
 ## Projected female population by age {#method-1-projected-female-population-by-age}
 
-The female population extract from [ONS via Nomis](#method-1-ref-population-projections) matches the corrected 2022-based migration-category variant to whole-person rounding. It contains population counts for each single year of age from 0 to 89, for the six authorities and projection years 2023–2047. Population figures count women living in each area at mid-year.
+The female population extract comes directly from [ONS](#method-1-ref-population-projections), using the matching 2022-based migration-category variant on 2023 local-authority geography. It contains population counts for each single year of age from 0 to 89, for the six authorities and projection years 2023–2047. Population figures count women living in each area at mid-year.
 
 For the following charts, we select ages **13–55**, sum single ages into five-year groups, and retain partial groups at the limits. The total sums the population aged 13–55. This selected range provides population context; it does not define the ages covered by the birth projection. No maternity conversion or other scaling is applied.
 
@@ -766,7 +766,7 @@ population_plot(
   paste0(
     "Female population aged ", analysis_parameters[["minimum_maternal_age"]], "-",
     analysis_parameters[["maximum_maternal_age"]],
-    ". Source: ONS 2022-based subnational population projections via Nomis."
+    ". Source: ONS 2022-based migration-category population projections, 2023 geography."
   )
 )
 ```
@@ -789,7 +789,7 @@ female_population_projections |>
   cols_label(age_band = "Age band", change = "Change", percentage_change = "% change") |>
   fmt_integer(columns = c(all_of(as.character(range(female_population_projections$year))), change), sep_mark = ",") |>
   fmt_percent(columns = percentage_change, decimals = 1) |>
-  tab_source_note(source_note = "Source: ONS 2022-based subnational population projections via Nomis; Strategy Unit aggregation.") |>
+  tab_source_note(source_note = "Source: ONS 2022-based migration-category population projections, 2023 geography; Strategy Unit aggregation.") |>
   tab_options(table.font.names = c("Open Sans", "Arial", "sans-serif"))
 ```
 
@@ -800,7 +800,7 @@ for (band in levels(female_population_projections$age_band)) {
   cat("\n### ", band, "\n\n", sep = "")
   print(population_plot(
     female_population_projections |> filter(age_band == band),
-    paste0("Female population aged ", band, ". Source: ONS 2022-based subnational population projections via Nomis.")
+    paste0("Female population aged ", band, ". Source: ONS 2022-based migration-category population projections, 2023 geography.")
   ))
   cat("\n")
 }
@@ -833,8 +833,8 @@ sources |>
 2.  [ONS, *Births in England and Wales: birth registrations*](https://www.ons.gov.uk/peoplepopulationandcommunity/birthsdeathsandmarriages/livebirths/datasets/birthsinenglandandwalesbirthregistrations).
 3.  [ONS live births by local authority, accessed through Nomis](https://www.nomisweb.co.uk/datasets/lebirthsla).
 4.  [ONS, *Methodology used to produce the 2022-based subnational population projections for England*](https://www.ons.gov.uk/peoplepopulationandcommunity/populationandmigration/populationprojections/methodologies/methodologyusedtoproducethe2022basedsubnationalpopulationsprojectionsforengland){#method-1-ref-snpp-method}.
-5.  [ONS, *Birth projections by age of mother: corrected 2022-based migration-category variant*](https://www.ons.gov.uk/peoplepopulationandcommunity/populationandmigration/populationprojections/datasets/birthsbyageofmotherz3).
-6.  [ONS, *Local authority population projections: 2022-based migration-category variant*](https://www.ons.gov.uk/peoplepopulationandcommunity/populationandmigration/populationprojections/datasets/localauthoritiesinenglandz1); [Nomis population extract](https://www.nomisweb.co.uk/datasets/ppsyoala).
+5.  [ONS, *Birth projections by age of mother: 2022-based migration-category variant on 2023 geography*](https://www.ons.gov.uk/peoplepopulationandcommunity/populationandmigration/populationprojections/datasets/birthsbyageofmotherz3).
+6.  [ONS, *Local authority population projections: 2022-based migration-category variant on 2023 geography*](https://www.ons.gov.uk/peoplepopulationandcommunity/populationandmigration/populationprojections/datasets/localauthoritiesinenglandz1).
 
 # 3. Method 2 report {#method-2}
 
@@ -1053,7 +1053,7 @@ The six authorities are Birmingham, Dudley, Sandwell, Solihull, Walsall and Wolv
 | Observed GFR and maternities | Calendar years 2023–2025 | ONS registration workbooks, Tables 1 and 3; published values used directly. |
 | National maternities and live births by age and multiplicity | Calendar years 2023–2025 | Table 7; age-specific maternity and live-birth counts provide the modifiers. |
 | Projected live births | Years ending mid-2023 to mid-2047 | ONS birth component, by modelled maternal age; used for projected rates and estimated maternities. |
-| Projected female population | Mid-2023 to mid-2047 | ONS via Nomis; ages 15–44 form the rate denominator; ages 13–55 are shown separately as population context. |
+| Projected female population | Mid-2023 to mid-2047 | ONS migration-category variant on 2023 geography; ages 15–44 form the rate denominator; ages 13–55 are shown separately as population context. |
 
 The following assumptions and differences affect how the series can be compared:
 
@@ -1250,7 +1250,7 @@ The three-year calculation uses **45+** because the 2023 and 2024 publications d
 
 ## Estimated maternities from projected births {#method-2-estimated-maternities-from-projected-births}
 
-The corrected [ONS migration-category birth projection](#method-2-ref-birth-projections) provides live births for the years ending mid-2023 to mid-2047. Its underlying population base is mid-2022. The birth file and female population series used here are on 2021 local-authority geography; the selected authorities are also present in the observed extracts.
+The corrected [ONS migration-category birth projection](#method-2-ref-birth-projections) provides live births for the years ending mid-2023 to mid-2047. Its underlying population base is mid-2022. The birth file and female population series used here are on 2023 local-authority geography; the selected authorities are also present in the observed extracts.
 
 ONS represents fertility at model ages 15–44, assigning births below 15 to age 15 and births above 44 to age 44. Those boundary rows already cover the outlying ages. **We therefore add no extra births at ages 13–14 or 45–55.** The published projection cannot separately identify those ages.
 
@@ -1270,7 +1270,7 @@ Every value here, including 2023–2025, is calculated from projected births. Th
 #| fig-height: 6
 projection_plot(
   total_maternity_projections,
-  "Source: corrected ONS 2022-based migration-category projected live births; pooled 2023-2025 age-specific maternity-to-live-birth ratios."
+  "Source: ONS 2022-based migration-category projected live births, 2023 geography; pooled 2023-2025 age-specific maternity-to-live-birth ratios."
 )
 ```
 
@@ -1390,7 +1390,7 @@ ggplot() +
     colour = NULL,
     caption = paste(
       "Solid: published calendar-year maternities. Dashed: calculated mid-year projections;",
-      "ONS migration-category births with age-specific maternity-to-live-birth ratios."
+      "ONS migration-category births on 2023 geography with age-specific maternity-to-live-birth ratios."
     )
   ) +
   theme_minimal(base_family = "Arial") +
@@ -1411,7 +1411,7 @@ ggplot() +
 
 [Fertility rates already enter the [ONS birth projection](#method-2-ref-snpp-method): age-specific fertility rates are applied to the population of women of the corresponding ages. We then convert the resulting projected live-birth counts into maternities. The GFR charts below provide context; their displayed rates are not a further input to that conversion. (LM edit)]{.lm-edit}
 
-The general fertility rate (GFR) uses all live births as its numerator and women aged 15–44 as its denominator. The 2025 workbook also publishes a 15–49 rate; this report retains 15–44 for comparability. Solid lines show the published 15–44 GFR for 2023–2025, using each workbook's mid-year population estimates. Dashed lines show a **calculated projection ratio**: all projected live births during the year ending mid-year divided by the projected women aged 15–44 at that year's mid-year endpoint, multiplied by 1,000. It is an approximation for comparison, not a published ONS GFR or a calendar-year forecast. Population values in the Nomis extract are rounded to whole people. No maternity conversion is applied to either rate.
+The general fertility rate (GFR) uses all live births as its numerator and women aged 15–44 as its denominator. The 2025 workbook also publishes a 15–49 rate; this report retains 15–44 for comparability. Solid lines show the published 15–44 GFR for 2023–2025, using each workbook's mid-year population estimates. Dashed lines show a **calculated projection ratio**: all projected live births during the year ending mid-year divided by the projected women aged 15–44 at that year's mid-year endpoint, multiplied by 1,000. It is an approximation for comparison, not a published ONS GFR or a calendar-year forecast. Population values come directly from the matching 2023-geography ONS archive, retaining its published precision. No maternity conversion is applied to either rate.
 
 The overlapping years are retained to show both sources separately. See the sources for [observed rates](#method-2-ref-registrations), [projected births](#method-2-ref-birth-projections) and the [population denominator](#method-2-ref-population-projections).
 
@@ -1461,7 +1461,7 @@ ggplot() +
 
 ## Projected female population by age {#method-2-projected-female-population-by-age}
 
-The female population extract from [ONS via Nomis](#method-2-ref-population-projections) matches the corrected 2022-based migration-category variant to whole-person rounding. It contains population counts for each single year of age from 0 to 89, for the six authorities and projection years 2023–2047. Population figures count women living in each area at mid-year.
+The female population extract comes directly from [ONS](#method-2-ref-population-projections), using the matching 2022-based migration-category variant on 2023 local-authority geography. It contains population counts for each single year of age from 0 to 89, for the six authorities and projection years 2023–2047. Population figures count women living in each area at mid-year.
 
 For the following charts, we select ages **13–55**, sum single ages into five-year groups, and retain partial groups at the limits. The total sums the population aged 13–55. This selected range provides population context; it does not define the ages covered by the birth projection. No maternity conversion or other scaling is applied.
 
@@ -1481,7 +1481,7 @@ population_plot(
   paste0(
     "Female population aged ", analysis_parameters[["minimum_maternal_age"]], "-",
     analysis_parameters[["maximum_maternal_age"]],
-    ". Source: ONS 2022-based subnational population projections via Nomis."
+    ". Source: ONS 2022-based migration-category population projections, 2023 geography."
   )
 )
 ```
@@ -1504,7 +1504,7 @@ female_population_projections |>
   cols_label(age_band = "Age band", change = "Change", percentage_change = "% change") |>
   fmt_integer(columns = c(all_of(as.character(range(female_population_projections$year))), change), sep_mark = ",") |>
   fmt_percent(columns = percentage_change, decimals = 1) |>
-  tab_source_note(source_note = "Source: ONS 2022-based subnational population projections via Nomis; Strategy Unit aggregation.") |>
+  tab_source_note(source_note = "Source: ONS 2022-based migration-category population projections, 2023 geography; Strategy Unit aggregation.") |>
   tab_options(table.font.names = c("Open Sans", "Arial", "sans-serif"))
 ```
 
@@ -1515,7 +1515,7 @@ for (band in levels(female_population_projections$age_band)) {
   cat("\n### ", band, "\n\n", sep = "")
   print(population_plot(
     female_population_projections |> filter(age_band == band),
-    paste0("Female population aged ", band, ". Source: ONS 2022-based subnational population projections via Nomis.")
+    paste0("Female population aged ", band, ". Source: ONS 2022-based migration-category population projections, 2023 geography.")
   ))
   cat("\n")
 }
@@ -1548,8 +1548,8 @@ sources |>
 2.  [ONS, *Births in England and Wales: birth registrations*](https://www.ons.gov.uk/peoplepopulationandcommunity/birthsdeathsandmarriages/livebirths/datasets/birthsinenglandandwalesbirthregistrations).
 3.  [ONS live births by local authority, accessed through Nomis](https://www.nomisweb.co.uk/datasets/lebirthsla).
 4.  [ONS, *Methodology used to produce the 2022-based subnational population projections for England*](https://www.ons.gov.uk/peoplepopulationandcommunity/populationandmigration/populationprojections/methodologies/methodologyusedtoproducethe2022basedsubnationalpopulationsprojectionsforengland){#method-2-ref-snpp-method}.
-5.  [ONS, *Birth projections by age of mother: corrected 2022-based migration-category variant*](https://www.ons.gov.uk/peoplepopulationandcommunity/populationandmigration/populationprojections/datasets/birthsbyageofmotherz3).
-6.  [ONS, *Local authority population projections: 2022-based migration-category variant*](https://www.ons.gov.uk/peoplepopulationandcommunity/populationandmigration/populationprojections/datasets/localauthoritiesinenglandz1); [Nomis population extract](https://www.nomisweb.co.uk/datasets/ppsyoala).
+5.  [ONS, *Birth projections by age of mother: 2022-based migration-category variant on 2023 geography*](https://www.ons.gov.uk/peoplepopulationandcommunity/populationandmigration/populationprojections/datasets/birthsbyageofmotherz3).
+6.  [ONS, *Local authority population projections: 2022-based migration-category variant on 2023 geography*](https://www.ons.gov.uk/peoplepopulationandcommunity/populationandmigration/populationprojections/datasets/localauthoritiesinenglandz1).
 
 # 4. Patient flows {#method-2-icb-of-residence-to-icb-of-birth}
 
@@ -1884,8 +1884,11 @@ delivery_over_time <- if (file.exists(".patient_flows.rds")) {
   readRDS(".patient_flows.rds")$delivery_over_time
 } else NULL
 delivery_over_time_ready <- !is.null(delivery_over_time) && isTRUE(delivery_over_time$available)
+delivery_grid_ready <- delivery_over_time_ready &&
+  all(c("Trust", "ICB", "Cluster") %in% names(delivery_over_time$chart_grids))
 delivery_change_ready <- delivery_over_time_ready &&
-  !is.null(delivery_over_time$change_charts) && !is.null(delivery_over_time$change_table)
+  all(c("Trust", "ICB", "Cluster") %in% names(delivery_over_time$change_chart_grids)) &&
+  !is.null(delivery_over_time$change_table)
 ```
 
 ```{r}
@@ -1898,6 +1901,9 @@ if (is.null(delivery_over_time)) {
   cat(delivery_over_time$missing)
 } else {
   cat(delivery_over_time$excluded)
+  if (!delivery_grid_ready) {
+    cat("\n\nRe-run R/additional_analysis.R in the secure environment to prepare the grouped charts, then render index.qmd.")
+  }
 }
 ```
 
@@ -1905,25 +1911,31 @@ if (is.null(delivery_over_time)) {
 
 ::: panel-tabset
 
-```{r}
-#| label: delivery-over-time-chart-tabs
-#| eval: !expr delivery_over_time_ready
-#| results: asis
+### Trusts
 
-# Render one labelled tab per saved chart, including any additional booking trusts.
-# Child chunks let knitr register each Plotly widget's dependencies normally.
-for (i in seq_len(nrow(delivery_over_time$organisations))) {
-  organisation <- delivery_over_time$organisations[i, , drop = FALSE]
-  tab_text <- c(
-    paste0("\n### ", organisation$Organisation, " {#delivery-trend-", organisation$Key, "}\n"),
-    "```{r}",
-    paste0("#| label: delivery-trend-chart-", organisation$Key),
-    "#| out-width: \"100%\"",
-    paste0("delivery_over_time$charts[[\"", organisation$Key, "\"]]"),
-    "```", ""
-  )
-  cat(knitr::knit_child(text = tab_text, envir = environment(), quiet = TRUE), sep = "\n")
-}
+```{r}
+#| label: delivery-over-time-trust-charts
+#| eval: !expr delivery_grid_ready
+
+htmltools::browsable(delivery_over_time$chart_grids$Trust)
+```
+
+### ICBs
+
+```{r}
+#| label: delivery-over-time-icb-charts
+#| eval: !expr delivery_grid_ready
+
+htmltools::browsable(delivery_over_time$chart_grids$ICB)
+```
+
+### Cluster(s)
+
+```{r}
+#| label: delivery-over-time-cluster-charts
+#| eval: !expr delivery_grid_ready
+
+htmltools::browsable(delivery_over_time$chart_grids$Cluster)
 ```
 
 ### All results — table
@@ -1953,24 +1965,31 @@ if (delivery_over_time_ready && !delivery_change_ready) {
 
 ::: panel-tabset
 
-```{r}
-#| label: delivery-change-chart-tabs
-#| eval: !expr delivery_change_ready
-#| results: asis
+### Trusts
 
-# Only label and display the percentage-change charts prepared in additional_analysis.R.
-for (i in seq_len(nrow(delivery_over_time$organisations))) {
-  organisation <- delivery_over_time$organisations[i, , drop = FALSE]
-  tab_text <- c(
-    paste0("\n### ", organisation$Organisation, " {#delivery-change-", organisation$Key, "}\n"),
-    "```{r}",
-    paste0("#| label: delivery-change-chart-", organisation$Key),
-    "#| out-width: \"100%\"",
-    paste0("delivery_over_time$change_charts[[\"", organisation$Key, "\"]]"),
-    "```", ""
-  )
-  cat(knitr::knit_child(text = tab_text, envir = environment(), quiet = TRUE), sep = "\n")
-}
+```{r}
+#| label: delivery-change-trust-charts
+#| eval: !expr delivery_change_ready
+
+htmltools::browsable(delivery_over_time$change_chart_grids$Trust)
+```
+
+### ICBs
+
+```{r}
+#| label: delivery-change-icb-charts
+#| eval: !expr delivery_change_ready
+
+htmltools::browsable(delivery_over_time$change_chart_grids$ICB)
+```
+
+### Cluster(s)
+
+```{r}
+#| label: delivery-change-cluster-charts
+#| eval: !expr delivery_change_ready
+
+htmltools::browsable(delivery_over_time$change_chart_grids$Cluster)
 ```
 
 ### All percentage changes — table
@@ -1984,6 +2003,123 @@ delivery_over_time$change_table
 :::
 
 # 8. Deliveries by LA and Age Bands {#deliveries-by-la-and-age-bands}
+
+```{r}
+#| label: delivery-geography-setup
+#| include: false
+
+delivery_geography <- if (file.exists(".delivery_geography.rds")) readRDS(".delivery_geography.rds") else NULL
+delivery_geography_ready <- !is.null(delivery_geography) && isTRUE(delivery_geography$ready)
+
+# Display only the organisation charts and tables prepared in the R script.
+show_delivery_geography_tabs <- function(fields, labels, section) {
+  levels <- c(Trust = "Trusts", ICB = "ICBs", Cluster = "Combined cluster")
+  for (level in names(levels)) {
+    organisations <- delivery_geography$organisations[delivery_geography$organisations$Level == level, , drop = FALSE]
+    child <- c(paste0("\n### ", levels[[level]], "\n"), ":::: panel-tabset", "")
+    for (i in seq_len(nrow(organisations))) {
+      org <- organisations[i, , drop = FALSE]
+      child <- c(child, paste0("#### ", org$Organisation, " {#delivery-geography-", section, "-", org$Key, "}\n"),
+                 "::::: panel-tabset", "")
+      for (j in seq_along(fields)) {
+        expression <- paste0("delivery_geography$outputs[[\"", org$Key, "\"]]$", fields[j])
+        if (grepl("chart$", fields[j])) expression <- paste0("htmltools::browsable(htmltools::tagList(", expression, "))")
+        child <- c(child, paste0("##### ", labels[j], "\n"), "```{r}",
+          paste0("#| label: delivery-geography-", section, "-", org$Key, "-", fields[j]),
+          expression, "```", "")
+      }
+      child <- c(child, ":::::", "")
+    }
+    child <- c(child, "::::", "")
+    cat(knitr::knit_child(text = child, envir = environment(), quiet = TRUE), sep = "\n")
+  }
+}
+```
+
+```{r}
+#| label: delivery-geography-notes
+#| results: asis
+
+if (is.null(delivery_geography)) {
+  cat("Run R/Run these to get needed objects.R in the secure environment, then render this report.")
+} else if (!delivery_geography_ready) {
+  cat(delivery_geography$note)
+}
+```
+
+## 8.1 Resident LA to delivery destination, 2025/26 {#delivery-la-destinations}
+
+Recorded deliveries to cluster residents, plus deliveries associated with cluster providers from elsewhere. Flagged home births remain home destinations, including residents outside the cluster. The Sankey groups the 15 largest LAs and other LAs; tables retain every LA and destination.
+
+::: panel-tabset
+### Matrix
+
+```{r}
+#| label: delivery-la-destination-matrix
+#| eval: !expr delivery_geography_ready
+
+delivery_geography$matrix_table
+```
+
+### Sankey
+
+```{r}
+#| label: delivery-la-destination-sankey
+#| eval: !expr delivery_geography_ready
+
+htmltools::browsable(htmltools::tagList(delivery_geography$sankey_chart))
+```
+
+### All flows
+
+```{r}
+#| label: delivery-la-destination-values
+#| eval: !expr delivery_geography_ready
+
+delivery_geography$matrix_values_table
+```
+:::
+
+## 8.2 Hospital deliveries by resident LA and age, 2025/26 {#delivery-la-age-mapping}
+
+All feeder LAs, including residents outside the cluster. Percentages divide by **all hospital deliveries at the receiving organisation**. Home births are excluded from this hospital mapping; unknown LA and age remain labelled.
+
+::: panel-tabset
+
+```{r}
+#| label: delivery-la-age-mapping-tabs
+#| eval: !expr delivery_geography_ready
+#| results: asis
+
+show_delivery_geography_tabs(c("origin_chart", "age_chart", "table", "age_table"),
+  c("LA contributions", "LA and age bands", "LA table", "LA by age table"), "mapping")
+```
+:::
+
+## 8.3 Stability of the LA mapping, 2023/24 to 2025/26 {#delivery-la-mapping-stability}
+
+Charts keep the seven largest 2025/26 feeder LAs fixed across all three years; other LAs are combined and unknown residence stays separate. Share trends show the mapping; count changes use 2023/24 as the base. Tables retain every LA.
+
+::: panel-tabset
+
+```{r}
+#| label: delivery-la-mapping-stability-tabs
+#| eval: !expr delivery_geography_ready
+#| results: asis
+
+show_delivery_geography_tabs(c("stability_chart", "change_chart", "stability_table"),
+  c("LA shares over time", "Count change from 2023/24", "All LA values"), "stability")
+```
+
+### All organisations - table
+
+```{r}
+#| label: delivery-la-all-organisation-values
+#| eval: !expr delivery_geography_ready
+
+delivery_geography$all_results_table
+```
+:::
 
 # 9. First draft: projections {#first-draft-projections}
 
@@ -2032,7 +2168,7 @@ if (is.null(first_draft_projections)) {
 
 ## 9.1 Feeder LA and age-band shares, 2025/26 {#projection-feeder-mapping}
 
-MSDS deliveries here ÷ all pregnancies in the same resident LA and age band. Home births remain in LA totals; ICBs and the cluster group delivery trusts.
+Flows show the 12 largest contributing LAs in volume order, then other LAs, through age bands to the organisation; widths are delivery counts. LA-to-age hover and tables show deliveries here ÷ all pregnancies in the same LA and age band; tables retain every LA. Home births remain in LA totals; ICBs and the cluster group delivery trusts.
 
 ::: panel-tabset
 
@@ -2052,11 +2188,22 @@ show_projection_tabs("mapping_outputs", c("chart", "table"), c("Chart", "Table")
 
 first_draft_projections$accounting_table
 ```
+
+### Projection coverage
+
+```{r}
+#| label: first-draft-projection-coverage
+#| eval: !expr projection_mapping_ready
+
+first_draft_projections$coverage_table
+first_draft_projections$coverage_details_table
+first_draft_projections$geography_table
+```
 :::
 
 ## 9.2 Age-specific ONS change and incoming flows {#projection-age-specific-flows}
 
-Method 1 ONS maternity growth is applied within each feeder LA and age band. Actual 2025/26 flows are unchanged; growth uses ONS mid-2026 as its reference. Charts summarise age bands; tables retain every feeder LA and year.
+Method 1 ONS maternity growth is applied within each feeder LA and age band, using 2023 LA geography. Actual 2025/26 flows are unchanged; growth uses ONS mid-2026 as its reference. Unmatched flows stay at baseline counts; see projection coverage.
 
 ::: panel-tabset
 
@@ -2090,9 +2237,12 @@ show_projection_tabs("forecast_outputs", c("total_chart", "total_table"), c("Cha
 
 ```{r}
 #| label: first-draft-all-totals
-#| eval: !expr projection_forecast_ready
 
-first_draft_projections$all_totals_table
+if (projection_forecast_ready) {
+  first_draft_projections$all_totals_table
+} else {
+  htmltools::div("Projection preparation needs attention. Re-run the analysis runner and check the projection coverage table.")
+}
 ```
 :::
 
@@ -2114,9 +2264,12 @@ show_projection_tabs("forecast_outputs", c("change_chart", "change_table"), c("C
 
 ```{r}
 #| label: first-draft-all-changes
-#| eval: !expr projection_forecast_ready
 
-first_draft_projections$all_changes_table
+if (projection_forecast_ready) {
+  first_draft_projections$all_changes_table
+} else {
+  htmltools::div("Percentage changes will appear when projection preparation succeeds. Check projection coverage.")
+}
 ```
 :::
 
@@ -2131,6 +2284,8 @@ Actual 2023/24 flows and LA/age shares are held fixed to model 2024/25 and 2025/
 if (!is.null(first_draft_projections) && !projection_backtest_ready) {
   cat(if (is.null(first_draft_projections$backtest)) "Re-run the analysis runner to prepare the retrospective check." else
         first_draft_projections$backtest$note)
+} else if (projection_backtest_ready && nzchar(first_draft_projections$backtest$note)) {
+  cat(first_draft_projections$backtest$note)
 }
 ```
 
@@ -2152,11 +2307,21 @@ show_projection_tabs("backtest_outputs", c("chart", "table"), c("Chart", "Table"
 
 first_draft_projections$backtest$all_table
 ```
+
+### Projection coverage, 2023/24
+
+```{r}
+#| label: first-draft-backtest-coverage
+#| eval: !expr projection_backtest_ready
+
+first_draft_projections$backtest$coverage_table
+first_draft_projections$backtest$coverage_details_table
+```
 :::
 
 # 10. Imaginary Example {#imaginary-example}
 
-**Everything below is invented.** Two LAs and two age bands keep the arithmetic small. Modifiers are exaggerated for easy maths. “Maternities” means pregnancies reaching delivery; twins are one maternity.
+**The LAs, counts and modifiers below are invented.** Two LAs and two age bands keep the arithmetic small. Modifiers are exaggerated for easy maths. “Maternities” means pregnancies reaching delivery; twins are one maternity.
 
 ```{r}
 #| label: imaginary-example-setup
@@ -2207,9 +2372,9 @@ Our imaginary Method 1 modifiers are:
 imaginary_example$modifiers_table
 ```
 
-For LA B, age 25–29:
+**Small arithmetic illustration, separate from the ten-year forecast below:** suppose births for LA B, age 25–29 rise by 10%.
 
-| Calculation | Base | Year 1 |
+| Calculation | Base | Hypothetical future |
 |---|---:|---:|
 | ONS projected babies | 100 | 110 |
 | Convert to maternities: multiply by 0.5 | 50 | 55 |
@@ -2219,19 +2384,13 @@ For LA B, age 25–29:
 
 Same result here: **55 projected LA maternities × 80% sent to Trust A = 44**.
 
-Repeat for all four LA/age groups:
-
-```{r}
-#| label: imaginary-first-year-table
-
-imaginary_example$first_year_table
-```
-
-**Year 1 at Trust A = 44 + 48 + 20 + 11 = 123 maternities.** The observed 2025/26 count stays **110**.
+The observed 2025/26 count stays **110**.
 
 ## Step 4: repeat for ten future years
 
-Invented ONS births increase by fixed amounts each year: B ages 25–29 **+10**, B ages 30–34 **+10**, C ages 25–29 **+0**, C ages 30–34 **+5**. Keep modifiers and delivery shares fixed.
+Public ONS Method 1 maternities across Birmingham, Dudley, Sandwell, Solihull, Walsall and Wolverhampton change by **`r scales::percent(imaginary_example$ons_change, accuracy = 0.1)`** from mid-2026 to mid-2036; rounded to the nearest 5 percentage points, this is **`r scales::percent(imaginary_example$ten_year_change, accuracy = 1)`**.
+
+For simplicity, all four fictional LA/age groups follow that same total change, spread evenly across ten years. Keep modifiers and delivery shares fixed. Year 10 multiplier: **`r formatC(1 + imaginary_example$ten_year_change, format = "f", digits = 3)`**; Trust A: **110 × multiplier = `r scales::comma(110 * (1 + imaginary_example$ten_year_change), accuracy = 0.1)`**.
 
 Future Year 1 represents ONS mid-2027 growth relative to mid-2026; Year 10 represents mid-2036. Every projected flow uses the same **actual flow × future ONS maternities ÷ base ONS maternities** calculation.
 

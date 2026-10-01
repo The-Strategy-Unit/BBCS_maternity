@@ -1,7 +1,7 @@
-# Historical ONS analysis notes
+# ONS analysis notes
 
-These notes preserve the ONS component's earlier setup and methods QA. Its files
-now live in the project root. Use `README.md` for the current run order and
+These notes record the ONS component's chosen source editions and methods QA.
+Its files live in the project root. Use `README.md` for the current run order and
 `index.qmd` for the current report, including both methods and patient flows.
 
 ## Structure
@@ -27,11 +27,14 @@ quarto render
 
 The current report documents source coverage and preparation. Add analysis modules to `R/` and report sections to `index.qmd` as requirements are defined.
 
-The female population projection snapshot was downloaded from Nomis dataset `NM_2006_1`
-(ONS 2022-based subnational population projections). It retains female single ages
-0-89 for 2023-2047, allowing the displayed range to be changed in
-`config/analysis_parameters.csv` without replacing the snapshot. Adding an authority
-requires refreshing the extract to include its GSS code; the report checks for this.
+The female population projection snapshot is extracted directly from the official
+ONS 2022-based migration-category variant on April 2023 local-authority geography.
+It retains female single ages 0-89 for 2023-2047, using the archive's published
+decimal values rather than whole-person Nomis rounding. This allows the displayed
+range to be changed in `config/analysis_parameters.csv` without replacing the
+snapshot. Adding an authority requires refreshing the extract to include its
+GSS code; the report checks for this. This matching extract has its own file name:
+`data/ons_2022_based_female_population_projections_2023_geography.csv`.
 
 The historic live-birth snapshot is `data/ons_live_births_la_2013_2025.csv`, downloaded
 from Nomis dataset `NM_205_1` (API reference `LEBIRTHSLA`). It contains total live births
@@ -44,18 +47,43 @@ the female population projection extract.
 
 To change the areas shown throughout the report, edit `config/local_authorities.csv`. Add or remove rows and supply the ONS area code and name. Plot colours may be left blank; the report assigns additional colours automatically.
 
-## Methods QA, 25 September 2026
+## Source and methods QA, 1 October 2026
 
-The report reads `data/ons_2022_based_births_migration_category.csv`, extracted from
-the corrected ONS migration-category ZIP on 25 September 2026:
-https://www.ons.gov.uk/file?uri=%2Fpeoplepopulationandcommunity%2Fpopulationandmigration%2Fpopulationprojections%2Fdatasets%2Fbirthsbyageofmotherz3%2F2022basedmigrationcategoryvariant%2F2022snppbirthsmigcat.zip
+Both Method 1 and Method 2 now use the 2022-based migration-category variant on
+April 2023 local-authority geography for projected births and female population.
+This replaces the 2021-geography setup documented on 25 September 2026; the
+conversion calculations for both methods are unchanged.
 
-This is the 2021 geography edition. The saved Nomis female-population extract was
-checked against the matching corrected ONS population archive: all 13,500 values
-agree to whole-person rounding (maximum difference 0.5). The previous supplied
-birth file had undocumented variant/geography and differing values; it is retained
-as an input record but is no longer read by the report. Its differences do not by
-themselves establish that the original ONS edition was wrong.
+The report reads the existing supplied `data/2022 SNPP Births persons.csv` directly.
+That file is unchanged and matches the persons entry byte-for-byte in the official
+2023-geography birth archive:
+[ONS 2023-geography birth projections ZIP](https://www.ons.gov.uk/file?uri=%2Fpeoplepopulationandcommunity%2Fpopulationandmigration%2Fpopulationprojections%2Fdatasets%2Fbirthsbyageofmotherz3%2F2022basedmigrationcategoryvarianton2023localauthoritygeographies%2F2022snppbirthsmigcat23.zip).
+
+The new, separately named female snapshot uses `2022 SNPP Population females.csv` from the matching
+[ONS 2023-geography population projections ZIP](https://www.ons.gov.uk/file?uri=%2Fpeoplepopulationandcommunity%2Fpopulationandmigration%2Fpopulationprojections%2Fdatasets%2Flocalauthoritiesinenglandz1%2F2022basedmigrationcategoryvarianton2023localauthoritygeographies%2F2022snpppopulationsyoamigcat23.zip).
+Archive SHA-256:
+`c452e4e8d04747d4f05484efcdefe100e7d6117147c3d2b4051007a71e14ee82`.
+
+Snapshot QA found 13,500 complete, unique, positive cells: six configured
+authorities x 90 ages (0-89) x 25 years (2023-2047). Values are copied directly
+from ONS; metadata identifies female sex, the 2022 base year, April 2023 geography,
+migration-category variant and source archive. The five columns required by
+`read_female_population_single_age()` are retained, with direct ONS metadata instead
+of Nomis-specific fields. The maximum absolute difference from the older
+whole-person snapshot is 4.493 people, so the earlier within-0.5 QA applies only
+to the 2021-geography source, not this edition.
+
+The older `data/ons_2022_based_births_migration_category.csv` and
+`data/ons_2022_based_female_population_projections.csv` are preserved unchanged.
+The report no longer selects them by default; no existing input CSV has been
+replaced. Only the new matching female extract is added.
+
+Public-data execution checks passed for both methods: each produces 900 complete
+LA/age/year maternity cells (six LAs x six age bands x 25 years), with 150 complete
+LA/year population denominators for the projected fertility ratios. The imaginary
+example recalculates its growth from the selected birth file: Method 1 changes
+by -0.6172% from 2026 to 2036, rounding to 0% at five-percentage-point intervals.
+Its ten-year total therefore remains 110. Secure MSDS blocks were not run here.
 
 Maternity estimates use the original age-specific multiplicity method: average
 the 2023–2025 annual singleton/twin/triplet/four-plus shares, calculate expected
@@ -67,8 +95,9 @@ to model ages 15 and 44. For 40+, combine annual category counts before calculat
 shares. No extra boundary-age births are added. Published calendar-year counts
 and calculated mid-year series remain separate lines on the same chart.
 
-Patient-flow reporting periods and counting units are not established in the
-supplied matrices. They are labelled records pending confirmation from their producer.
+For the original matrix-based patient-flow sections, reporting periods and counting
+units are not established in the supplied matrices. Those values are labelled records
+pending confirmation from their producer.
 Execution freezing remains disabled in `_quarto.yml`.
 
 ## Combined report

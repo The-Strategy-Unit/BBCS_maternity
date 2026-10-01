@@ -1595,7 +1595,7 @@ delivery_geography <- readRDS(".delivery_geography.rds")
 
 ## 8.1 Resident LA to delivery destination, 2025/26 {#delivery-la-destinations}
 
-Recorded deliveries to cluster residents, plus deliveries associated with cluster providers from elsewhere. Each Sankey shows one resident LA's destinations or one destination's feeder LAs, ordered by volume. Charts retain cluster LAs and the ten largest additional feeders, and the six main trusts and ten largest other delivery organisations; smaller flows are grouped. Home births and unknown residence or providers stay separate. Hover gives counts and percentages of the chart's recorded deliveries; All flows retains every LA and individual trust.
+Recorded deliveries to cluster residents, plus deliveries associated with cluster providers from elsewhere. Grids retain the main cluster areas, ten largest additional areas overall and an all-other chart. Within each LA chart, destinations are the main trusts, home births, that LA's five largest other trusts and all other trusts. Within each destination chart, feeders are cluster LAs, that destination's five largest other LAs and all other feeder LAs. Unknowns stay separate; all flows, including home births, are ranked by volume. The matrix retains its overall destination groups; All flows keeps every LA and trust. Hover gives counts and percentages of the chart's recorded deliveries.
 
 ::: panel-tabset
 

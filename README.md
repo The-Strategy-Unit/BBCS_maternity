@@ -120,10 +120,11 @@ The reader expects the environment variables `container`, `lake`, `folder` and
 - Trust and ICB labels, provider membership and the service cluster are defined in
   `R/additional_analysis.R`. The current cluster combines Black Country and
   Birmingham and Solihull. These settings are separate from the ONS LA configuration.
-- Sections 8 and 9.1 keep the configured cluster LAs visible, then show the ten
+- Sections 8.2, 8.3 and 9.1 keep the configured cluster LAs visible, then show the ten
   largest additional feeders and group the rest as "All other feeder LAs".
-  Section 8.1 also shows the six main trusts and ten largest other delivery
-  organisations, then "All other trusts". Full tables keep every flow.
+  Section 8.1 uses five additional flows, selected separately within each chart.
+  Main cluster areas, home births and unknowns stay separate. The grids show the
+  main areas, ten largest others overall and an all-other chart. Full tables keep every flow.
 
 Organisation and age-band tabs are written explicitly in `index.qmd`. If you
 change those groups, update the corresponding tab headings and output calls too.

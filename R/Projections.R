@@ -13,6 +13,7 @@ projection_minimum_age <- 10
 projection_maximum_age <- 60
 projection_other_feeders <- 10L
 projection_chart_height <- 480
+projection_age_grid_height <- 280
 projection_history_chart_height <- 300
 projection_history_colours <- c("MSDS observed" = "#005EB8", "ONS-based model" = "#D55E00")
 
@@ -409,7 +410,8 @@ build_first_draft_projections <- function(baseline_fy = projection_baseline,
       plotly::config(displayModeBar = FALSE, responsive = TRUE)
   }
   age_line_chart <- function(data, value, title, percent = FALSE) {
-    chart <- plotly::plot_ly(height = projection_chart_height)
+    # Set the plot and its container to the same compact height from the start.
+    chart <- plotly::plot_ly(height = projection_age_grid_height)
     chart_bands <- c(age_bands, if ("Unknown" %in% data$Age_band) "Unknown")
     chart_colours <- c(age_colours, "#222222")
     for (i in seq_along(chart_bands)) {
@@ -552,11 +554,10 @@ build_first_draft_projections <- function(baseline_fy = projection_baseline,
           if (bands[i] == "Unknown") "Unknown age" else bands[i])
       })))
     htmltools::tagList(key,
-      htmltools::div(style = "display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px;",
+      htmltools::div(style = "display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); column-gap: 24px; row-gap: 36px;",
         htmltools::tagList(lapply(seq_len(nrow(rows)), function(i) {
           chart <- forecast_outputs[[rows$Key[i]]][[field]]
           if (inherits(chart, "plotly")) {
-            chart$height <- 350
             chart <- plotly::layout(chart, showlegend = FALSE,
               xaxis = list(title = "", tickangle = -45, tickfont = list(size = 10)),
               yaxis = list(title = if (field == "growth_chart") "ONS change" else "Maternities",
@@ -582,12 +583,15 @@ build_first_draft_projections <- function(baseline_fy = projection_baseline,
     }))
   }), c("growth_table", "incoming_table"))
 
-  # Section 9.3: compare organisations on one chart for each level.
+  # Section 9.3: trusts share one chart; the two ICBs and whole cluster share another.
   # Each line uses the existing totals across all feeder LAs and age bands.
-  total_charts <- stats::setNames(lapply(c("Trust", "ICB", "Cluster"), function(level) {
-    rows <- organisations[organisations$Level == level, , drop = FALSE]
-    # Keep the same six named trusts previously displayed in section 9.3.
-    if (level == "Trust") rows <- rows[rows$Code %in% setdiff(names(trust_labels), "Other"), , drop = FALSE]
+  total_charts <- stats::setNames(lapply(c("Trust", "ICB_Cluster"), function(group) {
+    rows <- if (group == "Trust") {
+      organisations[organisations$Level == "Trust" &
+        organisations$Code %in% setdiff(names(trust_labels), "Other"), , drop = FALSE]
+    } else {
+      organisations[organisations$Level %in% c("ICB", "Cluster"), , drop = FALSE]
+    }
     colours <- grDevices::hcl.colors(nrow(rows), palette = "Dark 3")
     chart <- plotly::plot_ly(height = projection_chart_height + 100)
     for (i in seq_len(nrow(rows))) {
@@ -609,7 +613,7 @@ build_first_draft_projections <- function(baseline_fy = projection_baseline,
         legend = list(orientation = "h", x = 0, y = 1.04,
                       xanchor = "left", yanchor = "bottom", font = list(size = 12)),
         margin = list(l = 85, r = 20, t = 130, b = 125))
-  }), c("Trust", "ICB", "Cluster"))
+  }), c("Trust", "ICB_Cluster"))
 
   # Section 9.4: compare percentage changes from the actual 2025/26 baseline.
   # Trusts share one chart; the two ICBs and whole cluster share the other.

@@ -2405,20 +2405,12 @@ Incoming flows summed across all feeder LAs and ages. Baseline: actual 2025/26; 
 htmltools::browsable(htmltools::tagList(first_draft_projections$total_charts$Trust))
 ```
 
-### ICBs
+### ICBs and whole cluster
 
 ```{r}
-#| label: projection-totals-icbs
+#| label: projection-totals-icbs-cluster
 
-htmltools::browsable(htmltools::tagList(first_draft_projections$total_charts$ICB))
-```
-
-### Cluster
-
-```{r}
-#| label: projection-totals-cluster
-
-htmltools::browsable(htmltools::tagList(first_draft_projections$total_charts$Cluster))
+htmltools::browsable(htmltools::tagList(first_draft_projections$total_charts$ICB_Cluster))
 ```
 
 ### All organisations — table

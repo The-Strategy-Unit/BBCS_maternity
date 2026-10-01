@@ -1984,3 +1984,172 @@ delivery_over_time$change_table
 :::
 
 # 8. Deliveries by LA and Age Bands {#deliveries-by-la-and-age-bands}
+
+# 9. First draft: projections {#first-draft-projections}
+
+```{r}
+#| label: first-draft-projections-setup
+#| include: false
+
+first_draft_projections <- if (file.exists(".projections.rds")) readRDS(".projections.rds") else NULL
+projection_mapping_ready <- !is.null(first_draft_projections) && isTRUE(first_draft_projections$mapping_ready)
+projection_forecast_ready <- !is.null(first_draft_projections) && isTRUE(first_draft_projections$forecast_ready)
+projection_backtest_ready <- !is.null(first_draft_projections) && isTRUE(first_draft_projections$backtest$ready)
+
+# Presentation only: labelled organisation tabs with nested chart/table tabs.
+# The R script prepares every object displayed here.
+show_projection_tabs <- function(output_name, fields, labels, section) {
+  for (i in seq_len(nrow(first_draft_projections$organisations))) {
+    org <- first_draft_projections$organisations[i, , drop = FALSE]
+    child <- c(paste0("\n### ", org$Organisation, " {#projection-", section, "-", org$Key, "}\n"),
+               ":::: panel-tabset", "")
+    for (j in seq_along(fields)) {
+      expression <- paste0("first_draft_projections$", output_name,
+                           "[[\"", org$Key, "\"]]$", fields[j])
+      if (grepl("chart$", fields[j])) {
+        expression <- paste0("htmltools::browsable(htmltools::tagList(", expression, "))")
+      }
+      child <- c(child, paste0("#### ", labels[j], "\n"), "```{r}",
+        paste0("#| label: projection-", section, "-", org$Key, "-", fields[j]),
+        expression, "```", "")
+    }
+    child <- c(child, "::::", "")
+    cat(knitr::knit_child(text = child, envir = environment(), quiet = TRUE), sep = "\n")
+  }
+}
+```
+
+```{r}
+#| label: first-draft-projections-notes
+#| results: asis
+
+if (is.null(first_draft_projections)) {
+  cat("Run R/Run these to get needed objects.R in the secure environment, then render this report.")
+} else if (nzchar(first_draft_projections$note)) {
+  cat(first_draft_projections$note)
+}
+```
+
+## 9.1 Feeder LA and age-band shares, 2025/26 {#projection-feeder-mapping}
+
+MSDS deliveries here ÷ all pregnancies in the same resident LA and age band. Home births remain in LA totals; ICBs and the cluster group delivery trusts. The totals file's `count` is assumed to count pregnancies.
+
+::: panel-tabset
+
+```{r}
+#| label: first-draft-mapping-tabs
+#| eval: !expr projection_mapping_ready
+#| results: asis
+
+show_projection_tabs("mapping_outputs", c("chart", "table"), c("Chart", "Table"), "mapping")
+```
+
+### All destinations — accounting
+
+```{r}
+#| label: first-draft-mapping-accounting
+#| eval: !expr projection_mapping_ready
+
+first_draft_projections$accounting_table
+```
+:::
+
+## 9.2 Age-specific ONS change and incoming flows {#projection-age-specific-flows}
+
+Method 1 ONS maternity growth is applied within each feeder LA and age band. Actual 2025/26 flows are unchanged; growth uses ONS mid-2026 as its reference. Charts summarise age bands; tables retain every feeder LA and year.
+
+::: panel-tabset
+
+```{r}
+#| label: first-draft-age-flow-tabs
+#| eval: !expr projection_forecast_ready
+#| results: asis
+
+show_projection_tabs("forecast_outputs",
+  c("growth_chart", "incoming_chart", "growth_table", "incoming_table"),
+  c("ONS growth — chart", "Incoming flows — chart", "ONS growth — table", "Incoming flows — table"),
+  "age-flows")
+```
+:::
+
+## 9.3 Total maternity projections {#projection-total-maternities}
+
+Incoming flows summed across all feeder LAs and ages. Baseline: actual 2025/26; later years: ONS mid-year growth, with the 2025/26 mapping held fixed.
+
+::: panel-tabset
+
+```{r}
+#| label: first-draft-total-tabs
+#| eval: !expr projection_forecast_ready
+#| results: asis
+
+show_projection_tabs("forecast_outputs", c("total_chart", "total_table"), c("Chart", "Table"), "totals")
+```
+
+### All organisations — table
+
+```{r}
+#| label: first-draft-all-totals
+#| eval: !expr projection_forecast_ready
+
+first_draft_projections$all_totals_table
+```
+:::
+
+## 9.4 Percentage change from 2025/26 {#projection-percentage-change}
+
+Relative change in total maternities from actual 2025/26, using the same projections. A zero baseline has no calculable percentage change.
+
+::: panel-tabset
+
+```{r}
+#| label: first-draft-change-tabs
+#| eval: !expr projection_forecast_ready
+#| results: asis
+
+show_projection_tabs("forecast_outputs", c("change_chart", "change_table"), c("Chart", "Table"), "changes")
+```
+
+### All organisations — table
+
+```{r}
+#| label: first-draft-all-changes
+#| eval: !expr projection_forecast_ready
+
+first_draft_projections$all_changes_table
+```
+:::
+
+## 9.5 Retrospective check: observed versus modelled, 2023/24–2025/26 {#projection-retrospective-check}
+
+Actual 2023/24 flows and LA/age shares are held fixed to model 2024/25 and 2025/26 using Method 1 ONS growth. This retrospective check uses the current ONS edition; mid-2024 is the growth reference. Positive differences mean overprediction.
+
+```{r}
+#| label: first-draft-backtest-notes
+#| results: asis
+
+if (!is.null(first_draft_projections) && !projection_backtest_ready) {
+  cat(if (is.null(first_draft_projections$backtest)) "Re-run the analysis runner to prepare the retrospective check." else
+        first_draft_projections$backtest$note)
+}
+```
+
+::: panel-tabset
+
+```{r}
+#| label: first-draft-backtest-tabs
+#| eval: !expr projection_backtest_ready
+#| results: asis
+
+show_projection_tabs("backtest_outputs", c("chart", "table"), c("Chart", "Table"), "backtest")
+```
+
+### All organisations — comparison table
+
+```{r}
+#| label: first-draft-all-backtests
+#| eval: !expr projection_backtest_ready
+
+first_draft_projections$backtest$all_table
+```
+:::

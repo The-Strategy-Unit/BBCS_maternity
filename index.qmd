@@ -1755,7 +1755,7 @@ delivery_geography$outputs[["trust-rna"]]$age_table
 ```
 :::
 
-#### Birmingham Women's and Children's NHS Foundation Trust {#delivery-geography-mapping-trust-rq3}
+#### Birmingham Women's and Children's NHS Foundation Trust
 
 ::: panel-tabset
 ##### LA contributions
@@ -1791,7 +1791,7 @@ delivery_geography$outputs[["trust-rq3"]]$age_table
 ```
 :::
 
-#### University Hospitals Birmingham NHS Foundation Trust {#delivery-geography-mapping-trust-rrk}
+#### University Hospitals Birmingham NHS Foundation Trust
 
 ::: panel-tabset
 ##### LA contributions

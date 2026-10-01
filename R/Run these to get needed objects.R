@@ -10,7 +10,8 @@ local({
     "R/Read parquet files from azure.R",
     "R/matrix of booking appts and births.R",
     "R/additional_analysis.R",
-    "R/Projections.R"
+    "R/Projections.R",
+    "R/Imaginary Example.R"
   )
 
   missing_scripts <- scripts[!file.exists(scripts)]

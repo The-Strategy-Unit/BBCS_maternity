@@ -2153,3 +2153,111 @@ show_projection_tabs("backtest_outputs", c("chart", "table"), c("Chart", "Table"
 first_draft_projections$backtest$all_table
 ```
 :::
+
+# 10. Imaginary Example {#imaginary-example}
+
+**Everything below is invented.** Two LAs and two age bands keep the arithmetic small. Modifiers are exaggerated for easy maths. “Maternities” means pregnancies reaching delivery; twins are one maternity.
+
+```{r}
+#| label: imaginary-example-setup
+#| include: false
+
+source("R/Imaginary Example.R")
+```
+
+## Step 1: keep the actual counts
+
+Trust A recorded:
+
+```{r}
+#| label: imaginary-observed-table
+
+imaginary_example$observed_table
+```
+
+In 2025/26, mothers' residence and delivery destination were:
+
+```{r}
+#| label: imaginary-destinations-table
+
+imaginary_example$destinations_table
+```
+
+**Trust A's 110 = 80 from catchment LA B + 30 from outside LA C.** Home births stay in resident-LA totals and are separate from deliveries at Trust A.
+
+## Step 2: split each LA by age
+
+Each share divides **deliveries at Trust A by all maternities in that LA and age band**.
+
+```{r}
+#| label: imaginary-mapping-table
+
+imaginary_example$mapping_table
+```
+
+Example: LA B, age 25–29 sends **40 ÷ 50 = 80%** to Trust A. All four flows add to **40 + 40 + 20 + 10 = 110**.
+
+## Step 3: convert ONS births, then find growth
+
+Our imaginary Method 1 modifiers are:
+
+```{r}
+#| label: imaginary-modifiers-table
+
+imaginary_example$modifiers_table
+```
+
+For LA B, age 25–29:
+
+| Calculation | Base | Year 1 |
+|---|---:|---:|
+| ONS projected babies | 100 | 110 |
+| Convert to maternities: multiply by 0.5 | 50 | 55 |
+| Apply growth to Trust A's actual 40 | 40 | 40 × (55 ÷ 50) = **44** |
+
+**Babies rose 10%; maternities also rose 10%.** Halving both counts leaves the same growth: **110 ÷ 100 = 55 ÷ 50 = 1.10**. The conversion changes counts; its fixed multiplier leaves growth unchanged.
+
+Same result here: **55 projected LA maternities × 80% sent to Trust A = 44**.
+
+Repeat for all four LA/age groups:
+
+```{r}
+#| label: imaginary-first-year-table
+
+imaginary_example$first_year_table
+```
+
+**Year 1 at Trust A = 44 + 48 + 20 + 11 = 123 maternities.** The observed 2025/26 count stays **110**.
+
+## Step 4: repeat for ten future years
+
+Invented ONS births increase by fixed amounts each year: B ages 25–29 **+10**, B ages 30–34 **+10**, C ages 25–29 **+0**, C ages 30–34 **+5**. Keep modifiers and delivery shares fixed.
+
+Future Year 1 represents ONS mid-2027 growth relative to mid-2026; Year 10 represents mid-2036. Every projected flow uses the same **actual flow × future ONS maternities ÷ base ONS maternities** calculation.
+
+::: panel-tabset
+
+### Chart
+
+```{r}
+#| label: imaginary-projection-chart
+
+imaginary_example$chart
+```
+
+### Projected maternities
+
+```{r}
+#| label: imaginary-projection-table
+
+imaginary_example$projection_table
+```
+
+### Fictional ONS birth inputs
+
+```{r}
+#| label: imaginary-ons-table
+
+imaginary_example$ons_table
+```
+:::

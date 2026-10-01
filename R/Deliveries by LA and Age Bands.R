@@ -195,6 +195,68 @@ build_delivery_geography <- function(years = delivery_years, age_bands = deliver
     plotly::layout(font = list(family = "Arial", size = 11), margin = list(l = 12, r = 12, t = 15, b = 15)) |>
     plotly::config(displayModeBar = FALSE, responsive = TRUE)
 
+  # Step 4a: split the same flows into readable charts, keeping each LA's colour.
+  # One view follows a single LA to its destinations; the other shows a destination's feeder LAs.
+  small_sankey <- function(links, origin_codes, destination_codes, percentage_label) {
+    source_names <- origin_labels[match(origin_codes, origins)]
+    target_names <- destination_labels[match(destination_codes, destinations)]
+    source_counts <- vapply(origin_codes, function(code) sum(links$N[links$Origin == code]), numeric(1))
+    target_counts <- vapply(destination_codes, function(code) sum(links$N[links$Destination_group == code]), numeric(1))
+    total <- sum(links$N)
+    chart_height <- max(360, max(length(origin_codes), length(destination_codes)) * 42 + 80)
+    # Leave a gap between nodes, while keeping their heights proportional to delivery counts.
+    node_positions <- function(counts) {
+      gap <- 28 / (chart_height - 40)
+      0.02 + (cumsum(counts) - counts / 2) / sum(counts) * (0.96 - gap * (length(counts) - 1L)) +
+        gap * (seq_along(counts) - 1L)
+    }
+    node_names <- c(source_names, target_names)
+    node_counts <- c(source_counts, target_counts)
+    plotly::plot_ly(type = "sankey", height = chart_height, arrangement = "fixed",
+      node = list(
+        label = node_names,
+        pad = 28, thickness = 18,
+        x = c(rep(0.02, length(origin_codes)), rep(0.98, length(destination_codes))),
+        y = c(node_positions(source_counts), node_positions(target_counts)),
+        color = c(palette[match(origin_codes, origins)], rep("#727272", length(destination_codes))),
+        customdata = paste0(node_names, "<br>Recorded deliveries: ", scales::comma(node_counts, accuracy = 1)),
+        hovertemplate = "%{customdata}<extra></extra>"),
+      link = list(
+        source = match(links$Origin, origin_codes) - 1L,
+        target = length(origin_codes) + match(links$Destination_group, destination_codes) - 1L,
+        value = links$N,
+        color = grDevices::adjustcolor(palette[match(links$Origin, origins)], alpha.f = 0.45),
+        customdata = paste0(origin_labels[match(links$Origin, origins)], " to ",
+          destination_labels[match(links$Destination_group, destinations)],
+          "<br>Deliveries: ", scales::comma(links$N, accuracy = 1),
+          "<br>% of ", percentage_label, ": ", scales::percent(links$N / total, accuracy = 0.1)),
+        hovertemplate = "%{customdata}<extra></extra>")) |>
+      plotly::layout(font = list(family = "Arial"), margin = list(l = 12, r = 12, t = 15, b = 15)) |>
+      plotly::config(displayModeBar = FALSE, responsive = TRUE)
+  }
+  sankey_by_la_grid <- htmltools::div(
+    style = "display: grid; grid-template-columns: repeat(2, minmax(600px, 1fr)); gap: 24px; overflow-x: auto;",
+    htmltools::tagList(lapply(origins, function(origin) {
+      links <- sankey_links |>
+        dplyr::filter(Origin == origin) |>
+        dplyr::arrange(dplyr::desc(N), Destination_group)
+      htmltools::div(style = "min-width: 0;",
+        htmltools::h3(style = "font-size: 15px; margin: 0 0 8px;", origin_labels[match(origin, origins)]),
+        small_sankey(links, origin, links$Destination_group, "recorded deliveries from this LA group"))
+    })))
+
+  # Step 4b: use the same counts to show where each delivery destination's mothers lived.
+  sankey_by_destination_grid <- htmltools::div(
+    style = "display: grid; grid-template-columns: repeat(2, minmax(600px, 1fr)); gap: 24px; overflow-x: auto;",
+    htmltools::tagList(lapply(destinations, function(destination) {
+      links <- sankey_links |>
+        dplyr::filter(Destination_group == destination) |>
+        dplyr::arrange(dplyr::desc(N), Origin)
+      htmltools::div(style = "min-width: 0;",
+        htmltools::h3(style = "font-size: 15px; margin: 0 0 8px;", destination_labels[match(destination, destinations)]),
+        small_sankey(links, links$Origin, destination, "recorded deliveries at this destination"))
+    })))
+
   # Step 5: count hospital deliveries by LA and age for each trust, ICB and the cluster.
   # Each share uses the receiving organisation's total deliveries in that year.
   hospital_mapping <- dplyr::bind_rows(lapply(seq_len(nrow(organisations)), function(i) {
@@ -286,6 +348,7 @@ build_delivery_geography <- function(years = delivery_years, age_bands = deliver
       plotly::config(displayModeBar = FALSE, responsive = TRUE)
   }
   # Step 7: make the organisation charts and the tables shown in section 8.
+  age_colours <- grDevices::hcl.colors(length(age_bands), palette = delivery_palette)
   organisation_plots <- stats::setNames(lapply(seq_len(nrow(organisations)), function(i) {
     org <- organisations[i, , drop = FALSE]
     ages <- hospital_mapping[hospital_mapping$Key == org$Key & hospital_mapping$Year == "2025/26", , drop = FALSE]
@@ -330,12 +393,12 @@ build_delivery_geography <- function(years = delivery_years, age_bands = deliver
         x = ~Share, y = ~LA, type = "bar", orientation = "h",
         marker = list(color = chart_origin$Share, colorscale = list(c(0, "#DCEAF4"), c(1, delivery_chart_blue)),
           cmin = 0, cmax = max(chart_origin$Share), showscale = FALSE),
-        text = ~paste0(Resident_LA, "<br>Deliveries: ", scales::comma(N), "<br>% of organisation: ", scales::percent(Share, accuracy = 0.1)),
-        hovertemplate = "%{text}<extra></extra>", showlegend = FALSE) |>
+        hovertext = ~paste0(Resident_LA, "<br>Deliveries: ", scales::comma(N), "<br>% of organisation: ", scales::percent(Share, accuracy = 0.1)),
+        hovertemplate = "%{hovertext}<extra></extra>", showlegend = FALSE) |>
         plotly::layout(xaxis = list(title = "% of all hospital deliveries at this organisation", tickformat = ".0%"),
           yaxis = list(title = "", categoryorder = "array", categoryarray = chart_origin$LA, autorange = "reversed",
-            tickmode = "array", tickvals = chart_origin$LA, ticktext = chart_origin$Resident_LA),
-          margin = list(l = 255, r = 25, t = 15, b = 65), font = list(family = "Arial", size = 11)) |>
+            tickmode = "array", tickvals = chart_origin$LA, ticktext = chart_origin$Resident_LA, automargin = TRUE),
+          margin = list(l = 30, r = 25, t = 15, b = 65), font = list(family = "Arial")) |>
         plotly::config(displayModeBar = FALSE, responsive = TRUE)
       plot_ages <- ages |>
         dplyr::mutate(LA = dplyr::case_when(LA %in% unknown ~ "Unknown LA",
@@ -349,22 +412,21 @@ build_delivery_geography <- function(years = delivery_years, age_bands = deliver
         dplyr::ungroup() |>
         dplyr::arrange(match(LA, chart_origin$LA), match(Age_band, age_bands))
       age_chart <- plotly::plot_ly(height = max(380, nrow(chart_origin) * 24 + 130))
-      age_colours <- grDevices::hcl.colors(length(age_bands), palette = delivery_palette)
       for (j in seq_along(age_bands)) {
         band <- plot_ages[plot_ages$Age_band == age_bands[j], , drop = FALSE]
         age_chart <- plotly::add_trace(age_chart, x = band$Age_share, y = band$LA,
           type = "bar", orientation = "h", name = age_bands[j], marker = list(color = age_colours[j]),
-          text = paste0(band$Resident_LA, "<br>Age: ", age_bands[j], "<br>Deliveries: ", scales::comma(band$N),
+          hovertext = paste0(band$Resident_LA, "<br>Age: ", age_bands[j], "<br>Deliveries: ", scales::comma(band$N),
             "<br>All deliveries from this LA here: ", scales::comma(band$LA_total),
             "<br>% within this LA: ", scales::percent(band$Age_share, accuracy = 0.1)),
-          hovertemplate = "%{text}<extra></extra>")
+          hovertemplate = "%{hovertext}<extra></extra>")
       }
       age_chart <- age_chart |>
         plotly::layout(barmode = "stack", xaxis = list(title = "% of this LA's deliveries here", tickformat = ".0%", range = c(0, 1)),
           yaxis = list(title = "", autorange = "reversed", categoryorder = "array", categoryarray = chart_origin$LA,
-            tickmode = "array", tickvals = chart_origin$LA, ticktext = chart_origin$Resident_LA),
-          legend = list(orientation = "h", x = 0, y = 1.12),
-          margin = list(l = 200, r = 25, t = 85, b = 65), font = list(family = "Arial", size = 11)) |>
+            tickmode = "array", tickvals = chart_origin$LA, ticktext = chart_origin$Resident_LA, automargin = TRUE),
+          showlegend = FALSE,
+          margin = list(l = 30, r = 25, t = 15, b = 65), font = list(family = "Arial")) |>
         plotly::config(displayModeBar = FALSE, responsive = TRUE)
     }
     origin_table <- origin |>
@@ -393,12 +455,48 @@ build_delivery_geography <- function(years = delivery_years, age_bands = deliver
       change_table = wide_trend_table(trend, "Change in all resident LA contributions from 2023/24", changes = TRUE),
       trend_groups = grouped, visible_las = visible_las, age_mix = if (nrow(origin)) plot_ages else NULL)
   }), organisations$Key)
+  # Step 8: compare the six main trusts, then the two ICBs and combined cluster.
+  # Wide charts and automatic label margins keep names on one line; scroll if needed.
+  mapping_groups <- list(
+    Trust = organisations[organisations$Level == "Trust" &
+      organisations$Code %in% setdiff(names(trust_labels), "Other"), , drop = FALSE],
+    ICB_Cluster = organisations[organisations$Level %in% c("ICB", "Cluster"), , drop = FALSE])
+  age_key <- htmltools::div(
+    style = "display: flex; flex-wrap: wrap; gap: 12px 24px; margin-bottom: 20px;",
+    htmltools::tagList(lapply(seq_along(age_bands), function(i) {
+      htmltools::span(style = "display: inline-flex; align-items: center; gap: 6px;",
+        htmltools::span(style = paste0("display: inline-block; width: 16px; height: 12px; background: ",
+          age_colours[i], ";"), `aria-hidden` = "true"), age_bands[i])
+    })))
+  mapping_grid <- function(rows, field) {
+    htmltools::tagList(if (field == "age_chart") age_key,
+      htmltools::div(
+        style = "display: grid; grid-template-columns: repeat(3, minmax(600px, 1fr)); gap: 24px; overflow-x: auto;",
+        htmltools::tagList(lapply(seq_len(nrow(rows)), function(i) {
+          htmltools::div(style = "min-width: 0;",
+            htmltools::h4(style = "margin: 0 0 12px;", rows$Organisation[i]),
+            organisation_plots[[rows$Key[i]]][[field]])
+        }))))
+  }
+  mapping_grids <- lapply(mapping_groups, function(rows) list(
+    origin_chart = mapping_grid(rows, "origin_chart"),
+    age_chart = mapping_grid(rows, "age_chart")))
+  # Keep the original full LA tables together under organisation headings.
+  mapping_table_rows <- dplyr::bind_rows(mapping_groups)
+  mapping_tables <- stats::setNames(lapply(c("table", "age_table"), function(field) {
+    htmltools::tagList(lapply(seq_len(nrow(mapping_table_rows)), function(i) {
+      htmltools::tagList(htmltools::h3(mapping_table_rows$Organisation[i]),
+        organisation_plots[[mapping_table_rows$Key[i]]][[field]])
+    }))
+  }), c("table", "age_table"))
   list(organisations = organisations, episodes = delivery_episodes,
     matrix_data = destination_matrix, matrix_episodes = matrix_episodes, matrix_table = matrix_table,
     grouped_matrix = grouped_matrix, visible_las = top_las, visible_other_trusts = other_trusts,
     la_lookup = la_lookup, trust_lookup = trust_lookup,
     matrix_values_table = matrix_values_table, sankey_chart = scroll_chart(sankey_chart), sankey_links = sankey_links,
+    sankey_by_la_grid = sankey_by_la_grid, sankey_by_destination_grid = sankey_by_destination_grid,
     hospital_mapping = hospital_mapping, la_trends = la_trends, outputs = organisation_plots,
+    mapping_grids = mapping_grids, mapping_tables = mapping_tables,
     all_results_table = wide_trend_table(la_trends, "All organisations: hospital deliveries by resident LA", grouped = TRUE),
     all_changes_table = wide_trend_table(la_trends, "All organisations: changes from 2023/24", grouped = TRUE, changes = TRUE))
 }

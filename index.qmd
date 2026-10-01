@@ -1535,20 +1535,12 @@ delivery_over_time <- readRDS(".patient_flows.rds")$delivery_over_time
 htmltools::browsable(delivery_over_time$chart_grids$Trust)
 ```
 
-### ICBs
+### ICBs and combined cluster
 
 ```{r}
-#| label: delivery-over-time-icb-charts
+#| label: delivery-over-time-icbs-cluster-charts
 
-htmltools::browsable(delivery_over_time$chart_grids$ICB)
-```
-
-### Combined cluster
-
-```{r}
-#| label: delivery-over-time-cluster-charts
-
-htmltools::browsable(delivery_over_time$chart_grids$Cluster)
+htmltools::browsable(delivery_over_time$chart_grids$ICB_Cluster)
 ```
 
 ### All results — table
@@ -1575,20 +1567,12 @@ The final table places one organisation on each row, grouped into trusts, ICBs a
 htmltools::browsable(delivery_over_time$change_chart_grids$Trust)
 ```
 
-### ICBs
+### ICBs and combined cluster
 
 ```{r}
-#| label: delivery-change-icb-charts
+#| label: delivery-change-icbs-cluster-charts
 
-htmltools::browsable(delivery_over_time$change_chart_grids$ICB)
-```
-
-### Combined cluster
-
-```{r}
-#| label: delivery-change-cluster-charts
-
-htmltools::browsable(delivery_over_time$change_chart_grids$Cluster)
+htmltools::browsable(delivery_over_time$change_chart_grids$ICB_Cluster)
 ```
 
 ### All percentage changes — table
@@ -1611,15 +1595,24 @@ delivery_geography <- readRDS(".delivery_geography.rds")
 
 ## 8.1 Resident LA to delivery destination, 2025/26 {#delivery-la-destinations}
 
-Recorded deliveries to cluster residents, plus deliveries associated with cluster providers from elsewhere. The Sankey shows cluster LAs and the ten largest additional feeder LAs, then All other feeder LAs. Destinations show the six main trusts and the ten largest other delivery organisations, then All other trusts; home births and unknown residence or providers stay separate. Labels use names only. The matrix uses these destination groups; All flows retains every LA and individual trust.
+Recorded deliveries to cluster residents, plus deliveries associated with cluster providers from elsewhere. Each Sankey shows one resident LA's destinations or one destination's feeder LAs, ordered by volume. Charts retain cluster LAs and the ten largest additional feeders, and the six main trusts and ten largest other delivery organisations; smaller flows are grouped. Home births and unknown residence or providers stay separate. Hover gives counts and percentages of the chart's recorded deliveries; All flows retains every LA and individual trust.
 
 ::: panel-tabset
-### Sankey
+
+### From each resident LA
 
 ```{r}
-#| label: delivery-la-destination-sankey
+#| label: delivery-la-destination-by-la-grid
 
-htmltools::browsable(htmltools::tagList(delivery_geography$sankey_chart))
+htmltools::browsable(htmltools::tagList(delivery_geography$sankey_by_la_grid))
+```
+
+### Into each delivery destination
+
+```{r}
+#| label: delivery-la-destination-by-destination-grid
+
+htmltools::browsable(htmltools::tagList(delivery_geography$sankey_by_destination_grid))
 ```
 
 ### Matrix
@@ -1641,345 +1634,71 @@ delivery_geography$matrix_values_table
 
 ## 8.2 Hospital deliveries by resident LA and age, 2025/26 {#delivery-la-age-mapping}
 
-LA contributions divide by all hospital deliveries at the receiving organisation. Age mix divides each age band by that LA's deliveries here. Charts keep cluster LAs and the ten largest additional 2025/26 feeder LAs, combining the rest; tables retain every LA. Home births are excluded and unknown LA or age remains labelled.
-
-::::::::::::::: panel-tabset
-### Trusts
-
-::::::::: panel-tabset
-#### Walsall Healthcare NHS Trust {#delivery-geography-mapping-trust-rbk}
-
-::: panel-tabset
-##### LA contributions
-
-```{r}
-#| label: delivery-geography-mapping-trust-rbk-origin_chart
-
-htmltools::browsable(htmltools::tagList(delivery_geography$outputs[["trust-rbk"]]$origin_chart))
-```
-
-##### Age mix within each LA
-
-```{r}
-#| label: delivery-geography-mapping-trust-rbk-age_chart
-
-htmltools::browsable(htmltools::tagList(delivery_geography$outputs[["trust-rbk"]]$age_chart))
-```
-
-##### LA table
-
-```{r}
-#| label: delivery-geography-mapping-trust-rbk-table
-
-delivery_geography$outputs[["trust-rbk"]]$table
-```
-
-##### LA by age table
-
-```{r}
-#| label: delivery-geography-mapping-trust-rbk-age_table
-
-delivery_geography$outputs[["trust-rbk"]]$age_table
-```
-:::
-
-#### The Royal Wolverhampton NHS Trust
-
-::: panel-tabset
-##### LA contributions
-
-```{r}
-#| label: delivery-geography-mapping-trust-rl4-origin_chart
-
-htmltools::browsable(htmltools::tagList(delivery_geography$outputs[["trust-rl4"]]$origin_chart))
-```
-
-##### Age mix within each LA
-
-```{r}
-#| label: delivery-geography-mapping-trust-rl4-age_chart
-
-htmltools::browsable(htmltools::tagList(delivery_geography$outputs[["trust-rl4"]]$age_chart))
-```
-
-##### LA table
-
-```{r}
-#| label: delivery-geography-mapping-trust-rl4-table
-
-delivery_geography$outputs[["trust-rl4"]]$table
-```
-
-##### LA by age table
-
-```{r}
-#| label: delivery-geography-mapping-trust-rl4-age_table
-
-delivery_geography$outputs[["trust-rl4"]]$age_table
-```
-:::
-
-#### The Dudley Group NHS Foundation Trust
-
-::: panel-tabset
-##### LA contributions
-
-```{r}
-#| label: delivery-geography-mapping-trust-rna-origin_chart
-
-htmltools::browsable(htmltools::tagList(delivery_geography$outputs[["trust-rna"]]$origin_chart))
-```
-
-##### Age mix within each LA
-
-```{r}
-#| label: delivery-geography-mapping-trust-rna-age_chart
-
-htmltools::browsable(htmltools::tagList(delivery_geography$outputs[["trust-rna"]]$age_chart))
-```
-
-##### LA table
-
-```{r}
-#| label: delivery-geography-mapping-trust-rna-table
-
-delivery_geography$outputs[["trust-rna"]]$table
-```
-
-##### LA by age table
-
-```{r}
-#| label: delivery-geography-mapping-trust-rna-age_table
-
-delivery_geography$outputs[["trust-rna"]]$age_table
-```
-:::
-
-#### Birmingham Women's and Children's NHS Foundation Trust
-
-::: panel-tabset
-##### LA contributions
-
-```{r}
-#| label: delivery-geography-mapping-trust-rq3-origin_chart
-
-htmltools::browsable(htmltools::tagList(delivery_geography$outputs[["trust-rq3"]]$origin_chart))
-```
-
-##### Age mix within each LA
-
-```{r}
-#| label: delivery-geography-mapping-trust-rq3-age_chart
-
-htmltools::browsable(htmltools::tagList(delivery_geography$outputs[["trust-rq3"]]$age_chart))
-```
-
-##### LA table
-
-```{r}
-#| label: delivery-geography-mapping-trust-rq3-table
-
-delivery_geography$outputs[["trust-rq3"]]$table
-```
-
-##### LA by age table
-
-```{r}
-#| label: delivery-geography-mapping-trust-rq3-age_table
-
-delivery_geography$outputs[["trust-rq3"]]$age_table
-```
-:::
-
-#### University Hospitals Birmingham NHS Foundation Trust
-
-::: panel-tabset
-##### LA contributions
-
-```{r}
-#| label: delivery-geography-mapping-trust-rrk-origin_chart
-
-htmltools::browsable(htmltools::tagList(delivery_geography$outputs[["trust-rrk"]]$origin_chart))
-```
-
-##### Age mix within each LA
-
-```{r}
-#| label: delivery-geography-mapping-trust-rrk-age_chart
-
-htmltools::browsable(htmltools::tagList(delivery_geography$outputs[["trust-rrk"]]$age_chart))
-```
-
-##### LA table
-
-```{r}
-#| label: delivery-geography-mapping-trust-rrk-table
-
-delivery_geography$outputs[["trust-rrk"]]$table
-```
-
-##### LA by age table
-
-```{r}
-#| label: delivery-geography-mapping-trust-rrk-age_table
-
-delivery_geography$outputs[["trust-rrk"]]$age_table
-```
-:::
-
-#### Sandwell and West Birmingham NHS Trust {#delivery-geography-mapping-trust-rxk}
-
-::: panel-tabset
-##### LA contributions
-
-```{r}
-#| label: delivery-geography-mapping-trust-rxk-origin_chart
-
-htmltools::browsable(htmltools::tagList(delivery_geography$outputs[["trust-rxk"]]$origin_chart))
-```
-
-##### Age mix within each LA
-
-```{r}
-#| label: delivery-geography-mapping-trust-rxk-age_chart
-
-htmltools::browsable(htmltools::tagList(delivery_geography$outputs[["trust-rxk"]]$age_chart))
-```
-
-##### LA table
-
-```{r}
-#| label: delivery-geography-mapping-trust-rxk-table
-
-delivery_geography$outputs[["trust-rxk"]]$table
-```
-
-##### LA by age table
-
-```{r}
-#| label: delivery-geography-mapping-trust-rxk-age_table
-
-delivery_geography$outputs[["trust-rxk"]]$age_table
-```
-:::
-:::::::::
-
-### ICBs
+LA contributions divide by all hospital deliveries at the receiving organisation. Age mix divides each age band by that LA's deliveries here. Charts keep cluster LAs and the ten largest additional 2025/26 feeder LAs, combining the rest; tables retain every LA. Home births are excluded and unknown LA or age remains labelled. Scroll horizontally for wider grids.
 
 ::::: panel-tabset
-#### Black Country ICB {#delivery-geography-mapping-icb-qua}
+
+### Trusts
 
 ::: panel-tabset
-##### LA contributions
+
+#### LA contributions
 
 ```{r}
-#| label: delivery-geography-mapping-icb-qua-origin_chart
+#| label: delivery-geography-mapping-trusts-origin-grid
 
-htmltools::browsable(htmltools::tagList(delivery_geography$outputs[["icb-qua"]]$origin_chart))
+htmltools::browsable(htmltools::tagList(delivery_geography$mapping_grids$Trust$origin_chart))
 ```
 
-##### Age mix within each LA
+#### Age mix within each LA
 
 ```{r}
-#| label: delivery-geography-mapping-icb-qua-age_chart
+#| label: delivery-geography-mapping-trusts-age-grid
 
-htmltools::browsable(htmltools::tagList(delivery_geography$outputs[["icb-qua"]]$age_chart))
+htmltools::browsable(htmltools::tagList(delivery_geography$mapping_grids$Trust$age_chart))
 ```
 
-##### LA table
-
-```{r}
-#| label: delivery-geography-mapping-icb-qua-table
-
-delivery_geography$outputs[["icb-qua"]]$table
-```
-
-##### LA by age table
-
-```{r}
-#| label: delivery-geography-mapping-icb-qua-age_table
-
-delivery_geography$outputs[["icb-qua"]]$age_table
-```
 :::
 
-#### Birmingham and Solihull ICB {#delivery-geography-mapping-icb-qhl}
+### ICBs and combined cluster
 
 ::: panel-tabset
-##### LA contributions
+
+#### LA contributions
 
 ```{r}
-#| label: delivery-geography-mapping-icb-qhl-origin_chart
+#| label: delivery-geography-mapping-icbs-cluster-origin-grid
 
-htmltools::browsable(htmltools::tagList(delivery_geography$outputs[["icb-qhl"]]$origin_chart))
+htmltools::browsable(htmltools::tagList(delivery_geography$mapping_grids$ICB_Cluster$origin_chart))
 ```
 
-##### Age mix within each LA
+#### Age mix within each LA
 
 ```{r}
-#| label: delivery-geography-mapping-icb-qhl-age_chart
+#| label: delivery-geography-mapping-icbs-cluster-age-grid
 
-htmltools::browsable(htmltools::tagList(delivery_geography$outputs[["icb-qhl"]]$age_chart))
+htmltools::browsable(htmltools::tagList(delivery_geography$mapping_grids$ICB_Cluster$age_chart))
 ```
 
-##### LA table
-
-```{r}
-#| label: delivery-geography-mapping-icb-qhl-table
-
-delivery_geography$outputs[["icb-qhl"]]$table
-```
-
-##### LA by age table
-
-```{r}
-#| label: delivery-geography-mapping-icb-qhl-age_table
-
-delivery_geography$outputs[["icb-qhl"]]$age_table
-```
 :::
+
+### All LA tables
+
+```{r}
+#| label: delivery-geography-mapping-all-la-tables
+
+htmltools::browsable(htmltools::tagList(delivery_geography$mapping_tables$table))
+```
+
+### All LA by age tables
+
+```{r}
+#| label: delivery-geography-mapping-all-age-tables
+
+htmltools::browsable(htmltools::tagList(delivery_geography$mapping_tables$age_table))
+```
+
 :::::
-
-### Combined cluster
-
-:::: panel-tabset
-#### Combined cluster {#delivery-geography-mapping-cluster}
-
-::: panel-tabset
-##### LA contributions
-
-```{r}
-#| label: delivery-geography-mapping-cluster-origin_chart
-
-htmltools::browsable(htmltools::tagList(delivery_geography$outputs[["cluster"]]$origin_chart))
-```
-
-##### Age mix within each LA
-
-```{r}
-#| label: delivery-geography-mapping-cluster-age_chart
-
-htmltools::browsable(htmltools::tagList(delivery_geography$outputs[["cluster"]]$age_chart))
-```
-
-##### LA table
-
-```{r}
-#| label: delivery-geography-mapping-cluster-table
-
-delivery_geography$outputs[["cluster"]]$table
-```
-
-##### LA by age table
-
-```{r}
-#| label: delivery-geography-mapping-cluster-age_table
-
-delivery_geography$outputs[["cluster"]]$age_table
-```
-:::
-::::
-:::::::::::::::
 
 ## 8.3a Counts and LA contributions, 2023/24 to 2025/26 {#delivery-la-mapping-counts}
 
@@ -2557,188 +2276,33 @@ if (nzchar(first_draft_projections$note)) {
 
 ## 9.1 Feeder LA and age-band shares, 2025/26 {#projection-feeder-mapping}
 
-Flows show cluster LAs and the ten largest additional 2025/26 feeder LAs, then All other feeder LAs, through age bands to the organisation; widths are delivery counts and labels use names only. LA-to-age hover and tables show deliveries here ÷ all pregnancies in the same LA and age band; tables retain every LA. Home births remain in LA totals; ICBs and the cluster group delivery trusts.
-
-:::::::::::: panel-tabset
-### Walsall Healthcare NHS Trust {#projection-mapping-trust-rbk}
+Each coloured dot shows the percentage of an LA's pregnancies in that age band delivered here. LAs are ordered by delivery volume, keeping cluster LAs and the ten largest additional feeders; All other feeder LAs combines the remaining contributing LAs. Home births remain in LA denominators. Tables retain every LA and include unknown residence or age.
 
 ::: panel-tabset
-#### Chart
+
+### Trusts
 
 ```{r}
-#| label: projection-mapping-trust-rbk-chart
+#| label: projection-mapping-trusts-grid
 
-htmltools::browsable(htmltools::tagList(first_draft_projections$mapping_outputs[["trust-rbk"]]$chart))
+htmltools::browsable(htmltools::tagList(first_draft_projections$mapping_grids$Trust))
 ```
 
-#### Table
+### ICBs and whole cluster
 
 ```{r}
-#| label: projection-mapping-trust-rbk-table
+#| label: projection-mapping-icbs-cluster-grid
 
-first_draft_projections$mapping_outputs[["trust-rbk"]]$table
+htmltools::browsable(htmltools::tagList(first_draft_projections$mapping_grids$ICB_Cluster))
 ```
-:::
 
-### The Royal Wolverhampton NHS Trust {#projection-mapping-trust-rl4}
-
-::: panel-tabset
-#### Chart
+### All feeders — tables
 
 ```{r}
-#| label: projection-mapping-trust-rl4-chart
+#| label: projection-mapping-all-tables
 
-htmltools::browsable(htmltools::tagList(first_draft_projections$mapping_outputs[["trust-rl4"]]$chart))
+htmltools::browsable(htmltools::tagList(first_draft_projections$mapping_tables))
 ```
-
-#### Table
-
-```{r}
-#| label: projection-mapping-trust-rl4-table
-
-first_draft_projections$mapping_outputs[["trust-rl4"]]$table
-```
-:::
-
-### The Dudley Group NHS Foundation Trust {#projection-mapping-trust-rna}
-
-::: panel-tabset
-#### Chart
-
-```{r}
-#| label: projection-mapping-trust-rna-chart
-
-htmltools::browsable(htmltools::tagList(first_draft_projections$mapping_outputs[["trust-rna"]]$chart))
-```
-
-#### Table
-
-```{r}
-#| label: projection-mapping-trust-rna-table
-
-first_draft_projections$mapping_outputs[["trust-rna"]]$table
-```
-:::
-
-### Birmingham Women's and Children's NHS Foundation Trust {#projection-mapping-trust-rq3}
-
-::: panel-tabset
-#### Chart
-
-```{r}
-#| label: projection-mapping-trust-rq3-chart
-
-htmltools::browsable(htmltools::tagList(first_draft_projections$mapping_outputs[["trust-rq3"]]$chart))
-```
-
-#### Table
-
-```{r}
-#| label: projection-mapping-trust-rq3-table
-
-first_draft_projections$mapping_outputs[["trust-rq3"]]$table
-```
-:::
-
-### University Hospitals Birmingham NHS Foundation Trust {#projection-mapping-trust-rrk}
-
-::: panel-tabset
-#### Chart
-
-```{r}
-#| label: projection-mapping-trust-rrk-chart
-
-htmltools::browsable(htmltools::tagList(first_draft_projections$mapping_outputs[["trust-rrk"]]$chart))
-```
-
-#### Table
-
-```{r}
-#| label: projection-mapping-trust-rrk-table
-
-first_draft_projections$mapping_outputs[["trust-rrk"]]$table
-```
-:::
-
-### Sandwell and West Birmingham NHS Trust {#projection-mapping-trust-rxk}
-
-::: panel-tabset
-#### Chart
-
-```{r}
-#| label: projection-mapping-trust-rxk-chart
-
-htmltools::browsable(htmltools::tagList(first_draft_projections$mapping_outputs[["trust-rxk"]]$chart))
-```
-
-#### Table
-
-```{r}
-#| label: projection-mapping-trust-rxk-table
-
-first_draft_projections$mapping_outputs[["trust-rxk"]]$table
-```
-:::
-
-### Black Country ICB {#projection-mapping-icb-qua}
-
-::: panel-tabset
-#### Chart
-
-```{r}
-#| label: projection-mapping-icb-qua-chart
-
-htmltools::browsable(htmltools::tagList(first_draft_projections$mapping_outputs[["icb-qua"]]$chart))
-```
-
-#### Table
-
-```{r}
-#| label: projection-mapping-icb-qua-table
-
-first_draft_projections$mapping_outputs[["icb-qua"]]$table
-```
-:::
-
-### Birmingham and Solihull ICB {#projection-mapping-icb-qhl}
-
-::: panel-tabset
-#### Chart
-
-```{r}
-#| label: projection-mapping-icb-qhl-chart
-
-htmltools::browsable(htmltools::tagList(first_draft_projections$mapping_outputs[["icb-qhl"]]$chart))
-```
-
-#### Table
-
-```{r}
-#| label: projection-mapping-icb-qhl-table
-
-first_draft_projections$mapping_outputs[["icb-qhl"]]$table
-```
-:::
-
-### Combined cluster {#projection-mapping-cluster}
-
-::: panel-tabset
-#### Chart
-
-```{r}
-#| label: projection-mapping-cluster-chart
-
-htmltools::browsable(htmltools::tagList(first_draft_projections$mapping_outputs[["cluster"]]$chart))
-```
-
-#### Table
-
-```{r}
-#| label: projection-mapping-cluster-table
-
-first_draft_projections$mapping_outputs[["cluster"]]$table
-```
-:::
 
 ### All destinations — accounting
 
@@ -2757,522 +2321,105 @@ first_draft_projections$coverage_table
 first_draft_projections$coverage_details_table
 first_draft_projections$geography_table
 ```
-::::::::::::
+:::
 
 ## 9.2 Age-specific ONS change and incoming flows {#projection-age-specific-flows}
 
 Method 1 ONS maternity growth is applied within each feeder LA and age band, using 2023 LA geography. Actual 2025/26 flows are unchanged; growth uses ONS mid-2026 as its reference. Unmatched flows stay at baseline counts; see projection coverage.
 
-:::::::::::: panel-tabset
-### Walsall Healthcare NHS Trust {#projection-age-flows-trust-rbk}
+::::: panel-tabset
+
+### Trusts
 
 ::: panel-tabset
-#### ONS growth — chart
+
+#### ONS growth
 
 ```{r}
-#| label: projection-age-flows-trust-rbk-growth_chart
+#| label: projection-age-trusts-growth-grid
 
-htmltools::browsable(htmltools::tagList(first_draft_projections$forecast_outputs[["trust-rbk"]]$growth_chart))
+htmltools::browsable(htmltools::tagList(first_draft_projections$age_grids$Trust$growth_chart))
 ```
 
-#### Incoming flows — chart
+#### Incoming maternities
 
 ```{r}
-#| label: projection-age-flows-trust-rbk-incoming_chart
+#| label: projection-age-trusts-incoming-grid
 
-htmltools::browsable(htmltools::tagList(first_draft_projections$forecast_outputs[["trust-rbk"]]$incoming_chart))
+htmltools::browsable(htmltools::tagList(first_draft_projections$age_grids$Trust$incoming_chart))
 ```
 
-#### ONS growth — table
-
-```{r}
-#| label: projection-age-flows-trust-rbk-growth_table
-
-first_draft_projections$forecast_outputs[["trust-rbk"]]$growth_table
-```
-
-#### Incoming flows — table
-
-```{r}
-#| label: projection-age-flows-trust-rbk-incoming_table
-
-first_draft_projections$forecast_outputs[["trust-rbk"]]$incoming_table
-```
 :::
 
-### The Royal Wolverhampton NHS Trust {#projection-age-flows-trust-rl4}
+### ICBs and whole cluster
 
 ::: panel-tabset
-#### ONS growth — chart
+
+#### ONS growth
 
 ```{r}
-#| label: projection-age-flows-trust-rl4-growth_chart
+#| label: projection-age-icbs-cluster-growth-grid
 
-htmltools::browsable(htmltools::tagList(first_draft_projections$forecast_outputs[["trust-rl4"]]$growth_chart))
+htmltools::browsable(htmltools::tagList(first_draft_projections$age_grids$ICB_Cluster$growth_chart))
 ```
 
-#### Incoming flows — chart
+#### Incoming maternities
 
 ```{r}
-#| label: projection-age-flows-trust-rl4-incoming_chart
+#| label: projection-age-icbs-cluster-incoming-grid
 
-htmltools::browsable(htmltools::tagList(first_draft_projections$forecast_outputs[["trust-rl4"]]$incoming_chart))
+htmltools::browsable(htmltools::tagList(first_draft_projections$age_grids$ICB_Cluster$incoming_chart))
 ```
 
-#### ONS growth — table
-
-```{r}
-#| label: projection-age-flows-trust-rl4-growth_table
-
-first_draft_projections$forecast_outputs[["trust-rl4"]]$growth_table
-```
-
-#### Incoming flows — table
-
-```{r}
-#| label: projection-age-flows-trust-rl4-incoming_table
-
-first_draft_projections$forecast_outputs[["trust-rl4"]]$incoming_table
-```
 :::
 
-### The Dudley Group NHS Foundation Trust {#projection-age-flows-trust-rna}
-
-::: panel-tabset
-#### ONS growth — chart
+### ONS growth — tables
 
 ```{r}
-#| label: projection-age-flows-trust-rna-growth_chart
+#| label: projection-age-all-growth-tables
 
-htmltools::browsable(htmltools::tagList(first_draft_projections$forecast_outputs[["trust-rna"]]$growth_chart))
+htmltools::browsable(first_draft_projections$age_tables$growth_table)
 ```
 
-#### Incoming flows — chart
+### Incoming maternities — tables
 
 ```{r}
-#| label: projection-age-flows-trust-rna-incoming_chart
+#| label: projection-age-all-incoming-tables
 
-htmltools::browsable(htmltools::tagList(first_draft_projections$forecast_outputs[["trust-rna"]]$incoming_chart))
+htmltools::browsable(first_draft_projections$age_tables$incoming_table)
 ```
 
-#### ONS growth — table
-
-```{r}
-#| label: projection-age-flows-trust-rna-growth_table
-
-first_draft_projections$forecast_outputs[["trust-rna"]]$growth_table
-```
-
-#### Incoming flows — table
-
-```{r}
-#| label: projection-age-flows-trust-rna-incoming_table
-
-first_draft_projections$forecast_outputs[["trust-rna"]]$incoming_table
-```
-:::
-
-### Birmingham Women's and Children's NHS Foundation Trust {#projection-age-flows-trust-rq3}
-
-::: panel-tabset
-#### ONS growth — chart
-
-```{r}
-#| label: projection-age-flows-trust-rq3-growth_chart
-
-htmltools::browsable(htmltools::tagList(first_draft_projections$forecast_outputs[["trust-rq3"]]$growth_chart))
-```
-
-#### Incoming flows — chart
-
-```{r}
-#| label: projection-age-flows-trust-rq3-incoming_chart
-
-htmltools::browsable(htmltools::tagList(first_draft_projections$forecast_outputs[["trust-rq3"]]$incoming_chart))
-```
-
-#### ONS growth — table
-
-```{r}
-#| label: projection-age-flows-trust-rq3-growth_table
-
-first_draft_projections$forecast_outputs[["trust-rq3"]]$growth_table
-```
-
-#### Incoming flows — table
-
-```{r}
-#| label: projection-age-flows-trust-rq3-incoming_table
-
-first_draft_projections$forecast_outputs[["trust-rq3"]]$incoming_table
-```
-:::
-
-### University Hospitals Birmingham NHS Foundation Trust {#projection-age-flows-trust-rrk}
-
-::: panel-tabset
-#### ONS growth — chart
-
-```{r}
-#| label: projection-age-flows-trust-rrk-growth_chart
-
-htmltools::browsable(htmltools::tagList(first_draft_projections$forecast_outputs[["trust-rrk"]]$growth_chart))
-```
-
-#### Incoming flows — chart
-
-```{r}
-#| label: projection-age-flows-trust-rrk-incoming_chart
-
-htmltools::browsable(htmltools::tagList(first_draft_projections$forecast_outputs[["trust-rrk"]]$incoming_chart))
-```
-
-#### ONS growth — table
-
-```{r}
-#| label: projection-age-flows-trust-rrk-growth_table
-
-first_draft_projections$forecast_outputs[["trust-rrk"]]$growth_table
-```
-
-#### Incoming flows — table
-
-```{r}
-#| label: projection-age-flows-trust-rrk-incoming_table
-
-first_draft_projections$forecast_outputs[["trust-rrk"]]$incoming_table
-```
-:::
-
-### Sandwell and West Birmingham NHS Trust {#projection-age-flows-trust-rxk}
-
-::: panel-tabset
-#### ONS growth — chart
-
-```{r}
-#| label: projection-age-flows-trust-rxk-growth_chart
-
-htmltools::browsable(htmltools::tagList(first_draft_projections$forecast_outputs[["trust-rxk"]]$growth_chart))
-```
-
-#### Incoming flows — chart
-
-```{r}
-#| label: projection-age-flows-trust-rxk-incoming_chart
-
-htmltools::browsable(htmltools::tagList(first_draft_projections$forecast_outputs[["trust-rxk"]]$incoming_chart))
-```
-
-#### ONS growth — table
-
-```{r}
-#| label: projection-age-flows-trust-rxk-growth_table
-
-first_draft_projections$forecast_outputs[["trust-rxk"]]$growth_table
-```
-
-#### Incoming flows — table
-
-```{r}
-#| label: projection-age-flows-trust-rxk-incoming_table
-
-first_draft_projections$forecast_outputs[["trust-rxk"]]$incoming_table
-```
-:::
-
-### Black Country ICB {#projection-age-flows-icb-qua}
-
-::: panel-tabset
-#### ONS growth — chart
-
-```{r}
-#| label: projection-age-flows-icb-qua-growth_chart
-
-htmltools::browsable(htmltools::tagList(first_draft_projections$forecast_outputs[["icb-qua"]]$growth_chart))
-```
-
-#### Incoming flows — chart
-
-```{r}
-#| label: projection-age-flows-icb-qua-incoming_chart
-
-htmltools::browsable(htmltools::tagList(first_draft_projections$forecast_outputs[["icb-qua"]]$incoming_chart))
-```
-
-#### ONS growth — table
-
-```{r}
-#| label: projection-age-flows-icb-qua-growth_table
-
-first_draft_projections$forecast_outputs[["icb-qua"]]$growth_table
-```
-
-#### Incoming flows — table
-
-```{r}
-#| label: projection-age-flows-icb-qua-incoming_table
-
-first_draft_projections$forecast_outputs[["icb-qua"]]$incoming_table
-```
-:::
-
-### Birmingham and Solihull ICB {#projection-age-flows-icb-qhl}
-
-::: panel-tabset
-#### ONS growth — chart
-
-```{r}
-#| label: projection-age-flows-icb-qhl-growth_chart
-
-htmltools::browsable(htmltools::tagList(first_draft_projections$forecast_outputs[["icb-qhl"]]$growth_chart))
-```
-
-#### Incoming flows — chart
-
-```{r}
-#| label: projection-age-flows-icb-qhl-incoming_chart
-
-htmltools::browsable(htmltools::tagList(first_draft_projections$forecast_outputs[["icb-qhl"]]$incoming_chart))
-```
-
-#### ONS growth — table
-
-```{r}
-#| label: projection-age-flows-icb-qhl-growth_table
-
-first_draft_projections$forecast_outputs[["icb-qhl"]]$growth_table
-```
-
-#### Incoming flows — table
-
-```{r}
-#| label: projection-age-flows-icb-qhl-incoming_table
-
-first_draft_projections$forecast_outputs[["icb-qhl"]]$incoming_table
-```
-:::
-
-### Combined cluster {#projection-age-flows-cluster}
-
-::: panel-tabset
-#### ONS growth — chart
-
-```{r}
-#| label: projection-age-flows-cluster-growth_chart
-
-htmltools::browsable(htmltools::tagList(first_draft_projections$forecast_outputs[["cluster"]]$growth_chart))
-```
-
-#### Incoming flows — chart
-
-```{r}
-#| label: projection-age-flows-cluster-incoming_chart
-
-htmltools::browsable(htmltools::tagList(first_draft_projections$forecast_outputs[["cluster"]]$incoming_chart))
-```
-
-#### ONS growth — table
-
-```{r}
-#| label: projection-age-flows-cluster-growth_table
-
-first_draft_projections$forecast_outputs[["cluster"]]$growth_table
-```
-
-#### Incoming flows — table
-
-```{r}
-#| label: projection-age-flows-cluster-incoming_table
-
-first_draft_projections$forecast_outputs[["cluster"]]$incoming_table
-```
-:::
-::::::::::::
+:::::
 
 ## 9.3 Total maternity projections {#projection-total-maternities}
 
-Incoming flows summed across all feeder LAs and ages. Baseline: actual 2025/26; later years: ONS mid-year growth, with the 2025/26 mapping held fixed.
-
-:::::::::::: panel-tabset
-### Walsall Healthcare NHS Trust {#projection-totals-trust-rbk}
+Incoming flows summed across all feeder LAs and ages. Baseline: actual 2025/26; later years: ONS mid-year growth, with the 2025/26 mapping held fixed. Each line represents one organisation.
 
 ::: panel-tabset
-#### Chart
+
+### Trusts
 
 ```{r}
-#| label: projection-totals-trust-rbk-total_chart
+#| label: projection-totals-trusts
 
-htmltools::browsable(htmltools::tagList(first_draft_projections$forecast_outputs[["trust-rbk"]]$total_chart))
+htmltools::browsable(htmltools::tagList(first_draft_projections$total_charts$Trust))
 ```
 
-#### Table
+### ICBs
 
 ```{r}
-#| label: projection-totals-trust-rbk-total_table
+#| label: projection-totals-icbs
 
-first_draft_projections$forecast_outputs[["trust-rbk"]]$total_table
+htmltools::browsable(htmltools::tagList(first_draft_projections$total_charts$ICB))
 ```
-:::
 
-### The Royal Wolverhampton NHS Trust {#projection-totals-trust-rl4}
-
-::: panel-tabset
-#### Chart
+### Cluster
 
 ```{r}
-#| label: projection-totals-trust-rl4-total_chart
+#| label: projection-totals-cluster
 
-htmltools::browsable(htmltools::tagList(first_draft_projections$forecast_outputs[["trust-rl4"]]$total_chart))
+htmltools::browsable(htmltools::tagList(first_draft_projections$total_charts$Cluster))
 ```
-
-#### Table
-
-```{r}
-#| label: projection-totals-trust-rl4-total_table
-
-first_draft_projections$forecast_outputs[["trust-rl4"]]$total_table
-```
-:::
-
-### The Dudley Group NHS Foundation Trust {#projection-totals-trust-rna}
-
-::: panel-tabset
-#### Chart
-
-```{r}
-#| label: projection-totals-trust-rna-total_chart
-
-htmltools::browsable(htmltools::tagList(first_draft_projections$forecast_outputs[["trust-rna"]]$total_chart))
-```
-
-#### Table
-
-```{r}
-#| label: projection-totals-trust-rna-total_table
-
-first_draft_projections$forecast_outputs[["trust-rna"]]$total_table
-```
-:::
-
-### Birmingham Women's and Children's NHS Foundation Trust {#projection-totals-trust-rq3}
-
-::: panel-tabset
-#### Chart
-
-```{r}
-#| label: projection-totals-trust-rq3-total_chart
-
-htmltools::browsable(htmltools::tagList(first_draft_projections$forecast_outputs[["trust-rq3"]]$total_chart))
-```
-
-#### Table
-
-```{r}
-#| label: projection-totals-trust-rq3-total_table
-
-first_draft_projections$forecast_outputs[["trust-rq3"]]$total_table
-```
-:::
-
-### University Hospitals Birmingham NHS Foundation Trust {#projection-totals-trust-rrk}
-
-::: panel-tabset
-#### Chart
-
-```{r}
-#| label: projection-totals-trust-rrk-total_chart
-
-htmltools::browsable(htmltools::tagList(first_draft_projections$forecast_outputs[["trust-rrk"]]$total_chart))
-```
-
-#### Table
-
-```{r}
-#| label: projection-totals-trust-rrk-total_table
-
-first_draft_projections$forecast_outputs[["trust-rrk"]]$total_table
-```
-:::
-
-### Sandwell and West Birmingham NHS Trust {#projection-totals-trust-rxk}
-
-::: panel-tabset
-#### Chart
-
-```{r}
-#| label: projection-totals-trust-rxk-total_chart
-
-htmltools::browsable(htmltools::tagList(first_draft_projections$forecast_outputs[["trust-rxk"]]$total_chart))
-```
-
-#### Table
-
-```{r}
-#| label: projection-totals-trust-rxk-total_table
-
-first_draft_projections$forecast_outputs[["trust-rxk"]]$total_table
-```
-:::
-
-### Black Country ICB {#projection-totals-icb-qua}
-
-::: panel-tabset
-#### Chart
-
-```{r}
-#| label: projection-totals-icb-qua-total_chart
-
-htmltools::browsable(htmltools::tagList(first_draft_projections$forecast_outputs[["icb-qua"]]$total_chart))
-```
-
-#### Table
-
-```{r}
-#| label: projection-totals-icb-qua-total_table
-
-first_draft_projections$forecast_outputs[["icb-qua"]]$total_table
-```
-:::
-
-### Birmingham and Solihull ICB {#projection-totals-icb-qhl}
-
-::: panel-tabset
-#### Chart
-
-```{r}
-#| label: projection-totals-icb-qhl-total_chart
-
-htmltools::browsable(htmltools::tagList(first_draft_projections$forecast_outputs[["icb-qhl"]]$total_chart))
-```
-
-#### Table
-
-```{r}
-#| label: projection-totals-icb-qhl-total_table
-
-first_draft_projections$forecast_outputs[["icb-qhl"]]$total_table
-```
-:::
-
-### Combined cluster {#projection-totals-cluster}
-
-::: panel-tabset
-#### Chart
-
-```{r}
-#| label: projection-totals-cluster-total_chart
-
-htmltools::browsable(htmltools::tagList(first_draft_projections$forecast_outputs[["cluster"]]$total_chart))
-```
-
-#### Table
-
-```{r}
-#| label: projection-totals-cluster-total_table
-
-first_draft_projections$forecast_outputs[["cluster"]]$total_table
-```
-:::
 
 ### All organisations — table
 
@@ -3281,192 +2428,30 @@ first_draft_projections$forecast_outputs[["cluster"]]$total_table
 
 first_draft_projections$all_totals_table
 ```
-::::::::::::
+
+:::
 
 ## 9.4 Percentage change from 2025/26 {#projection-percentage-change}
 
-Relative change in total maternities from actual 2025/26, using the same projections. A zero baseline has no calculable percentage change.
-
-:::::::::::: panel-tabset
-### Walsall Healthcare NHS Trust {#projection-changes-trust-rbk}
+Relative change in total maternities from actual 2025/26, using the same projections. Each line represents one organisation. A zero baseline has no calculable percentage change.
 
 ::: panel-tabset
-#### Chart
+
+### Trusts
 
 ```{r}
-#| label: projection-changes-trust-rbk-change_chart
+#| label: projection-changes-trusts
 
-htmltools::browsable(htmltools::tagList(first_draft_projections$forecast_outputs[["trust-rbk"]]$change_chart))
+htmltools::browsable(htmltools::tagList(first_draft_projections$change_charts$Trust))
 ```
 
-#### Table
+### ICBs and whole cluster
 
 ```{r}
-#| label: projection-changes-trust-rbk-change_table
+#| label: projection-changes-icbs-cluster
 
-first_draft_projections$forecast_outputs[["trust-rbk"]]$change_table
+htmltools::browsable(htmltools::tagList(first_draft_projections$change_charts$ICB_Cluster))
 ```
-:::
-
-### The Royal Wolverhampton NHS Trust {#projection-changes-trust-rl4}
-
-::: panel-tabset
-#### Chart
-
-```{r}
-#| label: projection-changes-trust-rl4-change_chart
-
-htmltools::browsable(htmltools::tagList(first_draft_projections$forecast_outputs[["trust-rl4"]]$change_chart))
-```
-
-#### Table
-
-```{r}
-#| label: projection-changes-trust-rl4-change_table
-
-first_draft_projections$forecast_outputs[["trust-rl4"]]$change_table
-```
-:::
-
-### The Dudley Group NHS Foundation Trust {#projection-changes-trust-rna}
-
-::: panel-tabset
-#### Chart
-
-```{r}
-#| label: projection-changes-trust-rna-change_chart
-
-htmltools::browsable(htmltools::tagList(first_draft_projections$forecast_outputs[["trust-rna"]]$change_chart))
-```
-
-#### Table
-
-```{r}
-#| label: projection-changes-trust-rna-change_table
-
-first_draft_projections$forecast_outputs[["trust-rna"]]$change_table
-```
-:::
-
-### Birmingham Women's and Children's NHS Foundation Trust {#projection-changes-trust-rq3}
-
-::: panel-tabset
-#### Chart
-
-```{r}
-#| label: projection-changes-trust-rq3-change_chart
-
-htmltools::browsable(htmltools::tagList(first_draft_projections$forecast_outputs[["trust-rq3"]]$change_chart))
-```
-
-#### Table
-
-```{r}
-#| label: projection-changes-trust-rq3-change_table
-
-first_draft_projections$forecast_outputs[["trust-rq3"]]$change_table
-```
-:::
-
-### University Hospitals Birmingham NHS Foundation Trust {#projection-changes-trust-rrk}
-
-::: panel-tabset
-#### Chart
-
-```{r}
-#| label: projection-changes-trust-rrk-change_chart
-
-htmltools::browsable(htmltools::tagList(first_draft_projections$forecast_outputs[["trust-rrk"]]$change_chart))
-```
-
-#### Table
-
-```{r}
-#| label: projection-changes-trust-rrk-change_table
-
-first_draft_projections$forecast_outputs[["trust-rrk"]]$change_table
-```
-:::
-
-### Sandwell and West Birmingham NHS Trust {#projection-changes-trust-rxk}
-
-::: panel-tabset
-#### Chart
-
-```{r}
-#| label: projection-changes-trust-rxk-change_chart
-
-htmltools::browsable(htmltools::tagList(first_draft_projections$forecast_outputs[["trust-rxk"]]$change_chart))
-```
-
-#### Table
-
-```{r}
-#| label: projection-changes-trust-rxk-change_table
-
-first_draft_projections$forecast_outputs[["trust-rxk"]]$change_table
-```
-:::
-
-### Black Country ICB {#projection-changes-icb-qua}
-
-::: panel-tabset
-#### Chart
-
-```{r}
-#| label: projection-changes-icb-qua-change_chart
-
-htmltools::browsable(htmltools::tagList(first_draft_projections$forecast_outputs[["icb-qua"]]$change_chart))
-```
-
-#### Table
-
-```{r}
-#| label: projection-changes-icb-qua-change_table
-
-first_draft_projections$forecast_outputs[["icb-qua"]]$change_table
-```
-:::
-
-### Birmingham and Solihull ICB {#projection-changes-icb-qhl}
-
-::: panel-tabset
-#### Chart
-
-```{r}
-#| label: projection-changes-icb-qhl-change_chart
-
-htmltools::browsable(htmltools::tagList(first_draft_projections$forecast_outputs[["icb-qhl"]]$change_chart))
-```
-
-#### Table
-
-```{r}
-#| label: projection-changes-icb-qhl-change_table
-
-first_draft_projections$forecast_outputs[["icb-qhl"]]$change_table
-```
-:::
-
-### Combined cluster {#projection-changes-cluster}
-
-::: panel-tabset
-#### Chart
-
-```{r}
-#| label: projection-changes-cluster-change_chart
-
-htmltools::browsable(htmltools::tagList(first_draft_projections$forecast_outputs[["cluster"]]$change_chart))
-```
-
-#### Table
-
-```{r}
-#| label: projection-changes-cluster-change_table
-
-first_draft_projections$forecast_outputs[["cluster"]]$change_table
-```
-:::
 
 ### All organisations — table
 
@@ -3475,7 +2460,8 @@ first_draft_projections$forecast_outputs[["cluster"]]$change_table
 
 first_draft_projections$all_changes_table
 ```
-::::::::::::
+
+:::
 
 ## 9.5 Retrospective check: observed versus modelled, 2023/24–2025/26 {#projection-retrospective-check}
 

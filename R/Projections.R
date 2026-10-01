@@ -301,9 +301,10 @@ build_first_draft_projections <- function(baseline_fy = projection_baseline,
     base_table("Feeder codes matched to the ONS geography") |>
     gt::cols_label(LA = "MSDS LA code", LA_name = "Resident LA", Treatment = "ONS treatment",
                    ONS_source_codes = "ONS source area codes")
-  # Section 9.1: keep cluster LAs and the ten largest additional feeders visible.
-  # Rank once using actual baseline deliveries; group the remaining feeders only in the chart.
-  # Tables keep every LA code. Unknown LA/age counts stay visible without an invented share.
+  # Section 9.1: compare the share of each LA/age group sent to an organisation.
+  # Rank LAs by actual deliveries here; keep cluster LAs and ten additional feeders.
+  # The other-feeder share sums counts and denominators, including zero-flow ages.
+  mapping_share_max <- max(1, feeder_shares$Share, na.rm = TRUE)
   mapping_outputs <- stats::setNames(lapply(organisations$Key, function(key) {
     org_shares <- baseline_feeder_counts[baseline_feeder_counts$Key == key, , drop = FALSE]
     if (!nrow(org_shares)) return(list(chart = htmltools::div(paste("No recorded deliveries in", baseline_fy)),
@@ -320,7 +321,6 @@ build_first_draft_projections <- function(baseline_fy = projection_baseline,
       dplyr::pull(LA)
     visible_las <- la_volume$LA[la_volume$LA %in% c(projection_catchment_las, additional_las)]
     chart_bands <- c(age_bands, if (any(org_shares$Age_band == "Unknown" & org_shares$Numerator > 0)) "Unknown")
-    chart_age_colours <- c(age_colours, if ("Unknown" %in% chart_bands) "#222222")
     org_shares <- org_shares |>
       dplyr::mutate(Age_band = factor(Age_band, levels = c(age_bands, "Unknown"))) |>
       dplyr::arrange(match(LA, c(la_volume$LA, "Unknown LA", "L99999999")), Age_band)
@@ -333,7 +333,6 @@ build_first_draft_projections <- function(baseline_fy = projection_baseline,
       dplyr::summarise(N = sum(Numerator),
         Denominator = if (all(is.finite(Denominator) & Denominator >= 0)) sum(Denominator) else NA_real_,
         .groups = "drop") |>
-      dplyr::filter(N > 0) |>
       dplyr::mutate(Share = ifelse(Denominator > 0, N / Denominator, NA_real_))
     source_order <- c(visible_las,
       if ("other-feeder-las" %in% flow$Source_LA) "other-feeder-las",
@@ -342,54 +341,39 @@ build_first_draft_projections <- function(baseline_fy = projection_baseline,
       if ("other-feeder-las" %in% source_order) "All other feeder LAs",
       if ("unknown-la" %in% source_order) "Unknown LA")
     flow <- dplyr::arrange(flow, match(Source_LA, source_order), Age_band)
-    if (!nrow(flow)) {
-      chart <- htmltools::div(paste("No usable LA/age delivery flows in", baseline_fy))
+    # Unknown LA/age remains in the full table and count totals, without a plotted share.
+    chart_data <- flow |>
+      dplyr::filter(Source_LA != "unknown-la", Age_band %in% age_bands)
+    chart_sources <- source_order[source_order %in% chart_data$Source_LA]
+    chart_labels <- source_labels[match(chart_sources, source_order)]
+    if (!nrow(chart_data)) {
+      chart <- htmltools::div(paste("No usable LA/age allocation shares in", baseline_fy))
     } else {
-      source_counts <- vapply(source_order, function(la) sum(flow$N[flow$Source_LA == la]), numeric(1))
-      age_counts <- vapply(chart_bands, function(age) sum(flow$N[flow$Age_band == age]), numeric(1))
       org <- organisations[match(key, organisations$Key), , drop = FALSE]
       org_name <- org$Organisation[[1]]
-      chart_height <- max(420, length(source_order) * 34 + 120)
-      # Fixed positions retain the largest LA at the top without overlapping unequal nodes.
-      node_y <- function(counts) {
-        gap <- 14 / (chart_height - 50)
-        (cumsum(counts) - counts / 2) / sum(counts) * (1 - gap * (length(counts) - 1L)) +
-          gap * (seq_along(counts) - 1L)
+      chart <- plotly::plot_ly(height = max(400, length(chart_sources) * 32 + 100))
+      # Slight vertical offsets keep the six age-band dots visible on each LA row.
+      age_offsets <- seq(-0.28, 0.28, length.out = length(age_bands))
+      for (i in seq_along(age_bands)) {
+        points <- chart_data[chart_data$Age_band == age_bands[i], , drop = FALSE]
+        hover <- paste0(org_name, "<br>", source_labels[match(points$Source_LA, source_order)],
+          "<br>Age: ", age_bands[i], "<br>Deliveries here: ", scales::comma(points$N, accuracy = 1),
+          "<br>All LA/age pregnancies: ", scales::comma(points$Denominator, accuracy = 1),
+          "<br>% sent here: ", scales::percent(points$Share, accuracy = 0.1))
+        chart <- plotly::add_trace(chart, x = points$Share,
+          y = match(points$Source_LA, chart_sources) + age_offsets[i],
+          type = "scatter", mode = "markers", name = age_bands[i],
+          marker = list(color = age_colours[i], size = 8),
+          text = hover, hovertemplate = "%{text}<extra></extra>")
       }
-      source_id <- match(flow$Source_LA, source_order) - 1L
-      age_id <- length(source_order) + match(flow$Age_band, chart_bands) - 1L
-      used_ages <- which(age_counts > 0)
-      target_id <- length(source_order) + length(chart_bands)
-      origin_text <- source_labels[match(flow$Source_LA, source_order)]
-      flow_hover <- paste0(origin_text, "<br>Age: ", flow$Age_band,
-        "<br>Deliveries here: ", scales::comma(flow$N, accuracy = 1),
-        "<br>All LA/age pregnancies: ", ifelse(is.na(flow$Denominator), "n.a.",
-          scales::comma(flow$Denominator, accuracy = 1)),
-        "<br>LA/age share sent here: ", ifelse(is.na(flow$Share), "n.a.",
-          scales::percent(flow$Share, accuracy = 0.1)))
-      age_hover <- paste0("Age: ", chart_bands[used_ages], "<br>", org_name,
-        "<br>Deliveries here: ", scales::comma(age_counts[used_ages], accuracy = 1),
-        "<br>Share of charted deliveries: ",
-          scales::percent(age_counts[used_ages] / sum(source_counts), accuracy = 0.1))
-      node_labels <- c(source_labels, chart_bands, org_name)
-      chart <- plotly::plot_ly(type = "sankey", height = chart_height,
-        arrangement = "fixed", orientation = "h",
-        node = list(label = node_labels,
-          x = c(rep(0.02, length(source_order)), rep(0.55, length(chart_bands)), 0.98),
-          y = c(node_y(source_counts), node_y(age_counts), 0.5),
-          color = c(rep("#005EB8", length(source_order)), chart_age_colours, "#005EB8"),
-          pad = 14, thickness = 16,
-          customdata = paste0(c(source_labels, chart_bands, org_name), "<br>Deliveries here: ",
-            scales::comma(c(source_counts, age_counts, sum(source_counts)), accuracy = 1)),
-          hovertemplate = "%{customdata}<extra></extra>"),
-        link = list(source = c(source_id, length(source_order) + used_ages - 1L),
-          target = c(age_id, rep(target_id, length(used_ages))),
-          value = c(flow$N, age_counts[used_ages]),
-          color = grDevices::adjustcolor(c(chart_age_colours[match(flow$Age_band, chart_bands)],
-            chart_age_colours[used_ages]), alpha.f = 0.45),
-          customdata = c(flow_hover, age_hover), hovertemplate = "%{customdata}<extra></extra>")) |>
-        plotly::layout(margin = list(l = 12, r = 12, t = 25, b = 25),
-          font = list(family = "Arial", size = 12)) |>
+      chart <- chart |>
+        plotly::layout(showlegend = FALSE,
+          xaxis = list(title = "% of LA/age pregnancies sent here", tickformat = ".0%",
+            range = c(0, mapping_share_max), zeroline = TRUE),
+          yaxis = list(title = "", tickmode = "array", tickvals = seq_along(chart_sources),
+            ticktext = chart_labels, range = c(length(chart_sources) + 0.6, 0.4),
+            tickfont = list(size = 11), showgrid = TRUE, zeroline = FALSE),
+          margin = list(l = 180, r = 20, t = 15, b = 65), font = list(family = "Arial", size = 11)) |>
         plotly::config(displayModeBar = FALSE, responsive = TRUE)
     }
     table <- org_shares |>
@@ -399,8 +383,7 @@ build_first_draft_projections <- function(baseline_fy = projection_baseline,
         Numerator = "Deliveries here", Denominator = "All LA/age pregnancies", Share = "% sent here") |>
       gt::fmt_number(columns = c("Numerator", "Denominator"), decimals = 0) |>
       gt::fmt_percent(columns = "Share", decimals = 1)
-    list(chart = htmltools::div(style = "max-height: 650px; overflow-y: auto;", chart),
-      table = table, flow = flow, visible_las = visible_las)
+    list(chart = chart, table = table, flow = flow, chart_data = chart_data, visible_las = visible_las)
   }), organisations$Key)
   accounting_table <- destination_accounting |>
     dplyr::select(LA_name, LA, Age_band, Denominator, Cluster_trusts,
@@ -524,6 +507,144 @@ build_first_draft_projections <- function(baseline_fy = projection_baseline,
       change_chart = change_chart, change_table = change_table)
   }), organisations$Key)
 
+  # Group the six named trusts, then the two ICBs and whole cluster, for both grids.
+  age_groups <- list(
+    Trust = organisations[organisations$Level == "Trust" &
+      organisations$Code %in% setdiff(names(trust_labels), "Other"), , drop = FALSE],
+    ICB_Cluster = organisations[organisations$Level %in% c("ICB", "Cluster"), , drop = FALSE])
+  # Section 9.1: put the allocation dot plots together with one age-band legend.
+  mapping_key <- htmltools::div(
+    style = "display: flex; flex-wrap: wrap; gap: 12px 24px; margin-bottom: 20px; font-size: 14px;",
+    htmltools::tagList(lapply(seq_along(age_bands), function(i) {
+      htmltools::span(style = "display: inline-flex; align-items: center; gap: 6px;",
+        htmltools::span(style = paste0("display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: ",
+          age_colours[i], ";"), `aria-hidden` = "true"), age_bands[i])
+    })))
+  mapping_grids <- lapply(age_groups, function(rows) {
+    htmltools::tagList(mapping_key,
+      htmltools::div(style = "display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px;",
+        htmltools::tagList(lapply(seq_len(nrow(rows)), function(i) {
+          htmltools::div(style = "min-width: 0;",
+            htmltools::h3(style = "font-size: 14px; margin: 0 0 8px;", rows$Organisation[i]),
+            mapping_outputs[[rows$Key[i]]]$chart)
+        }))))
+  })
+  mapping_table_rows <- dplyr::bind_rows(age_groups)
+  mapping_tables <- htmltools::tagList(lapply(seq_len(nrow(mapping_table_rows)), function(i) {
+    htmltools::tagList(htmltools::h3(mapping_table_rows$Organisation[i]),
+      mapping_outputs[[mapping_table_rows$Key[i]]]$table)
+  }))
+
+  # Section 9.2: use the same organisation groups for the age-growth charts.
+  age_grid <- function(rows, field) {
+    bands <- age_bands
+    if (field == "incoming_chart" && any(age_projections$Key %in% rows$Key &
+                                        age_projections$Age_band == "Unknown")) {
+      bands <- c(bands, "Unknown")
+    }
+    colours <- c(age_colours, "#222222")
+    key <- htmltools::div(
+      style = "display: flex; flex-wrap: wrap; gap: 12px 24px; margin-bottom: 20px; font-size: 14px;",
+      htmltools::tagList(lapply(seq_along(bands), function(i) {
+        htmltools::span(style = "display: inline-flex; align-items: center; gap: 6px;",
+          htmltools::span(style = paste0("display: inline-block; width: 18px; height: 3px; background: ",
+            colours[i], ";"), `aria-hidden` = "true"),
+          if (bands[i] == "Unknown") "Unknown age" else bands[i])
+      })))
+    htmltools::tagList(key,
+      htmltools::div(style = "display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px;",
+        htmltools::tagList(lapply(seq_len(nrow(rows)), function(i) {
+          chart <- forecast_outputs[[rows$Key[i]]][[field]]
+          if (inherits(chart, "plotly")) {
+            chart$height <- 350
+            chart <- plotly::layout(chart, showlegend = FALSE,
+              xaxis = list(title = "", tickangle = -45, tickfont = list(size = 10)),
+              yaxis = list(title = if (field == "growth_chart") "ONS change" else "Maternities",
+                           tickfont = list(size = 10)),
+              margin = list(l = 65, r = 15, t = 15, b = 65))
+          }
+          htmltools::div(style = "min-width: 0;",
+            htmltools::h3(style = "font-size: 14px; margin: 0 0 8px;", rows$Organisation[i]), chart)
+        }))))
+  }
+  age_grids <- lapply(age_groups, function(rows) list(
+    growth_chart = age_grid(rows, "growth_chart"),
+    incoming_chart = age_grid(rows, "incoming_chart")))
+
+  # Put the existing detailed tables together under organisation headings.
+  # All feeder LAs, age bands and forecast years stay in these final table tabs.
+  table_rows <- dplyr::bind_rows(age_groups)
+  age_tables <- stats::setNames(lapply(c("growth_table", "incoming_table"), function(field) {
+    htmltools::tagList(lapply(seq_len(nrow(table_rows)), function(i) {
+      htmltools::tagList(
+        htmltools::h3(table_rows$Organisation[i]),
+        forecast_outputs[[table_rows$Key[i]]][[field]])
+    }))
+  }), c("growth_table", "incoming_table"))
+
+  # Section 9.3: compare organisations on one chart for each level.
+  # Each line uses the existing totals across all feeder LAs and age bands.
+  total_charts <- stats::setNames(lapply(c("Trust", "ICB", "Cluster"), function(level) {
+    rows <- organisations[organisations$Level == level, , drop = FALSE]
+    # Keep the same six named trusts previously displayed in section 9.3.
+    if (level == "Trust") rows <- rows[rows$Code %in% setdiff(names(trust_labels), "Other"), , drop = FALSE]
+    colours <- grDevices::hcl.colors(nrow(rows), palette = "Dark 3")
+    chart <- plotly::plot_ly(height = projection_chart_height + 100)
+    for (i in seq_len(nrow(rows))) {
+      line <- maternity_projections |>
+        dplyr::filter(Key == rows$Key[i]) |>
+        dplyr::arrange(Year)
+      chart <- plotly::add_trace(chart,
+        x = line$Year, y = line$Projected, type = "scatter", mode = "lines+markers",
+        name = rows$Organisation[i],
+        line = list(color = colours[i], width = 2),
+        marker = list(color = colours[i], size = 4),
+        text = paste0(rows$Organisation[i], "<br>", line$Year_label,
+          "<br>Maternities: ", scales::comma(line$Projected, accuracy = 1)),
+        hovertemplate = "%{text}<extra></extra>", connectgaps = FALSE)
+    }
+    chart |>
+      style_line_chart("Total maternities") |>
+      plotly::layout(
+        legend = list(orientation = "h", x = 0, y = 1.04,
+                      xanchor = "left", yanchor = "bottom", font = list(size = 12)),
+        margin = list(l = 85, r = 20, t = 130, b = 125))
+  }), c("Trust", "ICB", "Cluster"))
+
+  # Section 9.4: compare percentage changes from the actual 2025/26 baseline.
+  # Trusts share one chart; the two ICBs and whole cluster share the other.
+  change_charts <- stats::setNames(lapply(c("Trust", "ICB_Cluster"), function(group) {
+    rows <- if (group == "Trust") {
+      organisations[organisations$Level == "Trust" &
+        organisations$Code %in% setdiff(names(trust_labels), "Other"), , drop = FALSE]
+    } else {
+      organisations[organisations$Level %in% c("ICB", "Cluster"), , drop = FALSE]
+    }
+    colours <- grDevices::hcl.colors(nrow(rows), palette = "Dark 3")
+    chart <- plotly::plot_ly(height = projection_chart_height + 100)
+    for (i in seq_len(nrow(rows))) {
+      line <- maternity_projections |>
+        dplyr::filter(Key == rows$Key[i]) |>
+        dplyr::arrange(Year)
+      chart <- plotly::add_trace(chart,
+        x = line$Year, y = line$Percent_change, type = "scatter", mode = "lines+markers",
+        name = rows$Organisation[i],
+        line = list(color = colours[i], width = 2),
+        marker = list(color = colours[i], size = 4),
+        text = paste0(rows$Organisation[i], "<br>", line$Year_label,
+          "<br>Change from ", baseline_fy, ": ",
+          ifelse(is.na(line$Percent_change), "n.a.",
+                 scales::percent(line$Percent_change, accuracy = 0.1))),
+        hovertemplate = "%{text}<extra></extra>", connectgaps = FALSE)
+    }
+    chart |>
+      style_line_chart(paste("% change from observed", baseline_fy), percent = TRUE) |>
+      plotly::layout(
+        legend = list(orientation = "h", x = 0, y = 1.04,
+                      xanchor = "left", yanchor = "bottom", font = list(size = 12)),
+        margin = list(l = 85, r = 20, t = 130, b = 125))
+  }), c("Trust", "ICB_Cluster"))
+
   all_totals_table <- maternity_projections |>
     dplyr::select(Level, Organisation, Year_label, Projected) |>
     tidyr::pivot_wider(names_from = Year_label, values_from = Projected) |>
@@ -542,11 +663,17 @@ build_first_draft_projections <- function(baseline_fy = projection_baseline,
     gt::tab_options(container.width = "100%", container.overflow.x = TRUE,
                     table.font.names = c("Open Sans", "Arial", "sans-serif"))
   result$mapping_outputs <- mapping_outputs
+  result$mapping_grids <- mapping_grids
+  result$mapping_tables <- mapping_tables
   result$accounting_table <- accounting_table
   result$coverage_table <- coverage_table
   result$coverage_details_table <- coverage_details_table
   result$geography_table <- geography_table
   result$forecast_outputs <- forecast_outputs
+  result$age_grids <- age_grids
+  result$age_tables <- age_tables
+  result$total_charts <- total_charts
+  result$change_charts <- change_charts
   result$all_totals_table <- all_totals_table
   result$all_changes_table <- all_changes_table
   result

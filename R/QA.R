@@ -222,7 +222,7 @@ if (file.exists(".projections.rds")) {
     mapping <- projections$mapping_outputs[[key]]
     if (is.null(mapping$flow)) next
     baseline_count <- projections$observed_totals$Observed_baseline[projections$observed_totals$Key == key]
-    qa_check(paste("Section 9.1 grouped Sankey retains the actual baseline:", key),
+    qa_check(paste("Section 9.1 grouped feeder counts retain the actual baseline:", key),
       numbers_match(sum(mapping$flow$N), baseline_count))
     qa_check(paste("Section 9.1 shows no more than ten additional feeder LAs:", key),
       length(setdiff(mapping$visible_las, catchment_codes)) <= 10L)

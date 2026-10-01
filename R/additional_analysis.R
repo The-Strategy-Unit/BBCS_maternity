@@ -12,7 +12,7 @@ outcome_columns <- c("Within", "Outside", "No_delivery", "Unknown")
 outcome_labels <- c("Delivery within cluster", "Delivery outside cluster",
                     "No recorded delivery", "Delivery provider unknown")
 outcome_colours <- c("#00856A", "#D55E00", "#727272", "#8E5EA2")
-trend_grid_columns <- c(Trust = 3L, ICB = 2L, Cluster = 1L)
+trend_grid_columns <- c(Trust = 3L, ICB_Cluster = 3L)
 main_chart_colour <- "#005EB8"
 
 icb_labels <- c(
@@ -666,9 +666,11 @@ trend_legend <- htmltools::div(
       trend_labels[i])
   }))
 )
-make_delivery_trend_grid <- function(level, measure = "share") {
-  rows <- organisations[organisations$Level == level, , drop = FALSE]
-  columns <- unname(trend_grid_columns[level])
+# Show the two ICBs and combined cluster together, with one shared legend.
+make_delivery_trend_grid <- function(group, measure = "share") {
+  levels <- if (group == "ICB_Cluster") c("ICB", "Cluster") else group
+  rows <- organisations[organisations$Level %in% levels, , drop = FALSE]
+  columns <- unname(trend_grid_columns[group])
   htmltools::tagList(trend_legend,
     htmltools::div(style = paste0("display: grid; grid-template-columns: repeat(",
                                   columns, ", minmax(0, 1fr)); gap: 24px;"),
@@ -678,11 +680,11 @@ make_delivery_trend_grid <- function(level, measure = "share") {
           make_delivery_trend_chart(rows$Key[i], measure = measure, compact = TRUE))
       }))))
 }
-trend_levels <- c("Trust", "ICB", "Cluster")
+trend_groups <- c("Trust", "ICB_Cluster")
 delivery_over_time$chart_grids <- stats::setNames(
-  lapply(trend_levels, make_delivery_trend_grid), trend_levels)
+  lapply(trend_groups, make_delivery_trend_grid), trend_groups)
 delivery_over_time$change_chart_grids <- stats::setNames(
-  lapply(trend_levels, make_delivery_trend_grid, measure = "base_change"), trend_levels)
+  lapply(trend_groups, make_delivery_trend_grid, measure = "base_change"), trend_groups)
 delivery_over_time$table <- pathway_trends |>
   dplyr::mutate(Group = paste(Level, Organisation, sep = ": ")) |>
   dplyr::select(Group, Year, Outcome, Numerator, Denominator,

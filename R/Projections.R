@@ -1,77 +1,60 @@
-# Run after the Azure reader and additional_analysis.R, from the project root.
-# First draft: actual 2025/26 delivery episodes followed by Method 1 ONS growth.
-# All preparation, charts and tables live here; index.qmd displays saved outputs.
+# Section 9: First draft projections.
+# Run after additional_analysis.R. The QMD displays the saved charts and tables.
+# Run R/QA.R separately when you want to check the data and totals.
 
-# The selected source uses 2023 geography. Bridge any newer feeder areas in memory.
-# 2023 mergers: ONS population estimates methods guide, section 13:
-# https://www.ons.gov.uk/peoplepopulationandcommunity/populationandmigration/populationestimates/methodologies/populationestimatesforenglandandwalesmid2022methodsguide
-# Barnsley/Sheffield 2025 boundaries differ: the previous area is a growth proxy.
-# https://www.ons.gov.uk/explore-local-statistics/areas/E08000038-barnsley
-# https://www.ons.gov.uk/explore-local-statistics/areas/E08000039-sheffield
-harmonise_projection_geographies <- function(ons_births, feeder_las) {
-  crosswalk <- dplyr::tribble(
-    ~LA, ~LA_name, ~Predecessor, ~Treatment,
-    "E06000063", "Cumberland", "E07000026", "Sum predecessor areas",
-    "E06000063", "Cumberland", "E07000028", "Sum predecessor areas",
-    "E06000063", "Cumberland", "E07000029", "Sum predecessor areas",
-    "E06000064", "Westmorland and Furness", "E07000027", "Sum predecessor areas",
-    "E06000064", "Westmorland and Furness", "E07000030", "Sum predecessor areas",
-    "E06000064", "Westmorland and Furness", "E07000031", "Sum predecessor areas",
-    "E06000065", "North Yorkshire", "E07000163", "Sum predecessor areas",
-    "E06000065", "North Yorkshire", "E07000164", "Sum predecessor areas",
-    "E06000065", "North Yorkshire", "E07000165", "Sum predecessor areas",
-    "E06000065", "North Yorkshire", "E07000166", "Sum predecessor areas",
-    "E06000065", "North Yorkshire", "E07000167", "Sum predecessor areas",
-    "E06000065", "North Yorkshire", "E07000168", "Sum predecessor areas",
-    "E06000065", "North Yorkshire", "E07000169", "Sum predecessor areas",
-    "E06000066", "Somerset", "E07000187", "Sum predecessor areas",
-    "E06000066", "Somerset", "E07000188", "Sum predecessor areas",
-    "E06000066", "Somerset", "E07000189", "Sum predecessor areas",
-    "E06000066", "Somerset", "E07000246", "Sum predecessor areas",
-    "E08000038", "Barnsley", "E08000016", "Previous boundary growth proxy",
-    "E08000039", "Sheffield", "E08000019", "Previous boundary growth proxy") |>
-    dplyr::filter(LA %in% feeder_las, !LA %in% ons_births$area_code)
-  derived <- lapply(unique(crosswalk$LA), function(code) {
-    area <- crosswalk[crosswalk$LA == code, ]
-    source <- ons_births[ons_births$area_code %in% area$Predecessor, ]
-    if (!all(area$Predecessor %in% source$area_code) ||
-        anyDuplicated(source[c("area_code", "age_group", "year")])) {
-      stop("Missing or repeated predecessor ONS records for ", code, ".", call. = FALSE)
-    }
-    coverage <- source |>
-      dplyr::count(age_group, year)
-    if (any(coverage$n != nrow(area)) || any(!is.finite(source$projected_births))) {
-      stop("Incomplete predecessor ONS age/year coverage for ", code, ".", call. = FALSE)
-    }
-    source |>
-      dplyr::group_by(age_group, year) |>
-      dplyr::summarise(projected_births = sum(projected_births), .groups = "drop") |>
-      dplyr::mutate(area_code = code, area_name = area$LA_name[1],
-                    component = "Births by age of mother", sex = "persons")
-  })
-  audit <- crosswalk |>
-    dplyr::group_by(LA, LA_name, Treatment) |>
-    dplyr::summarise(ONS_source_codes = paste(Predecessor, collapse = ", "), .groups = "drop")
-  list(births = dplyr::bind_rows(ons_births, dplyr::bind_rows(derived)), audit = audit)
+# Choices used by this section.
+projection_baseline <- "2025/26"
+projection_reference_year <- 2026L
+projection_end_year <- NULL # NULL uses all years in the ONS file.
+projection_history_years <- c("2023/24", "2024/25", "2025/26")
+projection_age_bands <- c("<20", "20-24", "25-29", "30-34", "35-39", "40+")
+projection_age_colours <- c("#005EB8", "#00856A", "#D55E00", "#8E5EA2", "#B07300", "#727272")
+projection_minimum_age <- 10
+projection_maximum_age <- 60
+projection_other_feeders <- 10L
+projection_chart_height <- 480
+projection_history_chart_height <- 300
+projection_history_colours <- c("MSDS observed" = "#005EB8", "ONS-based model" = "#D55E00")
+
+# Remove the previous output first, so a failed run cannot leave old report charts.
+unlink(".projections.rds")
+
+# Check the inputs are available before starting. Counting checks belong in QA.R.
+required_objects <- c("final_cohort_2326", "total_births_by_LA_2326",
+  "trust_labels", "icb_labels", "provider_icb", "cluster_icbs", "cluster_trusts")
+absent <- required_objects[!vapply(required_objects,
+  function(name) exists(name, inherits = TRUE), logical(1))]
+if (length(absent)) stop("Missing objects: ", paste(absent, collapse = ", "),
+  ". Run R/Run analysis.R first.", call. = FALSE)
+required_columns <- list(
+  final_cohort_2326 = c("person_id_mother", "uniq_preg_id", "birth_yr", "birth_flag",
+    "la_of_mother", "age_at_birth_mother", "birth_provider", "home_birth"),
+  total_births_by_LA_2326 = c("birth_yr", "la_of_mother", "age_at_birth_mother", "count"))
+for (name in names(required_columns)) {
+  missing_columns <- setdiff(required_columns[[name]], names(get(name)))
+  if (length(missing_columns)) stop(name, " is missing: ",
+    paste(missing_columns, collapse = ", "), call. = FALSE)
 }
+source("R/ons_data.R")
 
-build_first_draft_projections <- function(baseline_fy = "2025/26", ons_reference_year = 2026L,
-                                          projection_end = NULL, prepare_outputs = TRUE,
-                                          unmatched_treatment = c("constant", "stop")) {
-  unmatched_treatment <- match.arg(unmatched_treatment)
-  required_objects <- c("final_cohort_2326", "total_births_by_LA_2326",
-                        "trust_labels", "icb_labels", "provider_icb", "cluster_icbs", "cluster_trusts")
-  absent <- required_objects[!vapply(required_objects,
-    function(name) exists(name, inherits = TRUE), logical(1))]
-  if (length(absent)) stop("Missing objects: ", paste(absent, collapse = ", "),
-                           ". Run the analysis runner first.", call. = FALSE)
-  source("R/ons_data.R", local = TRUE)
+# Local lookup files travel with the project; codes match the data and names label the report.
+projection_la_lookup <- readr::read_csv("data/lookups/la_names.csv",
+  col_types = readr::cols(LA = readr::col_character(), LA_name = readr::col_character()))
+projection_trust_lookup <- readr::read_csv("data/lookups/trust_names.csv",
+  col_types = readr::cols(Trust = readr::col_character(), Trust_name = readr::col_character())) |>
+  dplyr::mutate(Trust_name = stringr::str_replace_all(stringr::str_to_title(Trust_name),
+                                                    "\\bNhs\\b", "NHS"))
+projection_catchment_las <- readr::read_csv("config/local_authorities.csv",
+  show_col_types = FALSE)$area_code
 
-  age_bands <- c("<20", "20-24", "25-29", "30-34", "35-39", "40+")
-  age_colours <- c("#005EB8", "#00856A", "#D55E00", "#8E5EA2", "#B07300", "#727272")
+build_first_draft_projections <- function(baseline_fy = projection_baseline,
+  ons_reference_year = projection_reference_year, projection_end = projection_end_year,
+  prepare_outputs = TRUE) {
+  age_bands <- projection_age_bands
+  age_colours <- projection_age_colours
   band_age <- function(age) {
     dplyr::case_when(
-      is.na(age) | age < 10 | age > 60 ~ "Unknown",
+      is.na(age) | age < projection_minimum_age | age > projection_maximum_age ~ "Unknown",
       age < 20 ~ "<20", age < 25 ~ "20-24", age < 30 ~ "25-29",
       age < 35 ~ "30-34", age < 40 ~ "35-39", TRUE ~ "40+")
   }
@@ -91,16 +74,7 @@ build_first_draft_projections <- function(baseline_fy = "2025/26", ons_reference
                       table.font.size = gt::px(12), container.width = "100%",
                       container.overflow.x = TRUE)
   }
-  require_columns <- function(data, required, name) {
-    missing <- setdiff(required, names(data))
-    if (length(missing)) stop(name, " is missing: ", paste(missing, collapse = ", "), call. = FALSE)
-  }
-  require_columns(final_cohort_2326,
-    c("person_id_mother", "uniq_preg_id", "birth_yr", "birth_flag", "la_of_mother",
-      "age_at_birth_mother", "birth_provider", "home_birth"), "final_cohort_2326")
-  require_columns(total_births_by_LA_2326,
-    c("birth_yr", "la_of_mother", "age_at_birth_mother", "count"), "total_births_by_LA_2326")
-
+  # Count actual deliveries. Keep one set of identical details per pregnancy.
   birth_records <- final_cohort_2326 |>
     dplyr::filter(trimws(as.character(birth_yr)) == baseline_fy,
                   as.character(birth_flag) == "1") |>
@@ -108,38 +82,27 @@ build_first_draft_projections <- function(baseline_fy = "2025/26", ons_reference
       Pregnancy = trimws(as.character(uniq_preg_id)), LA = clean_code(la_of_mother),
       Age = as.numeric(age_at_birth_mother), Trust = clean_code(birth_provider),
       Home = as.numeric(as.character(home_birth)))
-  missing_ids <- is.na(birth_records$Person) | birth_records$Person == "" |
-    is.na(birth_records$Pregnancy) | birth_records$Pregnancy == ""
-  if (any(missing_ids)) stop(sum(missing_ids),
-    " recorded-delivery rows lack a mother/pregnancy identifier. Resolve before allocating projections.",
-    call. = FALSE)
   episodes <- dplyr::distinct(birth_records)
-  if (anyDuplicated(episodes[c("Person", "Pregnancy")])) stop(
-    "Conflicting ", baseline_fy, " delivery details for the same mother/pregnancy pair. Resolve before projecting.",
-    call. = FALSE)
-  if (!nrow(episodes)) stop("No recorded deliveries in ", baseline_fy, ".", call. = FALSE)
-  if (any(episodes$Trust %in% cluster_trusts & !(episodes$Home %in% c(0, 1)))) stop(
-    "Some deliveries associated with cluster providers have a missing/invalid home-birth flag.", call. = FALSE)
   episodes <- episodes |>
     dplyr::mutate(Age_band = band_age(Age))
   # Location classification: a flagged home birth is never a delivery at a trust.
   target_episodes <- episodes |>
     dplyr::filter(Trust %in% cluster_trusts, Home == 0)
-  if (!nrow(target_episodes)) stop("No non-home deliveries at cluster trusts in ", baseline_fy, ".", call. = FALSE)
   unusable <- is.na(target_episodes$LA) | target_episodes$LA == "" | target_episodes$LA == "L99999999" |
     target_episodes$Age_band == "Unknown"
   usable_targets <- target_episodes[!unusable, , drop = FALSE]
-  if (!nrow(usable_targets)) stop("No cluster-trust deliveries have usable LA and maternal age.", call. = FALSE)
 
   # Fix the organisation list across both the forward projection and retrospective check.
   recorded_trusts <- final_cohort_2326 |>
-    dplyr::filter(trimws(as.character(birth_yr)) %in% c("2023/24", "2024/25", "2025/26"),
+    dplyr::filter(trimws(as.character(birth_yr)) %in% projection_history_years,
                   as.character(birth_flag) == "1", as.character(home_birth) == "0") |>
     dplyr::pull(birth_provider) |>
     clean_code()
   trust_codes <- unique(c(names(trust_labels)[names(trust_labels) != "Other"],
                           sort(intersect(recorded_trusts, cluster_trusts))))
-  trust_names <- unname(trust_labels[trust_codes])
+  trust_names <- projection_trust_lookup$Trust_name[match(trust_codes, projection_trust_lookup$Trust)]
+  named_trusts <- trust_codes %in% names(trust_labels)
+  trust_names[named_trusts] <- unname(trust_labels[trust_codes[named_trusts]])
   trust_names[is.na(trust_names)] <- paste0("Trust ", trust_codes[is.na(trust_names)])
   organisations <- dplyr::bind_rows(
     data.frame(Key = paste0("trust-", tolower(trust_codes)), Level = "Trust",
@@ -148,32 +111,40 @@ build_first_draft_projections <- function(baseline_fy = "2025/26", ons_reference
                Code = cluster_icbs, Organisation = unname(icb_labels[cluster_icbs])),
     data.frame(Key = "cluster", Level = "Cluster", Code = "Cluster", Organisation = "Combined cluster"))
 
+  # Work out feeder shares: deliveries here divided by all pregnancies in that LA/age band.
   raw_totals <- total_births_by_LA_2326 |>
     dplyr::filter(trimws(as.character(birth_yr)) == baseline_fy) |>
     dplyr::transmute(LA = clean_code(la_of_mother), Age = as.numeric(age_at_birth_mother),
                      Denominator = as.numeric(count))
-  if (!nrow(raw_totals) || any(!is.finite(raw_totals$Denominator) | raw_totals$Denominator < 0 |
-      raw_totals$Denominator != floor(raw_totals$Denominator))) stop(
-    baseline_fy, " LA totals are missing or count contains invalid pregnancy counts.", call. = FALSE)
-  if (anyDuplicated(raw_totals[c("LA", "Age")])) stop(
-    "Repeated LA/single-age rows in the ", baseline_fy, " totals. Check their meaning before adding counts.", call. = FALSE)
-  denominators <- raw_totals |>
+  resident_denominators <- raw_totals |>
     dplyr::mutate(Age_band = band_age(Age)) |>
     dplyr::group_by(LA, Age_band) |>
     dplyr::summarise(Denominator = sum(Denominator), .groups = "drop")
 
   feeder_las <- sort(unique(usable_targets$LA))
-  geography <- harmonise_projection_geographies(read_snpp_births(), feeder_las)
-  ons_births <- geography$births
-  la_names <- ons_births |>
+  # ONS already uses 2023 LA geography. Only the later Barnsley/Sheffield codes need a proxy.
+  ons_births <- read_snpp_births()
+  geography_changes <- dplyr::tribble(
+    ~LA, ~LA_name, ~ONS_source_codes, ~Treatment,
+    "E08000038", "Barnsley", "E08000016", "Previous boundary growth proxy",
+    "E08000039", "Sheffield", "E08000019", "Previous boundary growth proxy") |>
+    dplyr::filter(LA %in% feeder_las, !LA %in% ons_births$area_code)
+  # These previous-area growth rates are applied to the actual current-area baseline.
+  # https://www.ons.gov.uk/explore-local-statistics/areas/E08000038-barnsley
+  # https://www.ons.gov.uk/explore-local-statistics/areas/E08000039-sheffield
+  proxy_births <- dplyr::bind_rows(lapply(seq_len(nrow(geography_changes)), function(i) {
+    ons_births |>
+      dplyr::filter(area_code == geography_changes$ONS_source_codes[i]) |>
+      dplyr::mutate(area_code = geography_changes$LA[i], area_name = geography_changes$LA_name[i])
+  }))
+  ons_births <- dplyr::bind_rows(ons_births, proxy_births)
+  ons_la_names <- ons_births |>
     dplyr::distinct(area_code, area_name) |>
     dplyr::rename(LA = area_code, LA_name = area_name)
+  la_names <- projection_la_lookup
   feeder_names <- data.frame(LA = feeder_las) |>
     dplyr::left_join(la_names, by = "LA") |>
     dplyr::mutate(LA_name = dplyr::coalesce(LA_name, LA))
-  repeated_names <- duplicated(feeder_names$LA_name) | duplicated(feeder_names$LA_name, fromLast = TRUE)
-  feeder_names$LA_name[repeated_names] <- paste0(feeder_names$LA_name[repeated_names],
-                                               " (", feeder_names$LA[repeated_names], ")")
 
   select_org <- function(data, organisation) {
     if (organisation$Level[[1]] == "Trust") {
@@ -182,14 +153,14 @@ build_first_draft_projections <- function(baseline_fy = "2025/26", ons_reference
       data[unname(provider_icb[data$Trust]) == organisation$Code[[1]], , drop = FALSE]
     } else data
   }
-  actual_totals <- dplyr::bind_rows(lapply(seq_len(nrow(organisations)), function(i) {
+  observed_totals <- dplyr::bind_rows(lapply(seq_len(nrow(organisations)), function(i) {
     org <- organisations[i, , drop = FALSE]
     data.frame(Key = org$Key, Observed_baseline = nrow(select_org(target_episodes, org)))
   }))
-  # Coverage diagnostics contain aggregates only, never mother/pregnancy identifiers.
+  # Keep unmatched deliveries in the forecast and describe their treatment in the report.
   target_status <- target_episodes |>
     dplyr::mutate(LA_usable = !is.na(LA) & LA != "" & LA != "L99999999",
-      Age_usable = Age_band != "Unknown", ONS_covered = LA %in% la_names$LA,
+      Age_usable = Age_band != "Unknown", ONS_covered = LA %in% ons_la_names$LA,
       Reason = dplyr::case_when(
         !LA_usable & !Age_usable ~ "Missing/unusable LA and age",
         !LA_usable ~ "Missing/unusable resident LA",
@@ -206,12 +177,112 @@ build_first_draft_projections <- function(baseline_fy = "2025/26", ons_reference
     org <- organisations[i, , drop = FALSE]
     select_org(target_status, org) |>
       dplyr::filter(Reason != "") |>
-      dplyr::mutate(LA = ifelse(is.na(LA) | LA == "", "Unknown LA", LA)) |>
+      dplyr::mutate(LA = dplyr::if_else(is.na(LA) | LA == "", "Unknown LA", LA)) |>
       dplyr::count(LA, Age_band, Reason, name = "N") |>
       dplyr::mutate(Key = org$Key, Level = org$Level, Organisation = org$Organisation) |>
       dplyr::left_join(la_names, by = "LA") |>
-      dplyr::mutate(LA_name = dplyr::coalesce(LA_name, LA))
+      dplyr::mutate(LA_name = dplyr::if_else(LA %in% c("Unknown LA", "L99999999"),
+        "Unknown LA", dplyr::coalesce(LA_name, LA)))
   }))
+  feeder_shares <- dplyr::bind_rows(lapply(seq_len(nrow(organisations)), function(i) {
+    org <- organisations[i, , drop = FALSE]
+    counts <- select_org(usable_targets, org) |>
+      dplyr::count(LA, Age_band, name = "Numerator")
+    # Retain all age bands for each contributing LA, including zero flows.
+    org_las <- unique(counts$LA)
+    tidyr::expand_grid(LA = org_las, Age_band = age_bands) |>
+      dplyr::left_join(counts, by = c("LA", "Age_band")) |>
+      dplyr::mutate(Numerator = dplyr::coalesce(Numerator, 0L)) |>
+      dplyr::left_join(resident_denominators, by = c("LA", "Age_band")) |>
+      dplyr::mutate(Key = org$Key, Level = org$Level, Organisation = org$Organisation,
+        Share = dplyr::if_else(Denominator > 0, Numerator / Denominator, NA_real_)) |>
+      dplyr::left_join(feeder_names, by = "LA")
+  }))
+
+  # Keep home births and other destinations in the LA denominator.
+  destination_accounting <- resident_denominators |>
+    dplyr::filter(LA %in% feeder_las, Age_band %in% age_bands) |>
+    dplyr::left_join(feeder_shares |>
+      dplyr::filter(Level == "Cluster") |>
+      dplyr::select(LA, Age_band, Cluster_trusts = Numerator), by = c("LA", "Age_band")) |>
+    dplyr::left_join(episodes |>
+      dplyr::filter(LA %in% feeder_las, Home == 1, Age_band %in% age_bands) |>
+      dplyr::count(LA, Age_band, name = "Recorded_home_births"), by = c("LA", "Age_band")) |>
+    dplyr::mutate(Cluster_trusts = dplyr::coalesce(Cluster_trusts, 0L),
+      Recorded_home_births = dplyr::coalesce(Recorded_home_births, 0L),
+      Other_or_unrepresented = Denominator - Cluster_trusts - Recorded_home_births) |>
+    dplyr::left_join(feeder_names, by = "LA")
+
+  # Apply Method 1 ONS growth. Convert births to maternities before taking growth ratios.
+  # Combine 40-44 and 45+ before calculating the modifier for the 40+ band.
+  modifiers <- read_national_multiplicity() |>
+    dplyr::mutate(age_band = ifelse(as.character(age_band) %in% c("40-44", "45+"),
+                                   "40+", as.character(age_band))) |>
+    births_to_maternities_modifiers()
+  covered_las <- intersect(feeder_las, ons_la_names$LA)
+  ons_maternity_projections <- project_maternities(dplyr::filter(ons_births, area_code %in% covered_las), modifiers,
+    local_authorities = unique(ons_la_names$LA_name[ons_la_names$LA %in% covered_las])) |>
+    dplyr::transmute(LA = area_code, Age_band = as.character(age_band), Year = year,
+                     ONS_maternities = projected_maternities) |>
+    dplyr::filter(Year >= ons_reference_year)
+  if (!is.null(projection_end)) ons_maternity_projections <- dplyr::filter(ons_maternity_projections, Year <= projection_end)
+  projection_years <- sort(unique(ons_births$year[ons_births$year >= ons_reference_year]))
+  if (!is.null(projection_end)) projection_years <- projection_years[projection_years <= projection_end]
+  if (!length(projection_years) || min(projection_years) != ons_reference_year) stop(
+    "ONS maternity series lacks the ", ons_reference_year, " reference year.", call. = FALSE)
+  ons_maternity_projections <- ons_maternity_projections |>
+    dplyr::group_by(LA, Age_band) |>
+    dplyr::mutate(ONS_reference = ONS_maternities[Year == ons_reference_year],
+      Growth_factor = ifelse(ONS_reference > 0, ONS_maternities / ONS_reference, NA_real_),
+      ONS_change = Growth_factor - 1) |>
+    dplyr::ungroup()
+
+  # Apply that growth to the actual baseline flow from each LA and age band.
+  # Rows without usable LA/age keep their actual counts and have no allocation share.
+  unallocated_deliveries <- coverage_details |>
+    dplyr::filter(Reason != "No England ONS series for resident LA") |>
+    dplyr::transmute(LA, LA_name, Age_band, Key, Level, Organisation, Numerator = N,
+                     Denominator = NA_real_, Share = NA_real_)
+  baseline_feeder_counts <- dplyr::bind_rows(feeder_shares, unallocated_deliveries) |>
+    dplyr::mutate(Held_constant = !LA %in% covered_las | Age_band == "Unknown",
+      Treatment = ifelse(Held_constant, "Baseline count held constant", "Method 1 ONS growth"))
+  feeder_projections <- tidyr::crossing(baseline_feeder_counts, Year = projection_years) |>
+    dplyr::left_join(ons_maternity_projections, by = c("LA", "Age_band", "Year"), relationship = "many-to-one") |>
+    dplyr::mutate(Growth_factor = ifelse(Held_constant, 1, Growth_factor),
+      ONS_change = ifelse(Held_constant, NA_real_, ONS_change),
+      Projected = ifelse(Year == ons_reference_year, Numerator,
+        ifelse(Numerator == 0, 0, Numerator * Growth_factor)),
+      Year_label = ifelse(Year == ons_reference_year, baseline_fy, paste0("Mid-", Year)))
+
+  # Add trust, ICB and combined-cluster totals across all feeder LAs and ages.
+  age_projections <- feeder_projections |>
+    dplyr::group_by(Key, Age_band, Year, Year_label) |>
+    dplyr::summarise(Projected = sum(Projected), .groups = "drop")
+  maternity_projections <- tidyr::expand_grid(Key = organisations$Key, Year = projection_years) |>
+    dplyr::left_join(age_projections |>
+      dplyr::group_by(Key, Year) |>
+      dplyr::summarise(Projected = sum(Projected), .groups = "drop"), by = c("Key", "Year")) |>
+    dplyr::mutate(Projected = ifelse(!Key %in% feeder_projections$Key, 0, Projected),
+      Year_label = ifelse(Year == ons_reference_year, baseline_fy, paste0("Mid-", Year))) |>
+    dplyr::left_join(observed_totals, by = "Key") |>
+    dplyr::mutate(Change = Projected - Observed_baseline,
+      Percent_change = relative_change(Projected, Observed_baseline)) |>
+    dplyr::left_join(organisations |> dplyr::select(Key, Level, Organisation), by = "Key")
+  projection_note <- paste(c(
+    if (any(target_status$Reason != "")) paste(sum(target_status$Reason != ""),
+      "baseline deliveries have no matched LA/age ONS series and remain constant; see projection coverage."),
+    if (nrow(geography_changes))
+      "Barnsley/Sheffield use previous-boundary ONS growth as a proxy."), collapse = " ")
+  result <- list(organisations = organisations, feeder_shares = feeder_shares,
+    observed_totals = observed_totals, resident_denominators = resident_denominators, destination_accounting = destination_accounting,
+    baseline_fy = baseline_fy, ons_reference_year = ons_reference_year,
+    projection_years = projection_years, age_bands = age_bands,
+    coverage = coverage, coverage_details = coverage_details, geography = geography_changes,
+    modifiers = modifiers, ons_maternity_projections = ons_maternity_projections, feeder_projections = feeder_projections,
+    age_projections = age_projections, maternity_projections = maternity_projections, note = projection_note)
+  if (!prepare_outputs) return(result)
+
+  # Make charts and tables for sections 9.1 to 9.4.
   coverage_table <- coverage |>
     dplyr::select(Level, Organisation, Observed_baseline, ONS_growth, Unmatched) |>
     gt::gt(groupname_col = "Level", rowname_col = "Organisation") |>
@@ -226,96 +297,58 @@ build_first_draft_projections <- function(baseline_fy = "2025/26", ons_reference
     gt::cols_label(LA_name = "Resident LA", LA = "LA code", Age_band = "Age band",
                    Reason = "Reason", N = "Observed deliveries") |>
     gt::fmt_number(columns = "N", decimals = 0)
-  geography_table <- geography$audit |>
+  geography_table <- geography_changes |>
     base_table("Feeder codes matched to the ONS geography") |>
     gt::cols_label(LA = "MSDS LA code", LA_name = "Resident LA", Treatment = "ONS treatment",
                    ONS_source_codes = "ONS source area codes")
-  mapping <- dplyr::bind_rows(lapply(seq_len(nrow(organisations)), function(i) {
-    org <- organisations[i, , drop = FALSE]
-    counts <- select_org(usable_targets, org) |>
-      dplyr::count(LA, Age_band, name = "Numerator")
-    # Retain all age bands for each contributing LA, including zero flows.
-    org_las <- unique(counts$LA)
-    if (!length(org_las)) return(NULL)
-    tidyr::expand_grid(LA = org_las, Age_band = age_bands) |>
-      dplyr::left_join(counts, by = c("LA", "Age_band")) |>
-      dplyr::mutate(Numerator = dplyr::coalesce(Numerator, 0L)) |>
-      dplyr::left_join(denominators, by = c("LA", "Age_band")) |>
-      dplyr::mutate(Key = org$Key, Level = org$Level, Organisation = org$Organisation,
-        Share = ifelse(Denominator > 0, Numerator / Denominator, NA_real_)) |>
-      dplyr::left_join(feeder_names, by = "LA")
-  }))
-  bad_totals <- mapping |>
-    dplyr::filter(Numerator > 0 & (is.na(Denominator) | Denominator <= 0 | Numerator > Denominator))
-  if (nrow(bad_totals)) stop(nrow(bad_totals),
-    " LA/age/organisation cells have absent, zero or smaller-than-numerator LA totals. Check count and population coverage.",
-    call. = FALSE)
-  # Each level is an alternative view of the same recorded trust deliveries.
-  counts_by_level <- mapping |>
-    dplyr::group_by(Level) |>
-    dplyr::summarise(N = sum(Numerator), .groups = "drop")
-  stopifnot(length(unique(counts_by_level$N)) == 1L,
-            all(mapping$Share[!is.na(mapping$Share)] >= 0 & mapping$Share[!is.na(mapping$Share)] <= 1))
-
-  # Accounting includes home births and all destinations outside the target trusts.
-  accounting <- denominators |>
-    dplyr::filter(LA %in% feeder_las, Age_band %in% age_bands) |>
-    dplyr::left_join(mapping |>
-      dplyr::filter(Level == "Cluster") |>
-      dplyr::select(LA, Age_band, Cluster_trusts = Numerator), by = c("LA", "Age_band")) |>
-    dplyr::left_join(episodes |>
-      dplyr::filter(LA %in% feeder_las, Home == 1, Age_band %in% age_bands) |>
-      dplyr::count(LA, Age_band, name = "Recorded_home_births"), by = c("LA", "Age_band")) |>
-    dplyr::mutate(Cluster_trusts = dplyr::coalesce(Cluster_trusts, 0L),
-      Recorded_home_births = dplyr::coalesce(Recorded_home_births, 0L),
-      Other_or_unrepresented = Denominator - Cluster_trusts - Recorded_home_births) |>
-    dplyr::left_join(feeder_names, by = "LA")
-  if (any(accounting$Other_or_unrepresented < 0)) stop(
-    "Recorded cluster-trust and home births exceed LA pregnancy totals. Check denominator definitions.", call. = FALSE)
-
-  scroll_chart <- function(chart, height = 650) {
-    htmltools::div(style = paste0("max-height: ", height,
-      "px; overflow-y: auto;"), chart)
-  }
+  # Section 9.1: keep cluster LAs and the ten largest additional feeders visible.
+  # Rank once using actual baseline deliveries; group the remaining feeders only in the chart.
+  # Tables keep every LA code. Unknown LA/age counts stay visible without an invented share.
   mapping_outputs <- stats::setNames(lapply(organisations$Key, function(key) {
-    data <- mapping[mapping$Key == key, , drop = FALSE]
-    if (!nrow(data)) return(list(chart = htmltools::div(paste("No recorded deliveries in", baseline_fy)),
+    org_shares <- baseline_feeder_counts[baseline_feeder_counts$Key == key, , drop = FALSE]
+    if (!nrow(org_shares)) return(list(chart = htmltools::div(paste("No recorded deliveries in", baseline_fy)),
       table = base_table(data.frame(Note = paste("No recorded deliveries in", baseline_fy)), "LA allocation")))
-    la_volume <- data |>
-      dplyr::filter(!is.na(LA), LA != "", !LA %in% c("Unknown LA", "L99999999"),
-                    Age_band %in% age_bands) |>
+    la_volume <- org_shares |>
+      dplyr::filter(!is.na(LA), LA != "", !LA %in% c("Unknown LA", "L99999999")) |>
       dplyr::group_by(LA, LA_name) |>
       dplyr::summarise(N = sum(Numerator), .groups = "drop") |>
       dplyr::filter(N > 0) |>
-      dplyr::arrange(dplyr::desc(N), LA_name)
-    la_order <- c(la_volume$LA_name, setdiff(unique(data$LA_name), la_volume$LA_name))
-    data <- data |>
-      dplyr::mutate(Age_band = factor(Age_band, levels = age_bands),
-                     LA_name = factor(LA_name, levels = la_order)) |>
-      dplyr::arrange(LA_name, Age_band)
-    top_las <- head(la_volume$LA, 12L)
-    source_order <- c(top_las, if (nrow(la_volume) > length(top_las)) "Other LAs")
-    source_labels <- c(as.character(la_volume$LA_name[seq_along(top_las)]),
-      if (nrow(la_volume) > length(top_las)) paste0("Other LAs (", nrow(la_volume) - length(top_las), ")"))
-    flow <- data |>
-      dplyr::filter(LA %in% la_volume$LA, Age_band %in% age_bands) |>
-      dplyr::mutate(Source_LA = ifelse(LA %in% top_las, LA, "Other LAs")) |>
+      dplyr::arrange(dplyr::desc(N), LA_name, LA)
+    additional_las <- la_volume |>
+      dplyr::filter(!LA %in% projection_catchment_las) |>
+      dplyr::slice_head(n = projection_other_feeders) |>
+      dplyr::pull(LA)
+    visible_las <- la_volume$LA[la_volume$LA %in% c(projection_catchment_las, additional_las)]
+    chart_bands <- c(age_bands, if (any(org_shares$Age_band == "Unknown" & org_shares$Numerator > 0)) "Unknown")
+    chart_age_colours <- c(age_colours, if ("Unknown" %in% chart_bands) "#222222")
+    org_shares <- org_shares |>
+      dplyr::mutate(Age_band = factor(Age_band, levels = c(age_bands, "Unknown"))) |>
+      dplyr::arrange(match(LA, c(la_volume$LA, "Unknown LA", "L99999999")), Age_band)
+    flow <- org_shares |>
+      dplyr::filter(Age_band %in% chart_bands) |>
+      dplyr::mutate(Source_LA = dplyr::case_when(
+        is.na(LA) | LA == "" | LA %in% c("Unknown LA", "L99999999") ~ "unknown-la",
+        LA %in% visible_las ~ LA, TRUE ~ "other-feeder-las")) |>
       dplyr::group_by(Source_LA, Age_band) |>
       dplyr::summarise(N = sum(Numerator),
         Denominator = if (all(is.finite(Denominator) & Denominator >= 0)) sum(Denominator) else NA_real_,
         .groups = "drop") |>
       dplyr::filter(N > 0) |>
-      dplyr::mutate(Share = ifelse(Denominator > 0, N / Denominator, NA_real_)) |>
-      dplyr::arrange(match(Source_LA, source_order), Age_band)
+      dplyr::mutate(Share = ifelse(Denominator > 0, N / Denominator, NA_real_))
+    source_order <- c(visible_las,
+      if ("other-feeder-las" %in% flow$Source_LA) "other-feeder-las",
+      if ("unknown-la" %in% flow$Source_LA) "unknown-la")
+    source_labels <- c(la_volume$LA_name[match(visible_las, la_volume$LA)],
+      if ("other-feeder-las" %in% source_order) "All other feeder LAs",
+      if ("unknown-la" %in% source_order) "Unknown LA")
+    flow <- dplyr::arrange(flow, match(Source_LA, source_order), Age_band)
     if (!nrow(flow)) {
       chart <- htmltools::div(paste("No usable LA/age delivery flows in", baseline_fy))
     } else {
       source_counts <- vapply(source_order, function(la) sum(flow$N[flow$Source_LA == la]), numeric(1))
-      age_counts <- vapply(age_bands, function(age) sum(flow$N[flow$Age_band == age]), numeric(1))
+      age_counts <- vapply(chart_bands, function(age) sum(flow$N[flow$Age_band == age]), numeric(1))
       org <- organisations[match(key, organisations$Key), , drop = FALSE]
       org_name <- org$Organisation[[1]]
-      org_label <- if (org$Level[[1]] == "Cluster") "Combined cluster" else
-        paste(org$Level[[1]], org$Code[[1]])
       chart_height <- max(420, length(source_order) * 34 + 120)
       # Fixed positions retain the largest LA at the top without overlapping unequal nodes.
       node_y <- function(counts) {
@@ -324,52 +357,52 @@ build_first_draft_projections <- function(baseline_fy = "2025/26", ons_reference
           gap * (seq_along(counts) - 1L)
       }
       source_id <- match(flow$Source_LA, source_order) - 1L
-      age_id <- length(source_order) + match(flow$Age_band, age_bands) - 1L
+      age_id <- length(source_order) + match(flow$Age_band, chart_bands) - 1L
       used_ages <- which(age_counts > 0)
-      target_id <- length(source_order) + length(age_bands)
-      origin_text <- ifelse(flow$Source_LA == "Other LAs", "Other contributing LAs",
-        paste0(source_labels[match(flow$Source_LA, source_order)], " (", flow$Source_LA, ")"))
+      target_id <- length(source_order) + length(chart_bands)
+      origin_text <- source_labels[match(flow$Source_LA, source_order)]
       flow_hover <- paste0(origin_text, "<br>Age: ", flow$Age_band,
         "<br>Deliveries here: ", scales::comma(flow$N, accuracy = 1),
         "<br>All LA/age pregnancies: ", ifelse(is.na(flow$Denominator), "n.a.",
           scales::comma(flow$Denominator, accuracy = 1)),
         "<br>LA/age share sent here: ", ifelse(is.na(flow$Share), "n.a.",
           scales::percent(flow$Share, accuracy = 0.1)))
-      age_hover <- paste0("Age: ", age_bands[used_ages], "<br>", org_name,
+      age_hover <- paste0("Age: ", chart_bands[used_ages], "<br>", org_name,
         "<br>Deliveries here: ", scales::comma(age_counts[used_ages], accuracy = 1),
         "<br>Share of charted deliveries: ",
           scales::percent(age_counts[used_ages] / sum(source_counts), accuracy = 0.1))
-      node_labels <- c(source_labels, age_bands, org_label)
+      node_labels <- c(source_labels, chart_bands, org_name)
       chart <- plotly::plot_ly(type = "sankey", height = chart_height,
         arrangement = "fixed", orientation = "h",
         node = list(label = node_labels,
-          x = c(rep(0.02, length(source_order)), rep(0.55, length(age_bands)), 0.98),
+          x = c(rep(0.02, length(source_order)), rep(0.55, length(chart_bands)), 0.98),
           y = c(node_y(source_counts), node_y(age_counts), 0.5),
-          color = c(rep("#005EB8", length(source_order)), age_colours, "#005EB8"),
+          color = c(rep("#005EB8", length(source_order)), chart_age_colours, "#005EB8"),
           pad = 14, thickness = 16,
-          customdata = paste0(c(source_labels, age_bands, org_name), "<br>Deliveries here: ",
+          customdata = paste0(c(source_labels, chart_bands, org_name), "<br>Deliveries here: ",
             scales::comma(c(source_counts, age_counts, sum(source_counts)), accuracy = 1)),
           hovertemplate = "%{customdata}<extra></extra>"),
         link = list(source = c(source_id, length(source_order) + used_ages - 1L),
           target = c(age_id, rep(target_id, length(used_ages))),
           value = c(flow$N, age_counts[used_ages]),
-          color = grDevices::adjustcolor(c(age_colours[match(flow$Age_band, age_bands)],
-            age_colours[used_ages]), alpha.f = 0.45),
+          color = grDevices::adjustcolor(c(chart_age_colours[match(flow$Age_band, chart_bands)],
+            chart_age_colours[used_ages]), alpha.f = 0.45),
           customdata = c(flow_hover, age_hover), hovertemplate = "%{customdata}<extra></extra>")) |>
         plotly::layout(margin = list(l = 12, r = 12, t = 25, b = 25),
           font = list(family = "Arial", size = 12)) |>
         plotly::config(displayModeBar = FALSE, responsive = TRUE)
     }
-    table <- data |>
+    table <- org_shares |>
       dplyr::select(LA_name, LA, Age_band, Numerator, Denominator, Share) |>
       base_table(paste(baseline_fy, "LA and age-band allocation")) |>
       gt::cols_label(LA_name = "Resident LA", LA = "LA code", Age_band = "Age band",
         Numerator = "Deliveries here", Denominator = "All LA/age pregnancies", Share = "% sent here") |>
       gt::fmt_number(columns = c("Numerator", "Denominator"), decimals = 0) |>
       gt::fmt_percent(columns = "Share", decimals = 1)
-    list(chart = scroll_chart(chart), table = table)
+    list(chart = htmltools::div(style = "max-height: 650px; overflow-y: auto;", chart),
+      table = table, flow = flow, visible_las = visible_las)
   }), organisations$Key)
-  accounting_table <- accounting |>
+  accounting_table <- destination_accounting |>
     dplyr::select(LA_name, LA, Age_band, Denominator, Cluster_trusts,
                   Recorded_home_births, Other_or_unrepresented) |>
     base_table("All destinations remain in the LA denominator") |>
@@ -379,111 +412,6 @@ build_first_draft_projections <- function(baseline_fy = "2025/26", ons_reference
       Other_or_unrepresented = "Other / unrepresented destinations") |>
     gt::fmt_number(columns = c("Denominator", "Cluster_trusts", "Recorded_home_births",
                                "Other_or_unrepresented"), decimals = 0)
-  result <- list(mapping_ready = TRUE, forecast_ready = FALSE, organisations = organisations,
-    mapping = mapping, mapping_outputs = mapping_outputs, accounting_table = accounting_table,
-    actual_totals = actual_totals, baseline_fy = baseline_fy, ons_reference_year = ons_reference_year,
-    coverage = coverage, coverage_details = coverage_details, coverage_table = coverage_table,
-    coverage_details_table = coverage_details_table, geography = geography$audit,
-    geography_table = geography_table, unmatched_treatment = unmatched_treatment)
-
-  # Unexpected missing English areas still need a correction, not a silent fallback.
-  uncovered_las <- setdiff(feeder_las, la_names$LA)
-  unexpected_english <- uncovered_las[startsWith(uncovered_las, "E")]
-  if (length(unexpected_english) || (unmatched_treatment == "stop" &&
-      (any(unusable) || length(uncovered_las)))) {
-    result$note <- paste(c(
-      if (any(unusable)) paste(sum(unusable), "cluster-trust episodes have missing/unusable LA or age; resolve before projecting full totals."),
-      if (length(uncovered_las)) paste("ONS projection codes are missing for feeder LAs:",
-                                       paste(uncovered_las, collapse = ", "))), collapse = " ")
-    return(result)
-  }
-
-  # Method 1 only. Combine 40-44 and 45+ before calculating the multiplicity modifier.
-  modifiers <- read_national_multiplicity() |>
-    dplyr::mutate(age_band = ifelse(as.character(age_band) %in% c("40-44", "45+"),
-                                   "40+", as.character(age_band))) |>
-    births_to_maternities_modifiers()
-  covered_las <- intersect(feeder_las, la_names$LA)
-  la_projection <- project_maternities(dplyr::filter(ons_births, area_code %in% covered_las), modifiers,
-    local_authorities = unique(la_names$LA_name[la_names$LA %in% covered_las])) |>
-    dplyr::transmute(LA = area_code, Age_band = as.character(age_band), Year = year,
-                     ONS_maternities = projected_maternities) |>
-    dplyr::filter(Year >= ons_reference_year)
-  if (!is.null(projection_end)) la_projection <- dplyr::filter(la_projection, Year <= projection_end)
-  projection_years <- sort(unique(ons_births$year[ons_births$year >= ons_reference_year &
-    (is.null(projection_end) | ons_births$year <= if (is.null(projection_end)) Inf else projection_end)]))
-  if (!length(projection_years) || min(projection_years) != ons_reference_year) stop(
-    "ONS maternity series lacks the ", ons_reference_year, " reference year.", call. = FALSE)
-  required_grid <- tidyr::expand_grid(LA = covered_las, Age_band = age_bands, Year = projection_years)
-  missing_projection_cells <- dplyr::anti_join(required_grid, la_projection,
-                                                by = c("LA", "Age_band", "Year"))
-  if (nrow(missing_projection_cells) || any(!is.finite(la_projection$ONS_maternities) |
-      la_projection$ONS_maternities < 0)) stop("Incomplete or invalid ONS LA/age/year maternity projections.", call. = FALSE)
-  la_projection <- la_projection |>
-    dplyr::group_by(LA, Age_band) |>
-    dplyr::mutate(ONS_reference = ONS_maternities[Year == ons_reference_year],
-      Growth_factor = ifelse(ONS_reference > 0, ONS_maternities / ONS_reference, NA_real_),
-      ONS_change = Growth_factor - 1) |>
-    dplyr::ungroup()
-  active_cells <- mapping |> dplyr::filter(Numerator > 0) |> dplyr::distinct(LA, Age_band)
-  invalid_growth <- la_projection |>
-    dplyr::semi_join(active_cells, by = c("LA", "Age_band")) |>
-    dplyr::filter(!is.finite(Growth_factor))
-  if (nrow(invalid_growth)) stop(
-    "An occupied LA/age cell has a zero/unavailable ONS reference. Its growth cannot be calculated.", call. = FALSE)
-
-  # Rows without usable LA/age have no invented allocation share or denominator.
-  unmapped_flows <- coverage_details |>
-    dplyr::filter(Reason != "No England ONS series for resident LA") |>
-    dplyr::transmute(LA, LA_name, Age_band, Key, Level, Organisation, Numerator = N,
-                     Denominator = NA_real_, Share = NA_real_)
-  forecast_mapping <- dplyr::bind_rows(mapping, unmapped_flows) |>
-    dplyr::mutate(Held_constant = !LA %in% covered_las | Age_band == "Unknown",
-      Treatment = ifelse(Held_constant, "Baseline count held constant", "Method 1 ONS growth"))
-  flow_projection <- tidyr::crossing(forecast_mapping, Year = projection_years) |>
-    dplyr::left_join(la_projection, by = c("LA", "Age_band", "Year"), relationship = "many-to-one") |>
-    dplyr::mutate(Growth_factor = ifelse(Held_constant, 1, Growth_factor),
-      ONS_change = ifelse(Held_constant, NA_real_, ONS_change),
-      Projected = ifelse(Numerator == 0, 0, Numerator * Growth_factor),
-      Year_label = ifelse(Year == ons_reference_year, baseline_fy, paste0("Mid-", Year)))
-  # Equivalent to Share * (the observed LA denominator * ONS age-specific growth).
-  # Anchor each LA/age flow to actual MSDS counts, without rescaling the observed year.
-  age_totals <- flow_projection |>
-    dplyr::group_by(Key, Age_band, Year, Year_label) |>
-    dplyr::summarise(Projected = sum(Projected), .groups = "drop")
-  total_projection <- tidyr::expand_grid(Key = organisations$Key, Year = projection_years) |>
-    dplyr::left_join(age_totals |>
-      dplyr::group_by(Key, Year) |>
-      dplyr::summarise(Projected = sum(Projected), .groups = "drop"), by = c("Key", "Year")) |>
-    dplyr::mutate(Projected = dplyr::coalesce(Projected, 0),
-      Year_label = ifelse(Year == ons_reference_year, baseline_fy, paste0("Mid-", Year))) |>
-    dplyr::left_join(actual_totals, by = "Key") |>
-    dplyr::mutate(Change = Projected - Observed_baseline,
-      Percent_change = relative_change(Projected, Observed_baseline)) |>
-    dplyr::left_join(organisations |> dplyr::select(Key, Level, Organisation), by = "Key")
-  stopifnot(all(abs(total_projection$Projected[total_projection$Year == ons_reference_year] -
-    total_projection$Observed_baseline[total_projection$Year == ons_reference_year]) < 1e-8))
-  # Trust and ICB sums must equal the cluster in every future year, not only at baseline.
-  level_totals <- total_projection |>
-    dplyr::group_by(Level, Year) |>
-    dplyr::summarise(N = sum(Projected), .groups = "drop") |>
-    tidyr::pivot_wider(names_from = Level, values_from = N)
-  stopifnot(all(abs(level_totals$Trust - level_totals$Cluster) < 1e-7),
-            all(abs(level_totals$ICB - level_totals$Cluster) < 1e-7))
-
-  result$forecast_ready <- TRUE
-  result$note <- paste(c(
-    if (any(target_status$Reason != "")) paste(sum(target_status$Reason != ""),
-      "baseline deliveries have no matched LA/age ONS series and remain constant; see projection coverage."),
-    if (any(geography$audit$Treatment == "Previous boundary growth proxy"))
-      "Barnsley/Sheffield use previous-boundary ONS growth as a proxy."), collapse = " ")
-  result$modifiers <- modifiers
-  result$la_projection <- la_projection
-  result$flow_projection <- flow_projection
-  result$age_totals <- age_totals
-  result$total_projection <- total_projection
-  if (!prepare_outputs) return(result)
-
   style_line_chart <- function(chart, y_title, percent = FALSE, ons_only = FALSE) {
     tick_years <- sort(unique(c(ons_reference_year,
       projection_years[projection_years %% 5 == 0], max(projection_years))))
@@ -498,7 +426,7 @@ build_first_draft_projections <- function(baseline_fy = "2025/26", ons_reference
       plotly::config(displayModeBar = FALSE, responsive = TRUE)
   }
   age_line_chart <- function(data, value, title, percent = FALSE) {
-    chart <- plotly::plot_ly(height = 480)
+    chart <- plotly::plot_ly(height = projection_chart_height)
     chart_bands <- c(age_bands, if ("Unknown" %in% data$Age_band) "Unknown")
     chart_colours <- c(age_colours, "#222222")
     for (i in seq_along(chart_bands)) {
@@ -516,13 +444,14 @@ build_first_draft_projections <- function(baseline_fy = "2025/26", ons_reference
     style_line_chart(chart, title, percent, ons_only = percent)
   }
   forecast_outputs <- stats::setNames(lapply(organisations$Key, function(key) {
-    org_mapping <- mapping[mapping$Key == key, , drop = FALSE]
-    org_flows <- flow_projection[flow_projection$Key == key, , drop = FALSE]
-    org_ages <- age_totals[age_totals$Key == key, , drop = FALSE]
-    org_totals <- total_projection[total_projection$Key == key, , drop = FALSE]
+    org_shares <- feeder_shares[feeder_shares$Key == key, , drop = FALSE]
+    org_flows <- feeder_projections[feeder_projections$Key == key, , drop = FALSE]
+    org_ages <- age_projections[age_projections$Key == key, , drop = FALSE]
+    org_totals <- maternity_projections[maternity_projections$Key == key, , drop = FALSE]
     org_totals <- dplyr::arrange(org_totals, Year)
-    org_feeders <- unique(org_mapping$LA)
-    ons_age_growth <- la_projection |>
+    org_feeders <- unique(org_shares$LA)
+    # Section 9.2: ONS age-band growth and the incoming maternities it produces.
+    ons_age_growth <- ons_maternity_projections |>
       dplyr::filter(LA %in% org_feeders) |>
       dplyr::group_by(Age_band, Year) |>
       dplyr::summarise(ONS_maternities = sum(ONS_maternities), .groups = "drop") |>
@@ -561,12 +490,13 @@ build_first_draft_projections <- function(baseline_fy = "2025/26", ons_reference
     if (nrow(org_flows) && !nrow(ons_age_growth)) {
       growth_chart <- htmltools::div("No matched ONS age-specific series; baseline deliveries are held constant.")
     }
-    total_chart <- plotly::plot_ly(org_totals, height = 480, x = ~Year, y = ~Projected,
+    # Sections 9.3 and 9.4: total counts and percentage change from the actual baseline.
+    total_chart <- plotly::plot_ly(org_totals, height = projection_chart_height, x = ~Year, y = ~Projected,
       type = "scatter", mode = "lines+markers", line = list(color = "#005EB8", width = 2),
       text = ~paste0(Year_label, "<br>Maternities: ", scales::comma(Projected, accuracy = 1)),
       hovertemplate = "%{text}<extra></extra>", showlegend = FALSE) |>
       style_line_chart("Total maternities")
-    change_chart <- plotly::plot_ly(org_totals, height = 480, x = ~Year, y = ~Percent_change,
+    change_chart <- plotly::plot_ly(org_totals, height = projection_chart_height, x = ~Year, y = ~Percent_change,
       type = "scatter", mode = "lines+markers", line = list(color = "#005EB8", width = 2),
       text = ~paste0(Year_label, "<br>Change from ", baseline_fy, ": ",
         ifelse(is.na(Percent_change), "n.a.", scales::percent(Percent_change, accuracy = 0.1))),
@@ -594,7 +524,7 @@ build_first_draft_projections <- function(baseline_fy = "2025/26", ons_reference
       change_chart = change_chart, change_table = change_table)
   }), organisations$Key)
 
-  all_totals_table <- total_projection |>
+  all_totals_table <- maternity_projections |>
     dplyr::select(Level, Organisation, Year_label, Projected) |>
     tidyr::pivot_wider(names_from = Year_label, values_from = Projected) |>
     gt::gt(groupname_col = "Level", rowname_col = "Organisation") |>
@@ -602,7 +532,7 @@ build_first_draft_projections <- function(baseline_fy = "2025/26", ons_reference
     gt::fmt_number(columns = c(baseline_fy, paste0("Mid-", projection_years[-1])), decimals = 0) |>
     gt::tab_options(container.width = "100%", container.overflow.x = TRUE,
                     table.font.names = c("Open Sans", "Arial", "sans-serif"))
-  all_changes_table <- total_projection |>
+  all_changes_table <- maternity_projections |>
     dplyr::select(Level, Organisation, Year_label, Percent_change) |>
     tidyr::pivot_wider(names_from = Year_label, values_from = Percent_change) |>
     gt::gt(groupname_col = "Level", rowname_col = "Organisation") |>
@@ -611,23 +541,25 @@ build_first_draft_projections <- function(baseline_fy = "2025/26", ons_reference
     gt::sub_missing(missing_text = "n.a.") |>
     gt::tab_options(container.width = "100%", container.overflow.x = TRUE,
                     table.font.names = c("Open Sans", "Arial", "sans-serif"))
+  result$mapping_outputs <- mapping_outputs
+  result$accounting_table <- accounting_table
+  result$coverage_table <- coverage_table
+  result$coverage_details_table <- coverage_details_table
+  result$geography_table <- geography_table
   result$forecast_outputs <- forecast_outputs
   result$all_totals_table <- all_totals_table
   result$all_changes_table <- all_changes_table
   result
 }
 
-build_projection_backtest <- function(unmatched_treatment = c("constant", "stop")) {
-  unmatched_treatment <- match.arg(unmatched_treatment)
-  # Refit only the 2023/24 LA/age shares; do not use 2024/25 or 2025/26 shares.
+build_projection_backtest <- function() {
+  # Section 9.5: compare with actual history.
+  # Start again from 2023/24, using only that year's actual counts and feeder shares.
   historical <- build_first_draft_projections(baseline_fy = "2023/24",
-    ons_reference_year = 2024L, projection_end = 2026L, prepare_outputs = FALSE,
-    unmatched_treatment = unmatched_treatment)
-  if (!isTRUE(historical$forecast_ready)) return(list(ready = FALSE, note = historical$note,
-    coverage = historical$coverage, coverage_details = historical$coverage_details,
-    coverage_table = historical$coverage_table, coverage_details_table = historical$coverage_details_table))
+    ons_reference_year = 2024L, projection_end = 2026L, prepare_outputs = FALSE)
   organisations <- historical$organisations
-  years <- c("2023/24", "2024/25", "2025/26")
+  years <- projection_history_years
+  # Count the actual deliveries separately for each financial year.
   observed <- final_cohort_2326 |>
     dplyr::filter(trimws(as.character(birth_yr)) %in% years, as.character(birth_flag) == "1") |>
     dplyr::transmute(Person = trimws(as.character(person_id_mother)),
@@ -635,17 +567,7 @@ build_projection_backtest <- function(unmatched_treatment = c("constant", "stop"
       LA = toupper(trimws(as.character(la_of_mother))), Age = as.numeric(age_at_birth_mother),
       Trust = toupper(trimws(as.character(birth_provider))), Home = as.numeric(as.character(home_birth))) |>
     dplyr::distinct()
-  if (any(is.na(observed$Person) | observed$Person == "" | is.na(observed$Pregnancy) |
-      observed$Pregnancy == "") || anyDuplicated(observed[c("Person", "Pregnancy")])) stop(
-    "The observed 2023/24–2025/26 comparison has missing identifiers or conflicting pregnancy details.",
-    call. = FALSE)
-  if (any(observed$Trust %in% cluster_trusts & !(observed$Home %in% c(0, 1)))) stop(
-    "The comparison has cluster-provider deliveries with missing/invalid home-birth flags.", call. = FALSE)
   observed <- observed |> dplyr::filter(Trust %in% cluster_trusts, Home == 0)
-  # Missing source years are not zero activity; a zero-activity organisation is valid.
-  absent_years <- setdiff(years, observed$Year_label)
-  if (length(absent_years)) stop("No observed cluster-trust deliveries for ",
-                                paste(absent_years, collapse = ", "), call. = FALSE)
   observed_totals <- dplyr::bind_rows(lapply(seq_len(nrow(organisations)), function(i) {
     org <- organisations[i, , drop = FALSE]
     keep <- if (org$Level == "Trust") observed$Trust == org$Code else
@@ -654,50 +576,65 @@ build_projection_backtest <- function(unmatched_treatment = c("constant", "stop"
     data.frame(Key = org$Key, Year_label = years,
       Observed = vapply(years, function(year) sum(data$Year_label == year), integer(1)))
   }))
-  comparison <- historical$total_projection |>
+  # Put observed and modelled counts side by side and calculate the difference.
+  comparison <- historical$maternity_projections |>
     dplyr::transmute(Key, Level, Organisation, Year,
       Year_label = paste0(Year - 1L, "/", substr(Year, 3, 4)), Modelled = Projected) |>
     dplyr::left_join(observed_totals, by = c("Key", "Year_label")) |>
     dplyr::mutate(Difference = Modelled - Observed,
       Percent_difference = ifelse(Observed > 0, Difference / Observed, NA_real_)) |>
     dplyr::arrange(match(Key, organisations$Key), Year)
-  if (anyNA(comparison$Observed)) stop("An observed organisation/year comparison is missing.", call. = FALSE)
-  stopifnot(all(abs(comparison$Difference[comparison$Year == 2024L]) < 1e-8))
-  comparison_table <- function(data) {
-    data |>
-      dplyr::select(Year_label, Observed, Modelled, Difference, Percent_difference) |>
-      gt::gt() |>
-      gt::tab_header(title = "Observed versus modelled maternities", subtitle = "Mapping fixed at 2023/24") |>
-      gt::cols_label(Year_label = "Financial year", Observed = "MSDS observed", Modelled = "ONS-based model",
-        Difference = "Model − observed", Percent_difference = "% difference from observed") |>
-      gt::fmt_number(columns = c("Observed", "Modelled", "Difference"), decimals = 0) |>
-      gt::fmt_percent(columns = "Percent_difference", decimals = 1) |>
-      gt::sub_missing(missing_text = "n.a.") |>
-      gt::tab_options(table.font.names = c("Open Sans", "Arial", "sans-serif"))
-  }
-  outputs <- stats::setNames(lapply(organisations$Key, function(key) {
+  # Make compact comparison charts for the six named trusts, ICBs and combined cluster.
+  trust_organisations <- organisations |>
+    dplyr::filter(Level == "Trust", Code %in% names(trust_labels)[names(trust_labels) != "Other"])
+  icb_cluster_organisations <- organisations |>
+    dplyr::filter(Level %in% c("ICB", "Cluster"))
+  chart_organisations <- dplyr::bind_rows(trust_organisations, icb_cluster_organisations)
+  outputs <- stats::setNames(lapply(chart_organisations$Key, function(key) {
     data <- comparison[comparison$Key == key, , drop = FALSE]
-    chart <- plotly::plot_ly(height = 440) |>
+    chart <- plotly::plot_ly(height = projection_history_chart_height) |>
       plotly::add_trace(x = data$Year, y = data$Observed, type = "scatter", mode = "lines+markers",
-        name = "MSDS observed", line = list(color = "#005EB8", width = 2),
+        name = "MSDS observed", line = list(color = projection_history_colours[["MSDS observed"]], width = 2),
+        marker = list(color = projection_history_colours[["MSDS observed"]], size = 5),
         text = paste0(data$Year_label, "<br>Observed: ", scales::comma(data$Observed, accuracy = 1)),
         hovertemplate = "%{text}<extra></extra>") |>
       plotly::add_trace(x = data$Year, y = data$Modelled, type = "scatter", mode = "lines+markers",
-        name = "ONS-based model", line = list(color = "#D55E00", width = 2),
+        name = "ONS-based model", line = list(color = projection_history_colours[["ONS-based model"]], width = 2),
+        marker = list(color = projection_history_colours[["ONS-based model"]], size = 5),
         text = paste0(data$Year_label, "<br>Modelled: ", scales::comma(data$Modelled, accuracy = 1),
           "<br>Difference from observed: ", ifelse(is.na(data$Percent_difference), "n.a.",
                                                    scales::percent(data$Percent_difference, accuracy = 0.1))),
         hovertemplate = "%{text}<extra></extra>") |>
-      plotly::layout(xaxis = list(title = "Financial year (ONS growth uses matching year ending mid-year)",
+      plotly::layout(xaxis = list(title = "Financial year",
         tickmode = "array", tickvals = 2024:2026, ticktext = years),
         yaxis = list(title = "Maternities", tickformat = ",.0f", rangemode = "tozero"),
-        legend = list(orientation = "h", x = 0, y = -0.22),
-        margin = list(l = 80, r = 20, t = 20, b = 95), font = list(family = "Arial")) |>
+        showlegend = FALSE,
+        margin = list(l = 65, r = 12, t = 15, b = 55), font = list(family = "Arial", size = 11)) |>
       plotly::config(displayModeBar = FALSE, responsive = TRUE)
-    list(chart = chart, table = comparison_table(data))
-  }), organisations$Key)
+    list(chart = chart)
+  }), chart_organisations$Key)
 
-  # One organisation per row, with observed/modelled/error columns under each year.
+  # Put one shared colour key above each grid, as in sections 6e and 6f.
+  comparison_key <- htmltools::div(
+    style = "display: flex; flex-wrap: wrap; gap: 12px 24px; margin-bottom: 20px; font-size: 14px;",
+    htmltools::tagList(lapply(names(projection_history_colours), function(series) {
+      htmltools::span(style = "display: inline-flex; align-items: center; gap: 6px;",
+        htmltools::span(style = paste0("display: inline-block; width: 18px; height: 3px; background: ",
+          projection_history_colours[[series]], ";"), `aria-hidden` = "true"), series)
+    })))
+  comparison_grid <- function(rows) {
+    htmltools::tagList(comparison_key,
+      htmltools::div(style = "display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px;",
+        htmltools::tagList(lapply(seq_len(nrow(rows)), function(i) {
+          htmltools::div(style = "min-width: 0;",
+            htmltools::h3(style = "font-size: 14px; margin: 0 0 8px;", rows$Organisation[i]),
+            outputs[[rows$Key[i]]]$chart)
+        }))))
+  }
+  trust_grid <- comparison_grid(trust_organisations)
+  icb_cluster_grid <- comparison_grid(icb_cluster_organisations)
+
+  # Keep all comparison values together: one organisation per row and metrics under each year.
   metrics <- c("Observed", "Modelled", "Difference", "Percent_difference")
   wide <- comparison |>
     dplyr::select(Level, Organisation, Year_label, dplyr::all_of(metrics)) |>
@@ -720,36 +657,31 @@ build_projection_backtest <- function(unmatched_treatment = c("constant", "stop"
                     table.width = gt::px(1500), table.font.size = gt::px(12))
   for (year in years) all_table <- gt::tab_spanner(all_table, label = year,
     columns = paste0(metrics, "_", year), id = paste0("backtest-", year), gather = FALSE)
-  list(ready = TRUE, note = historical$note, organisations = organisations,
-       data = comparison, outputs = outputs, all_table = all_table,
+  coverage_table <- historical$coverage |>
+    dplyr::select(Level, Organisation, Observed_baseline, ONS_growth, Unmatched) |>
+    gt::gt(groupname_col = "Level", rowname_col = "Organisation") |>
+    gt::tab_header(title = "2023/24 projection coverage") |>
+    gt::cols_label(Observed_baseline = "All observed deliveries", ONS_growth = "Matched LA/age ONS growth",
+      Unmatched = "No matched LA/age growth") |>
+    gt::fmt_number(columns = c("Observed_baseline", "ONS_growth", "Unmatched"), decimals = 0) |>
+    gt::tab_options(container.width = "100%", container.overflow.x = TRUE)
+  coverage_details_table <- historical$coverage_details |>
+    dplyr::select(Level, Organisation, LA_name, LA, Age_band, Reason, N) |>
+    gt::gt() |>
+    gt::tab_header(title = "2023/24 records without matched ONS growth") |>
+    gt::cols_label(LA_name = "Resident LA", LA = "LA code", Age_band = "Age band",
+      Reason = "Reason", N = "Observed deliveries") |>
+    gt::fmt_number(columns = "N", decimals = 0)
+  list(note = historical$note, organisations = organisations, baseline = historical,
+       data = comparison, outputs = outputs, trust_grid = trust_grid,
+       icb_cluster_grid = icb_cluster_grid, all_table = all_table,
        coverage = historical$coverage, coverage_details = historical$coverage_details,
-       coverage_table = historical$coverage_table, coverage_details_table = historical$coverage_details_table)
+       coverage_table = coverage_table, coverage_details_table = coverage_details_table)
 }
 
-# Refresh even when preparation is blocked, so the QMD never reuses stale forecasts.
-first_draft_projections <- tryCatch(build_first_draft_projections(), error = function(e) {
-  list(mapping_ready = FALSE, forecast_ready = FALSE, note = conditionMessage(e))
-})
-projection_backtest <- tryCatch(build_projection_backtest(), error = function(e) {
-  list(ready = FALSE, note = conditionMessage(e))
-})
+# Prepare section 9 and save it only after both projections and the comparison finish.
+first_draft_projections <- build_first_draft_projections()
+projection_backtest <- build_projection_backtest()
 first_draft_projections$backtest <- projection_backtest
-if (isTRUE(projection_backtest$ready)) {
-  first_draft_projections$backtest_outputs <- projection_backtest$outputs
-  if (is.null(first_draft_projections$organisations)) {
-    first_draft_projections$organisations <- projection_backtest$organisations
-  }
-}
 saveRDS(first_draft_projections, ".projections.rds")
-if (!isTRUE(first_draft_projections$forecast_ready)) {
-  message("First draft projections need attention: ", first_draft_projections$note)
-} else {
-  message("First draft projections prepared: observed 2025/26 plus Method 1 age-specific ONS growth.")
-  if (nzchar(first_draft_projections$note)) message(first_draft_projections$note)
-}
-if (!isTRUE(projection_backtest$ready)) {
-  message("Retrospective check needs attention: ", projection_backtest$note)
-} else {
-  message("Retrospective check prepared: 2023/24 mapping compared with observed 2024/25 and 2025/26.")
-  if (nzchar(projection_backtest$note)) message(projection_backtest$note)
-}
+message("Section 9 prepared: Method 1 projections and the 2023/24 historical comparison.")

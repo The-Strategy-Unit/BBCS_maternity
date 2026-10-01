@@ -8,16 +8,24 @@ library(readr)
 library(readxl)
 library(tidyr)
 
+## 1. Files and report settings ----------------------------------------------
 ons_data_dir <- function() "data"
+
+# Check the inputs together before either ONS method starts reading them.
+check_ons_input_files <- function(data_dir = ons_data_dir()) {
+  paths <- c(ons_source_files(data_dir)$path,
+             "config/local_authorities.csv", "config/analysis_parameters.csv")
+  missing <- paths[!file.exists(paths)]
+  if (length(missing)) stop("Missing ONS report inputs: ",
+                            paste(missing, collapse = ", "), call. = FALSE)
+  invisible(paths)
+}
 
 read_area_config <- function(path = file.path("config", "local_authorities.csv")) {
   config <- read_csv(path, show_col_types = FALSE, col_types = cols(.default = col_character())) |>
     mutate(display_order = as.integer(display_order)) |>
     arrange(display_order)
 
-  if (anyDuplicated(config$area_code) || anyDuplicated(config$area_name)) {
-    stop("Local-authority configuration contains duplicate codes or names.")
-  }
   if (nrow(config) == 0 || anyNA(config$area_code) || anyNA(config$area_name)) {
     stop("Local-authority configuration must contain at least one complete area.")
   }
@@ -84,6 +92,7 @@ ons_source_files <- function(data_dir = ons_data_dir()) {
     mutate(path = file.path(data_dir, file_name), available = file.exists(path))
 }
 
+## 2. Read projected births and female population ----------------------------
 read_female_population_single_age <- function(
     path = file.path(ons_data_dir(), "ons_2022_based_female_population_projections_2023_geography.csv"),
     area_config = read_area_config(),
@@ -106,15 +115,6 @@ read_female_population_single_age <- function(
       age <= maximum_age
     ) |>
     mutate(area_name = factor(area_name, levels = area_config$area_name))
-
-  missing_areas <- setdiff(area_config$area_code, unique(result$area_code))
-  if (length(missing_areas) > 0) {
-    stop(
-      "Female population projection snapshot does not contain configured area code(s): ",
-      paste(missing_areas, collapse = ", "),
-      ". Refresh the official ONS female-population extract after changing the area configuration."
-    )
-  }
 
   result |> arrange(area_name, year, age)
 }
@@ -147,6 +147,7 @@ read_snpp_births <- function(path = file.path(ons_data_dir(), "2022 SNPP Births 
     )
 }
 
+## 3. Read registration counts and published birth rates ----------------------
 read_registration_table <- function(path, sheet = "Table_1") {
   read_excel(path, sheet = sheet, skip = 5, na = c("", "[x]", "[z]")) |>
     clean_names()
@@ -187,15 +188,6 @@ read_local_authority_maternities <- function(
       )
   })
 
-  expected <- tidyr::expand_grid(
-    year = source_files$year,
-    local_authority = local_authorities
-  )
-  missing_rows <- anti_join(expected, result, by = c("year", "local_authority"))
-  if (nrow(missing_rows) > 0) {
-    stop("Missing requested local-authority maternity values in the ONS source files.")
-  }
-
   result |>
     mutate(local_authority = factor(local_authority, levels = local_authorities)) |>
     arrange(local_authority, year)
@@ -231,11 +223,6 @@ read_local_authority_birth_rates <- function(
         general_fertility_rate = as.numeric(.data[[gfr_column]])
       )
   })
-
-  expected <- tidyr::expand_grid(year = source_files$year, area_name = local_authorities)
-  if (nrow(anti_join(expected, result, by = c("year", "area_name"))) > 0) {
-    stop("Missing requested local-authority fertility rates in the ONS source files.")
-  }
 
   result |>
     mutate(area_name = factor(area_name, levels = local_authorities)) |>
@@ -314,6 +301,7 @@ read_national_multiplicity <- function(data_dir = ons_data_dir()) {
     arrange(year, age_band, multiplicity)
 }
 
+## 4. Calculate the two age-specific maternity modifiers ----------------------
 average_multiplicity_rates <- function(multiplicity_data) {
   multiplicity_data |>
     filter(multiplicity != "All") |>
@@ -374,6 +362,7 @@ pooled_count_ratio_modifier <- function(multiplicity_data) {
     pull(modifier)
 }
 
+## 5. Apply modifiers to historic and projected live births --------------------
 read_historic_live_births <- function(
     path = file.path(ons_data_dir(), "ons_live_births_la_2013_2025.csv"),
     area_config = read_area_config()) {
@@ -400,28 +389,8 @@ read_historic_live_births <- function(
     ) |>
     filter(area_code %in% area_config$area_code)
 
-  missing_areas <- setdiff(area_config$area_code, unique(result$area_code))
-  if (length(missing_areas) > 0) {
-    stop(
-      "Historic live-birth snapshot does not contain configured area code(s): ",
-      paste(missing_areas, collapse = ", "),
-      ". Refresh the Nomis extract after changing the area configuration."
-    )
-  }
   if (anyNA(result$age_band)) {
     stop("Historic live-birth snapshot contains an unmapped maternal age category.")
-  }
-
-  totals <- result |>
-    filter(age_band == "Total") |>
-    select(year, area_code, reported_total = live_births)
-  detail_check <- result |>
-    filter(age_band != "Total") |>
-    group_by(year, area_code) |>
-    summarise(detail_total = sum(live_births), .groups = "drop") |>
-    left_join(totals, by = c("year", "area_code"))
-  if (any(detail_check$detail_total != detail_check$reported_total)) {
-    stop("Historic live-birth age bands do not reconcile to the published total.")
   }
 
   result |>
@@ -564,20 +533,200 @@ workbook_catalogue <- function(path) {
 }
 
 build_source_summary <- function(data_dir = ons_data_dir()) {
-  sources <- ons_source_files(data_dir)
+  # The report displays source descriptions; record and sheet counts belong in QA.
+  ons_source_files(data_dir)
+}
 
+## 6. Shared chart and table formatting --------------------------------------
+# Colours are passed in from local_authorities.csv, not taken from another plot.
+ons_plot_theme <- function(plot_margin = ggplot2::margin(8, 12, 8, 8)) {
+  ggplot2::theme_minimal(base_family = "Arial") +
+    ggplot2::theme(
+      plot.background = ggplot2::element_rect(fill = "white", colour = NA),
+      panel.background = ggplot2::element_rect(fill = "white", colour = NA),
+      panel.grid.minor = ggplot2::element_blank(),
+      panel.grid.major.x = ggplot2::element_blank(),
+      axis.title.y = ggplot2::element_text(face = "bold"),
+      legend.position = "bottom", legend.text = ggplot2::element_text(size = 9),
+      plot.caption = ggplot2::element_text(colour = "#5f5b58", hjust = 0),
+      plot.margin = plot_margin)
+}
+
+ons_table_style <- function(table) {
+  gt::tab_options(table, table.font.names = c("Open Sans", "Arial", "sans-serif"))
+}
+
+projection_plot <- function(data, caption, colours) {
+  ggplot2::ggplot(data, ggplot2::aes(year, projected_maternities,
+                                    colour = area_name, group = area_name)) +
+    ggplot2::geom_line(linewidth = 1.05) +
+    ggplot2::scale_x_continuous(breaks = seq(min(data$year), max(data$year), by = 4)) +
+    ggplot2::scale_y_continuous(labels = scales::label_comma(),
+                              expand = ggplot2::expansion(mult = c(0.02, 0.08))) +
+    ggplot2::scale_colour_manual(values = colours) +
+    ggplot2::labs(x = NULL, y = "Projected maternities", colour = NULL, caption = caption) +
+    ons_plot_theme()
+}
+
+population_plot <- function(data, caption, colours) {
+  ggplot2::ggplot(data, ggplot2::aes(year, female_population,
+                                    colour = area_name, group = area_name)) +
+    ggplot2::geom_line(linewidth = 1.05) +
+    ggplot2::scale_x_continuous(breaks = seq(min(data$year), max(data$year), by = 4)) +
+    ggplot2::scale_y_continuous(labels = scales::label_comma(),
+                              expand = ggplot2::expansion(mult = c(0.02, 0.08))) +
+    ggplot2::scale_colour_manual(values = colours) +
+    ggplot2::labs(x = NULL, y = "Projected female population", colour = NULL, caption = caption) +
+    ons_plot_theme()
+}
+
+historic_trend_plot <- function(data, value, y_label, caption, colours) {
+  ggplot2::ggplot(data, ggplot2::aes(year, {{ value }},
+                                    colour = local_authority, group = local_authority)) +
+    ggplot2::geom_line(linewidth = 1.05) + ggplot2::geom_point(size = 2.1) +
+    ggplot2::scale_x_continuous(breaks = seq(2013, 2025, by = 2)) +
+    ggplot2::scale_y_continuous(labels = scales::label_comma(),
+                              expand = ggplot2::expansion(mult = c(0.02, 0.08))) +
+    ggplot2::scale_colour_manual(values = colours) +
+    ggplot2::labs(x = NULL, y = y_label, colour = NULL, caption = caption) +
+    ons_plot_theme()
+}
+
+published_maternities_plot <- function(data, colours) {
+  ggplot2::ggplot(data, ggplot2::aes(year, maternities,
+                                    colour = local_authority, group = local_authority)) +
+    ggplot2::geom_line(linewidth = 1.15) + ggplot2::geom_point(size = 2.8) +
+    ggplot2::scale_x_continuous(breaks = 2023:2025) +
+    ggplot2::scale_y_continuous(labels = scales::label_comma(),
+                              expand = ggplot2::expansion(mult = c(0.02, 0.08))) +
+    ggplot2::scale_colour_manual(values = colours) +
+    ggplot2::labs(x = NULL, y = "Number of maternities", colour = NULL,
+      caption = "Source: ONS Births in England and Wales: birth registrations, Table 3.") +
+    ons_plot_theme()
+}
+
+maternity_trajectory_plot <- function(observed, projected, caption, colours) {
+  ggplot2::ggplot() +
+    ggplot2::geom_line(data = observed,
+      ggplot2::aes(year, maternities, colour = area_name, group = area_name), linewidth = 1.2) +
+    ggplot2::geom_point(data = observed,
+      ggplot2::aes(year, maternities, colour = area_name), size = 2.7) +
+    ggplot2::geom_line(data = projected,
+      ggplot2::aes(year, maternities, colour = area_name, group = area_name),
+      linewidth = 1.05, linetype = "22") +
+    ggplot2::scale_x_continuous(breaks = c(2023:2026, seq(2030, 2047, by = 4), 2047),
+                              expand = ggplot2::expansion(add = c(0.4, 0.4))) +
+    ggplot2::scale_y_continuous(labels = scales::label_comma(),
+                              expand = ggplot2::expansion(mult = c(0.02, 0.1))) +
+    ggplot2::scale_colour_manual(values = colours) +
+    ggplot2::labs(x = NULL, y = "Maternities", colour = NULL, caption = caption) +
+    ons_plot_theme(ggplot2::margin(12, 14, 10, 10))
+}
+
+birth_rate_plot <- function(observed, projected, colours) {
+  ggplot2::ggplot() +
+    ggplot2::geom_line(data = projected,
+      ggplot2::aes(year, general_fertility_rate, colour = area_name, group = area_name),
+      linewidth = 1.05, linetype = "22") +
+    ggplot2::geom_line(data = observed,
+      ggplot2::aes(year, general_fertility_rate, colour = area_name, group = area_name), linewidth = 1.25) +
+    ggplot2::geom_point(data = observed,
+      ggplot2::aes(year, general_fertility_rate, colour = area_name), size = 2.7) +
+    ggplot2::scale_x_continuous(breaks = c(2023:2027, seq(2031, 2047, by = 4))) +
+    ggplot2::scale_y_continuous(labels = scales::label_number(accuracy = 1),
+                              expand = ggplot2::expansion(mult = c(0.02, 0.08))) +
+    ggplot2::scale_colour_manual(values = colours) +
+    ggplot2::labs(x = NULL, y = "Live births per 1,000 women aged 15-44", colour = NULL,
+      caption = paste("Solid: observed ONS general fertility rate, 2023-2025.",
+        "Dashed: calculated mid-year projection ratio, 2023-2047; periods differ from observed rates.")) +
+    ons_plot_theme()
+}
+
+## 7. Tables called by the two ONS method sections ----------------------------
+ons_year_table <- function(data, value, source_note) {
+  data |>
+    select(local_authority, year, {{ value }}) |>
+    pivot_wider(names_from = year, values_from = {{ value }}) |>
+    gt::gt(rowname_col = "local_authority") |>
+    gt::tab_stubhead(label = "Local authority") |>
+    gt::fmt_integer(columns = everything(), sep_mark = ",") |>
+    gt::cols_align(align = "right", columns = everything()) |>
+    gt::tab_source_note(source_note = source_note) |>
+    ons_table_style()
+}
+
+multiplicity_table <- function(data, year = NULL) {
+  if (is.null(year)) {
+    display <- data |>
+      transmute(measure = "Average proportion", multiplicity = as.character(multiplicity),
+                age_band, value = average_proportion)
+  } else {
+    selected <- data |> filter(.data$year == .env$year)
+    display <- bind_rows(
+      selected |> transmute(measure = "Maternities", multiplicity = as.character(multiplicity),
+                            age_band, value = maternities),
+      selected |> filter(multiplicity != "All") |>
+        transmute(measure = "Proportion", multiplicity = as.character(multiplicity),
+                  age_band, value = proportion))
+  }
+  display |>
+    mutate(measure = factor(measure, levels = c("Maternities", "Proportion", "Average proportion")),
+           multiplicity = factor(multiplicity, levels = c("1", "2", "3", "4+", "All"))) |>
+    arrange(measure, multiplicity) |>
+    pivot_wider(names_from = age_band, values_from = value) |>
+    gt::gt(groupname_col = "measure", rowname_col = "multiplicity") |>
+    gt::tab_stubhead(label = "Babies per maternity") |>
+    gt::fmt_integer(columns = where(is.numeric), rows = measure == "Maternities", sep_mark = ",") |>
+    gt::fmt_percent(columns = where(is.numeric),
+                    rows = measure %in% c("Proportion", "Average proportion"), decimals = 2) |>
+    gt::sub_missing(columns = everything(), missing_text = "n.a.") |>
+    ons_table_style()
+}
+
+maternity_modifier_table <- function(maternity_modifiers, projection_modifiers,
+                                     method = c("multiplicity", "count_ratio")) {
+  method <- match.arg(method)
+  data <- bind_rows(maternity_modifiers |> mutate(age_band = as.character(age_band)),
+                    projection_modifiers |> filter(age_band == "40+"))
+  if (method == "multiplicity") {
+    display <- data |> transmute(`Age band` = age_band,
+      `Expected babies per maternity` = expected_babies_per_maternity,
+      `Multiplicity modifier` = maternity_modifier)
+    note <- paste("Mean 2023-2025 age-specific multiplicity proportions.",
+      "Modifier = 1 / (p1 + 2*p2 + 3*p3 + 4*p4+); four-plus is treated as four.")
+  } else {
+    display <- data |> transmute(`Age band` = age_band,
+      `Live births per maternity` = live_births_per_maternity, `Pooled count ratio` = maternity_modifier)
+    note <- "Pooled 2023-2025 Table 7 counts: modifier = maternities / live births within each age band."
+  }
+  display |> gt::gt() |>
+    gt::fmt_number(columns = where(is.numeric), decimals = 5) |>
+    gt::tab_source_note(source_note = gt::md(note)) |>
+    ons_table_style()
+}
+
+female_population_change_table <- function(data) {
+  years <- as.character(range(data$year))
+  data |>
+    filter(year %in% range(year)) |>
+    pivot_wider(names_from = year, values_from = female_population) |>
+    mutate(change = .data[[years[2]]] - .data[[years[1]]],
+           percentage_change = change / .data[[years[1]]]) |>
+    select(area_name, age_band, all_of(years), change, percentage_change) |>
+    gt::gt(groupname_col = "area_name") |>
+    gt::cols_label(age_band = "Age band", change = "Change", percentage_change = "% change") |>
+    gt::fmt_integer(columns = c(all_of(years), change), sep_mark = ",") |>
+    gt::fmt_percent(columns = percentage_change, decimals = 1) |>
+    gt::tab_source_note(source_note = paste("Source: ONS 2022-based migration-category",
+      "population projections, 2023 geography; Strategy Unit aggregation.")) |>
+    ons_table_style()
+}
+
+ons_source_table <- function(sources) {
   sources |>
-    mutate(
-      records = map2_int(path, source_id, function(file, id) {
-        if (!file.exists(file)) return(NA_integer_)
-        if (id == "snpp_2022") nrow(read_snpp_births(file))
-        else if (id == "snpp_female_population_2022") nrow(read_csv(file, show_col_types = FALSE))
-        else if (id == "historic_live_births") nrow(read_csv(file, show_col_types = FALSE))
-        else nrow(read_registration_table(file))
-      }),
-      sheets = map2_int(path, file_name, function(file, name) {
-        if (!file.exists(file) || !grepl("\\.xlsx$", name, ignore.case = TRUE)) return(NA_integer_)
-        length(excel_sheets(file))
-      })
-    )
+    transmute(Source = source_name, Type = source_type, Period = period, File = file_name,
+              `How it is used` = current_use, Status = if_else(available, "Available", "Missing")) |>
+    gt::gt() |>
+    gt::sub_missing(columns = everything(), missing_text = "n.a.") |>
+    ons_table_style()
 }

@@ -32,20 +32,23 @@ Definitions and detailed assumptions are included in each method section. See th
 
 ```{r}
 #| label: method-1-setup
+# Read all public ONS inputs from the project root.
 source("R/ons_data.R")
+check_ons_input_files()
 library(gt)
 library(ggplot2)
 library(plotly)
 library(scales)
 
+# Use the configured areas, age range and colours.
 area_config <- read_area_config()
 analysis_parameters <- read_analysis_parameters()
 sources <- build_source_summary()
 snpp <- read_snpp_births()
-registration_sources <- sources |> filter(grepl("^registrations_", source_id))
 selected_las <- area_config$area_name
 la_maternities <- read_local_authority_maternities(selected_las)
 observed_birth_rates <- read_local_authority_birth_rates(selected_las)
+# Apply this method's age-specific births-to-maternities conversion.
 multiplicity_data <- read_national_multiplicity()
 average_rates <- average_multiplicity_rates(multiplicity_data)
 maternity_modifiers <- births_to_maternities_modifiers(multiplicity_data)
@@ -63,6 +66,7 @@ female_population_single_age <- read_female_population_single_age(
   area_config = area_config,
   parameters = analysis_parameters
 )
+# Birth rates are separate context, not an extra maternity adjustment.
 projected_birth_rates <- snpp |>
   filter(area_name %in% selected_las, age_group == "All ages") |>
   select(area_code, area_name, year, projected_births) |>
@@ -82,9 +86,6 @@ female_population_projections <- read_female_population_projections(
   area_config = area_config,
   parameters = analysis_parameters
 )
-workbook_structure <- workbook_catalogue(registration_sources$path[[length(registration_sources$path)]]) |>
-  count(role, name = "Sheets") |>
-  arrange(desc(Sheets))
 
 observed_trajectory <- la_maternities |>
   transmute(
@@ -96,123 +97,8 @@ observed_trajectory <- la_maternities |>
 projected_trajectory <- total_maternity_projections |>
   transmute(area_name, year, maternities = projected_maternities)
 
+# Chart functions live in ons_data.R and take these colours explicitly.
 area_colours <- area_colour_palette(area_config)
-
-projection_plot <- function(data, caption) {
-  ggplot(
-    data,
-    aes(x = year, y = projected_maternities, colour = area_name, group = area_name)
-  ) +
-    geom_line(linewidth = 1.05) +
-    scale_x_continuous(breaks = seq(min(data$year), max(data$year), by = 4)) +
-    scale_y_continuous(labels = label_comma(), expand = expansion(mult = c(0.02, 0.08))) +
-    scale_colour_manual(values = area_colours) +
-    labs(
-      x = NULL,
-      y = "Projected maternities",
-      colour = NULL,
-      caption = caption
-    ) +
-    theme_minimal(base_family = "Arial") +
-    theme(
-      panel.grid.minor = element_blank(),
-      panel.grid.major.x = element_blank(),
-      axis.title.y = element_text(face = "bold"),
-      legend.position = "bottom",
-      legend.text = element_text(size = 9),
-      plot.caption = element_text(colour = "#5f5b58", hjust = 0),
-      plot.margin = margin(8, 12, 8, 8)
-    )
-}
-
-population_plot <- function(data, caption) {
-  ggplot(
-    data,
-    aes(x = year, y = female_population, colour = area_name, group = area_name)
-  ) +
-    geom_line(linewidth = 1.05) +
-    scale_x_continuous(breaks = seq(min(data$year), max(data$year), by = 4)) +
-    scale_y_continuous(labels = label_comma(), expand = expansion(mult = c(0.02, 0.08))) +
-    scale_colour_manual(values = area_colours) +
-    labs(x = NULL, y = "Projected female population", colour = NULL, caption = caption) +
-    theme_minimal(base_family = "Arial") +
-    theme(
-      panel.grid.minor = element_blank(), panel.grid.major.x = element_blank(),
-      axis.title.y = element_text(face = "bold"), legend.position = "bottom",
-      legend.text = element_text(size = 9),
-      plot.caption = element_text(colour = "#5f5b58", hjust = 0),
-      plot.margin = margin(8, 12, 8, 8)
-    )
-}
-
-historic_trend_plot <- function(data, value, y_label, caption) {
-  ggplot(
-    data,
-    aes(x = year, y = {{ value }}, colour = local_authority, group = local_authority)
-  ) +
-    geom_line(linewidth = 1.05) +
-    geom_point(size = 2.1) +
-    scale_x_continuous(breaks = seq(2013, 2025, by = 2)) +
-    scale_y_continuous(labels = label_comma(), expand = expansion(mult = c(0.02, 0.08))) +
-    scale_colour_manual(values = area_colours) +
-    labs(x = NULL, y = y_label, colour = NULL, caption = caption) +
-    theme_minimal(base_family = "Arial") +
-    theme(
-      plot.background = element_rect(fill = "white", colour = NA),
-      panel.background = element_rect(fill = "white", colour = NA),
-      panel.grid.minor = element_blank(),
-      panel.grid.major.x = element_blank(),
-      axis.title.y = element_text(face = "bold"),
-      legend.position = "bottom",
-      legend.text = element_text(size = 9),
-      plot.caption = element_text(colour = "#5f5b58", hjust = 0),
-      plot.margin = margin(8, 12, 8, 8)
-    )
-}
-
-multiplicity_table <- function(data, year = NULL) {
-  if (is.null(year)) {
-    display <- data |>
-      transmute(
-        measure = "Average proportion",
-        multiplicity = as.character(multiplicity),
-        age_band,
-        value = average_proportion
-      )
-  } else {
-    selected <- data |> filter(.data$year == .env$year)
-    display <- bind_rows(
-      selected |>
-        transmute(
-          measure = "Maternities", multiplicity = as.character(multiplicity),
-          age_band, value = maternities
-        ),
-      selected |>
-        filter(multiplicity != "All") |>
-        transmute(
-          measure = "Proportion", multiplicity = as.character(multiplicity),
-          age_band, value = proportion
-        )
-    )
-  }
-
-  display |>
-    mutate(
-      measure = factor(measure, levels = c("Maternities", "Proportion", "Average proportion")),
-      multiplicity = factor(multiplicity, levels = c("1", "2", "3", "4+", "All"))
-    ) |>
-    arrange(measure, multiplicity) |>
-    pivot_wider(names_from = age_band, values_from = value) |>
-    gt(groupname_col = "measure", rowname_col = "multiplicity") |>
-    tab_stubhead(label = "Babies per maternity") |>
-    fmt_integer(columns = where(is.numeric), rows = measure == "Maternities", sep_mark = ",") |>
-    fmt_percent(
-      columns = where(is.numeric), rows = measure %in% c("Proportion", "Average proportion"),
-      decimals = 2
-    ) |>
-    sub_missing(columns = everything(), missing_text = "n.a.") |>
-    tab_options(table.font.names = c("Open Sans", "Arial", "sans-serif"))
-}
 ```
 
 <p class="report-kicker">
@@ -310,55 +196,15 @@ The 2023, 2024 and 2025 workbooks use geographical boundaries dated August 2024,
 #| fig-alt: "Line chart showing annual maternities from 2023 to 2025 for Birmingham, Dudley, Sandwell, Solihull, Walsall and Wolverhampton."
 #| fig-width: 10
 #| fig-height: 6
-ggplot(
-  la_maternities,
-  aes(x = year, y = maternities, colour = local_authority, group = local_authority)
-) +
-  geom_line(linewidth = 1.15) +
-  geom_point(size = 2.8) +
-  scale_x_continuous(breaks = 2023:2025) +
-  scale_y_continuous(labels = label_comma(), expand = expansion(mult = c(0.02, 0.08))) +
-  scale_colour_manual(values = c(
-    "Birmingham" = "#2c2825",
-    "Dudley" = "#5881c1",
-    "Sandwell" = "#d48b00",
-    "Solihull" = "#7b6aa8",
-    "Walsall" = "#00857c",
-    "Wolverhampton" = "#c44e52"
-  )) +
-  labs(
-    x = NULL,
-    y = "Number of maternities",
-    colour = NULL,
-    caption = "Source: ONS Births in England and Wales: birth registrations, Table 3."
-  ) +
-  theme_minimal(base_family = "Arial") +
-  theme(
-    panel.grid.minor = element_blank(),
-    panel.grid.major.x = element_blank(),
-    axis.title.y = element_text(face = "bold"),
-    legend.position = "bottom",
-    legend.text = element_text(size = 9),
-    plot.caption = element_text(colour = "#5f5b58", hjust = 0),
-    plot.margin = margin(8, 12, 8, 8)
-  )
+published_maternities_plot(la_maternities, area_colours)
 ```
 
 ### Table {#method-1-table}
 
 ```{r}
 #| label: method-1-maternities-table
-la_maternities |>
-  select(local_authority, year, maternities) |>
-  pivot_wider(names_from = year, values_from = maternities) |>
-  gt(rowname_col = "local_authority") |>
-  tab_stubhead(label = "Local authority") |>
-  fmt_integer(columns = everything(), sep_mark = ",") |>
-  cols_align(align = "right", columns = everything()) |>
-  tab_source_note(
-    source_note = "Source: ONS Births in England and Wales: birth registrations, Table 3."
-  ) |>
-  tab_options(table.font.names = c("Open Sans", "Arial", "sans-serif"))
+ons_year_table(la_maternities, maternities,
+  "Source: ONS Births in England and Wales: birth registrations, Table 3.")
 ```
 :::
 
@@ -382,7 +228,8 @@ historic_trend_plot(
   historic_trends,
   estimated_maternities,
   "Estimated maternities",
-  "Calculated from ONS live births by maternal age using mean 2023-2025 national age-specific multiplicity modifiers."
+  "Calculated from ONS live births by maternal age using mean 2023-2025 national age-specific multiplicity modifiers.",
+  area_colours
 )
 ```
 
@@ -390,17 +237,8 @@ historic_trend_plot(
 
 ```{r}
 #| label: method-1-historic-estimated-maternities-table
-historic_trends |>
-  select(local_authority, year, estimated_maternities) |>
-  pivot_wider(names_from = year, values_from = estimated_maternities) |>
-  gt(rowname_col = "local_authority") |>
-  tab_stubhead(label = "Local authority") |>
-  fmt_integer(columns = everything(), sep_mark = ",") |>
-  cols_align(align = "right", columns = everything()) |>
-  tab_source_note(
-    source_note = "Calculated from ONS live births by maternal age using mean 2023-2025 national age-specific multiplicity modifiers."
-  ) |>
-  tab_options(table.font.names = c("Open Sans", "Arial", "sans-serif"))
+ons_year_table(historic_trends, estimated_maternities,
+  "Calculated from ONS live births by maternal age using mean 2023-2025 national age-specific multiplicity modifiers.")
 ```
 
 ### Live births chart {#method-1-live-births-chart}
@@ -414,7 +252,8 @@ historic_trend_plot(
   historic_trends,
   live_births,
   "Registered live births",
-  "Source: ONS Live births in England and Wales down to local authority area, via Nomis; mother's usual residence, April 2023 local-authority geography."
+  "Source: ONS Live births in England and Wales down to local authority area, via Nomis; mother's usual residence, April 2023 local-authority geography.",
+  area_colours
 )
 ```
 
@@ -422,17 +261,8 @@ historic_trend_plot(
 
 ```{r}
 #| label: method-1-historic-live-births-table
-historic_trends |>
-  select(local_authority, year, live_births) |>
-  pivot_wider(names_from = year, values_from = live_births) |>
-  gt(rowname_col = "local_authority") |>
-  tab_stubhead(label = "Local authority") |>
-  fmt_integer(columns = everything(), sep_mark = ",") |>
-  cols_align(align = "right", columns = everything()) |>
-  tab_source_note(
-    source_note = "Source: ONS Live births in England and Wales down to local authority area, via Nomis; mother's usual residence."
-  ) |>
-  tab_options(table.font.names = c("Open Sans", "Arial", "sans-serif"))
+ons_year_table(historic_trends, live_births,
+  "Source: ONS Live births in England and Wales down to local authority area, via Nomis; mother's usual residence.")
 ```
 :::
 
@@ -505,23 +335,7 @@ Multiply live births by the ratio for the corresponding age band. The 40+ row is
 
 ```{r}
 #| label: method-1-maternity-modifier
-bind_rows(
-  maternity_modifiers |> mutate(age_band = as.character(age_band)),
-  projection_modifiers |> filter(age_band == "40+")
-) |>
-  transmute(
-    `Age band` = age_band,
-    `Expected babies per maternity` = expected_babies_per_maternity,
-    `Multiplicity modifier` = maternity_modifier
-  ) |>
-  gt() |>
-  fmt_number(columns = where(is.numeric), decimals = 5) |>
-  tab_source_note(
-    source_note = md(
-      "Mean 2023-2025 age-specific multiplicity proportions. Modifier = 1 / (p1 + 2*p2 + 3*p3 + 4*p4+); four-plus is treated as four."
-    )
-  ) |>
-  tab_options(table.font.names = c("Open Sans", "Arial", "sans-serif"))
+maternity_modifier_table(maternity_modifiers, projection_modifiers, "multiplicity")
 ```
 :::
 
@@ -553,7 +367,8 @@ Every value here, including 2023–2025, is calculated from projected births. Th
 #| fig-height: 6
 projection_plot(
   total_maternity_projections,
-  "Source: ONS 2022-based migration-category projected live births, 2023 geography; mean 2023-2025 age-specific multiplicity modifiers."
+  "Source: ONS 2022-based migration-category projected live births, 2023 geography; mean 2023-2025 age-specific multiplicity modifiers.",
+  area_colours
 )
 ```
 
@@ -565,7 +380,8 @@ projection_plot(
 #| fig-height: 6
 projection_plot(
   age_band_projections |> filter(age_band == "<20"),
-  "Under 20, including births assigned to model age 15. Source: ONS 2022-based SNPP; age-specific maternity modifier applied."
+  "Under 20, including births assigned to model age 15. Source: ONS 2022-based SNPP; age-specific maternity modifier applied.",
+  area_colours
 )
 ```
 
@@ -577,7 +393,8 @@ projection_plot(
 #| fig-height: 6
 projection_plot(
   age_band_projections |> filter(age_band == "20-24"),
-  "Maternal ages 20-24. Source: ONS 2022-based SNPP; age-specific maternity modifier applied."
+  "Maternal ages 20-24. Source: ONS 2022-based SNPP; age-specific maternity modifier applied.",
+  area_colours
 )
 ```
 
@@ -589,7 +406,8 @@ projection_plot(
 #| fig-height: 6
 projection_plot(
   age_band_projections |> filter(age_band == "25-29"),
-  "Maternal ages 25-29. Source: ONS 2022-based SNPP; age-specific maternity modifier applied."
+  "Maternal ages 25-29. Source: ONS 2022-based SNPP; age-specific maternity modifier applied.",
+  area_colours
 )
 ```
 
@@ -601,7 +419,8 @@ projection_plot(
 #| fig-height: 6
 projection_plot(
   age_band_projections |> filter(age_band == "30-34"),
-  "Maternal ages 30-34. Source: ONS 2022-based SNPP; age-specific maternity modifier applied."
+  "Maternal ages 30-34. Source: ONS 2022-based SNPP; age-specific maternity modifier applied.",
+  area_colours
 )
 ```
 
@@ -613,7 +432,8 @@ projection_plot(
 #| fig-height: 6
 projection_plot(
   age_band_projections |> filter(age_band == "35-39"),
-  "Maternal ages 35-39. Source: ONS 2022-based SNPP; age-specific maternity modifier applied."
+  "Maternal ages 35-39. Source: ONS 2022-based SNPP; age-specific maternity modifier applied.",
+  area_colours
 )
 ```
 
@@ -625,7 +445,8 @@ projection_plot(
 #| fig-height: 6
 projection_plot(
   age_band_projections |> filter(age_band == "40+"),
-  "Ages 40+, including births assigned to model age 44. Source: ONS 2022-based SNPP; age-specific maternity modifier applied."
+  "Ages 40+, including births assigned to model age 44. Source: ONS 2022-based SNPP; age-specific maternity modifier applied.",
+  area_colours
 )
 ```
 :::
@@ -641,53 +462,10 @@ Both cover all maternal ages, but their periods and outcome coverage differ. Pub
 #| fig-alt: "Published calendar-year maternities for 2023 to 2025 and separate calculated mid-year projections for 2023 to 2047."
 #| fig-width: 11
 #| fig-height: 6.5
-
-
-ggplot() +
-  geom_line(
-    data = observed_trajectory,
-    aes(year, maternities, colour = area_name, group = area_name),
-    linewidth = 1.2
-  ) +
-  geom_point(
-    data = observed_trajectory,
-    aes(year, maternities, colour = area_name),
-    size = 2.7
-  ) +
-  geom_line(
-    data = projected_trajectory,
-    aes(year, maternities, colour = area_name, group = area_name),
-    linewidth = 1.05, linetype = "22"
-  ) +
-
-
-  scale_x_continuous(
-    breaks = c(2023:2026, seq(2030, 2047, by = 4), 2047),
-    expand = expansion(add = c(0.4, 0.4))
-  ) +
-  scale_y_continuous(labels = label_comma(), expand = expansion(mult = c(0.02, 0.1))) +
-  scale_colour_manual(values = area_colours) +
-  labs(
-    x = NULL,
-    y = "Maternities",
-    colour = NULL,
-    caption = paste(
-      "Solid: published calendar-year maternities. Dashed: calculated mid-year projections;",
-      "ONS migration-category births on 2023 geography with age-specific multiplicity modifiers."
-    )
-  ) +
-  theme_minimal(base_family = "Arial") +
-  theme(
-    plot.background = element_rect(fill = "white", colour = NA),
-    panel.background = element_rect(fill = "white", colour = NA),
-    panel.grid.minor = element_blank(),
-    panel.grid.major.x = element_blank(),
-    axis.title.y = element_text(face = "bold"),
-    legend.position = "bottom",
-    legend.text = element_text(size = 9),
-    plot.caption = element_text(colour = "#5f5b58", hjust = 0),
-    plot.margin = margin(12, 14, 10, 10)
-  )
+maternity_trajectory_plot(observed_trajectory, projected_trajectory,
+  paste("Solid: published calendar-year maternities. Dashed: calculated mid-year projections;",
+        "ONS migration-category births on 2023 geography with age-specific multiplicity modifiers."),
+  area_colours)
 ```
 
 ## Birth rates: secondary demographic context {#method-1-birth-rates-secondary-demographic-context}
@@ -704,44 +482,7 @@ The overlapping years are retained to show both sources separately. See the sour
 #| label: method-1-birth-rate-trend
 #| fig-alt: "Observed and projected general fertility rates by local authority, expressed as live births per 1,000 women aged 15 to 44."
 #| fig-height: 6.5
-
-ggplot() +
-  geom_line(
-    data = projected_birth_rates,
-    aes(year, general_fertility_rate, colour = area_name, group = area_name),
-    linewidth = 1.05, linetype = "22"
-  ) +
-  geom_line(
-    data = observed_birth_rates,
-    aes(year, general_fertility_rate, colour = area_name, group = area_name),
-    linewidth = 1.25
-  ) +
-  geom_point(
-    data = observed_birth_rates,
-    aes(year, general_fertility_rate, colour = area_name),
-    size = 2.7
-  ) +
-  scale_x_continuous(breaks = c(2023:2027, seq(2031, 2047, by = 4))) +
-  scale_y_continuous(labels = label_number(accuracy = 1), expand = expansion(mult = c(0.02, 0.08))) +
-  scale_colour_manual(values = area_colours) +
-  labs(
-    x = NULL,
-    y = "Live births per 1,000 women aged 15–44",
-    colour = NULL,
-    caption = paste(
-      "Solid: observed ONS general fertility rate, 2023–2025.",
-      "Dashed: calculated mid-year projection ratio, 2023–2047; periods differ from observed rates."
-    )
-  ) +
-  theme_minimal(base_family = "Arial") +
-  theme(
-    plot.background = element_rect(fill = "white", colour = NA),
-    panel.background = element_rect(fill = "white", colour = NA),
-    panel.grid.minor = element_blank(), panel.grid.major.x = element_blank(),
-    axis.title.y = element_text(face = "bold"), legend.position = "bottom",
-    legend.text = element_text(size = 9),
-    plot.caption = element_text(colour = "#5f5b58", hjust = 0)
-  )
+birth_rate_plot(observed_birth_rates, projected_birth_rates, area_colours)
 ```
 
 ## Projected female population by age {#method-1-projected-female-population-by-age}
@@ -767,7 +508,8 @@ population_plot(
     "Female population aged ", analysis_parameters[["minimum_maternal_age"]], "-",
     analysis_parameters[["maximum_maternal_age"]],
     ". Source: ONS 2022-based migration-category population projections, 2023 geography."
-  )
+  ),
+  area_colours
 )
 ```
 
@@ -775,35 +517,127 @@ population_plot(
 
 ```{r}
 #| label: method-1-projected-female-population-change-table
-female_population_projections |>
-  filter(year %in% range(year)) |>
-  pivot_wider(names_from = year, values_from = female_population) |>
-  mutate(
-    change = .data[[as.character(max(female_population_projections$year))]] -
-      .data[[as.character(min(female_population_projections$year))]],
-    percentage_change = change /
-      .data[[as.character(min(female_population_projections$year))]]
-  ) |>
-  select(area_name, age_band, all_of(as.character(range(female_population_projections$year))), change, percentage_change) |>
-  gt(groupname_col = "area_name") |>
-  cols_label(age_band = "Age band", change = "Change", percentage_change = "% change") |>
-  fmt_integer(columns = c(all_of(as.character(range(female_population_projections$year))), change), sep_mark = ",") |>
-  fmt_percent(columns = percentage_change, decimals = 1) |>
-  tab_source_note(source_note = "Source: ONS 2022-based migration-category population projections, 2023 geography; Strategy Unit aggregation.") |>
-  tab_options(table.font.names = c("Open Sans", "Arial", "sans-serif"))
+female_population_change_table(female_population_projections)
 ```
 
+### 13-14 {#method-1-population-age-13-14}
+
 ```{r}
-#| label: method-1-projected-female-population-tabs
-#| output: asis
-for (band in levels(female_population_projections$age_band)) {
-  cat("\n### ", band, "\n\n", sep = "")
-  print(population_plot(
-    female_population_projections |> filter(age_band == band),
-    paste0("Female population aged ", band, ". Source: ONS 2022-based migration-category population projections, 2023 geography.")
-  ))
-  cat("\n")
-}
+#| label: method-1-female-population-13-14
+
+population_plot(
+  female_population_projections |> filter(age_band == "13-14"),
+  "Female population aged 13-14. Source: ONS 2022-based migration-category population projections, 2023 geography.",
+  area_colours
+)
+```
+
+### 15-19 {#method-1-population-age-15-19}
+
+```{r}
+#| label: method-1-female-population-15-19
+
+population_plot(
+  female_population_projections |> filter(age_band == "15-19"),
+  "Female population aged 15-19. Source: ONS 2022-based migration-category population projections, 2023 geography.",
+  area_colours
+)
+```
+
+### 20-24 {#method-1-population-age-20-24}
+
+```{r}
+#| label: method-1-female-population-20-24
+
+population_plot(
+  female_population_projections |> filter(age_band == "20-24"),
+  "Female population aged 20-24. Source: ONS 2022-based migration-category population projections, 2023 geography.",
+  area_colours
+)
+```
+
+### 25-29 {#method-1-population-age-25-29}
+
+```{r}
+#| label: method-1-female-population-25-29
+
+population_plot(
+  female_population_projections |> filter(age_band == "25-29"),
+  "Female population aged 25-29. Source: ONS 2022-based migration-category population projections, 2023 geography.",
+  area_colours
+)
+```
+
+### 30-34 {#method-1-population-age-30-34}
+
+```{r}
+#| label: method-1-female-population-30-34
+
+population_plot(
+  female_population_projections |> filter(age_band == "30-34"),
+  "Female population aged 30-34. Source: ONS 2022-based migration-category population projections, 2023 geography.",
+  area_colours
+)
+```
+
+### 35-39 {#method-1-population-age-35-39}
+
+```{r}
+#| label: method-1-female-population-35-39
+
+population_plot(
+  female_population_projections |> filter(age_band == "35-39"),
+  "Female population aged 35-39. Source: ONS 2022-based migration-category population projections, 2023 geography.",
+  area_colours
+)
+```
+
+### 40-44 {#method-1-population-age-40-44}
+
+```{r}
+#| label: method-1-female-population-40-44
+
+population_plot(
+  female_population_projections |> filter(age_band == "40-44"),
+  "Female population aged 40-44. Source: ONS 2022-based migration-category population projections, 2023 geography.",
+  area_colours
+)
+```
+
+### 45-49 {#method-1-population-age-45-49}
+
+```{r}
+#| label: method-1-female-population-45-49
+
+population_plot(
+  female_population_projections |> filter(age_band == "45-49"),
+  "Female population aged 45-49. Source: ONS 2022-based migration-category population projections, 2023 geography.",
+  area_colours
+)
+```
+
+### 50-54 {#method-1-population-age-50-54}
+
+```{r}
+#| label: method-1-female-population-50-54
+
+population_plot(
+  female_population_projections |> filter(age_band == "50-54"),
+  "Female population aged 50-54. Source: ONS 2022-based migration-category population projections, 2023 geography.",
+  area_colours
+)
+```
+
+### 55 {#method-1-population-age-55}
+
+```{r}
+#| label: method-1-female-population-55
+
+population_plot(
+  female_population_projections |> filter(age_band == "55"),
+  "Female population aged 55. Source: ONS 2022-based migration-category population projections, 2023 geography.",
+  area_colours
+)
 ```
 :::
 
@@ -813,18 +647,7 @@ The table identifies the saved ONS inputs used in this report. References below 
 
 ```{r}
 #| label: method-1-source-register
-sources |>
-  transmute(
-    Source = source_name,
-    Type = source_type,
-    Period = period,
-    File = file_name,
-    `How it is used` = current_use,
-    Status = if_else(available, "Available", "Missing")
-  ) |>
-  gt() |>
-  sub_missing(columns = everything(), missing_text = "n.a.") |>
-  tab_options(table.font.names = c("Open Sans", "Arial", "sans-serif"))
+ons_source_table(sources)
 ```
 
 ## References {#method-1-references}
@@ -840,20 +663,23 @@ sources |>
 
 ```{r}
 #| label: method-2-setup
+# Read all public ONS inputs from the project root.
 source("R/ons_data.R")
+check_ons_input_files()
 library(gt)
 library(ggplot2)
 library(plotly)
 library(scales)
 
+# Use the configured areas, age range and colours.
 area_config <- read_area_config()
 analysis_parameters <- read_analysis_parameters()
 sources <- build_source_summary()
 snpp <- read_snpp_births()
-registration_sources <- sources |> filter(grepl("^registrations_", source_id))
 selected_las <- area_config$area_name
 la_maternities <- read_local_authority_maternities(selected_las)
 observed_birth_rates <- read_local_authority_birth_rates(selected_las)
+# Apply this method's age-specific births-to-maternities conversion.
 multiplicity_data <- read_national_multiplicity()
 maternity_modifiers <- count_ratio_maternity_modifiers(multiplicity_data)
 projection_modifiers <- multiplicity_data |>
@@ -871,6 +697,7 @@ female_population_single_age <- read_female_population_single_age(
   area_config = area_config,
   parameters = analysis_parameters
 )
+# Birth rates are separate context, not an extra maternity adjustment.
 projected_birth_rates <- snpp |>
   filter(area_name %in% selected_las, age_group == "All ages") |>
   select(area_code, area_name, year, projected_births) |>
@@ -890,9 +717,6 @@ female_population_projections <- read_female_population_projections(
   area_config = area_config,
   parameters = analysis_parameters
 )
-workbook_structure <- workbook_catalogue(registration_sources$path[[length(registration_sources$path)]]) |>
-  count(role, name = "Sheets") |>
-  arrange(desc(Sheets))
 
 observed_trajectory <- la_maternities |>
   transmute(
@@ -904,80 +728,8 @@ observed_trajectory <- la_maternities |>
 projected_trajectory <- total_maternity_projections |>
   transmute(area_name, year, maternities = projected_maternities)
 
+# Chart functions live in ons_data.R and take these colours explicitly.
 area_colours <- area_colour_palette(area_config)
-
-projection_plot <- function(data, caption) {
-  ggplot(
-    data,
-    aes(x = year, y = projected_maternities, colour = area_name, group = area_name)
-  ) +
-    geom_line(linewidth = 1.05) +
-    scale_x_continuous(breaks = seq(min(data$year), max(data$year), by = 4)) +
-    scale_y_continuous(labels = label_comma(), expand = expansion(mult = c(0.02, 0.08))) +
-    scale_colour_manual(values = area_colours) +
-    labs(
-      x = NULL,
-      y = "Projected maternities",
-      colour = NULL,
-      caption = caption
-    ) +
-    theme_minimal(base_family = "Arial") +
-    theme(
-      panel.grid.minor = element_blank(),
-      panel.grid.major.x = element_blank(),
-      axis.title.y = element_text(face = "bold"),
-      legend.position = "bottom",
-      legend.text = element_text(size = 9),
-      plot.caption = element_text(colour = "#5f5b58", hjust = 0),
-      plot.margin = margin(8, 12, 8, 8)
-    )
-}
-
-population_plot <- function(data, caption) {
-  ggplot(
-    data,
-    aes(x = year, y = female_population, colour = area_name, group = area_name)
-  ) +
-    geom_line(linewidth = 1.05) +
-    scale_x_continuous(breaks = seq(min(data$year), max(data$year), by = 4)) +
-    scale_y_continuous(labels = label_comma(), expand = expansion(mult = c(0.02, 0.08))) +
-    scale_colour_manual(values = area_colours) +
-    labs(x = NULL, y = "Projected female population", colour = NULL, caption = caption) +
-    theme_minimal(base_family = "Arial") +
-    theme(
-      panel.grid.minor = element_blank(), panel.grid.major.x = element_blank(),
-      axis.title.y = element_text(face = "bold"), legend.position = "bottom",
-      legend.text = element_text(size = 9),
-      plot.caption = element_text(colour = "#5f5b58", hjust = 0),
-      plot.margin = margin(8, 12, 8, 8)
-    )
-}
-
-historic_trend_plot <- function(data, value, y_label, caption) {
-  ggplot(
-    data,
-    aes(x = year, y = {{ value }}, colour = local_authority, group = local_authority)
-  ) +
-    geom_line(linewidth = 1.05) +
-    geom_point(size = 2.1) +
-    scale_x_continuous(breaks = seq(2013, 2025, by = 2)) +
-    scale_y_continuous(labels = label_comma(), expand = expansion(mult = c(0.02, 0.08))) +
-    scale_colour_manual(values = area_colours) +
-    labs(x = NULL, y = y_label, colour = NULL, caption = caption) +
-    theme_minimal(base_family = "Arial") +
-    theme(
-      plot.background = element_rect(fill = "white", colour = NA),
-      panel.background = element_rect(fill = "white", colour = NA),
-      panel.grid.minor = element_blank(),
-      panel.grid.major.x = element_blank(),
-      axis.title.y = element_text(face = "bold"),
-      legend.position = "bottom",
-      legend.text = element_text(size = 9),
-      plot.caption = element_text(colour = "#5f5b58", hjust = 0),
-      plot.margin = margin(8, 12, 8, 8)
-    )
-}
-
 ```
 
 <p class="report-kicker">
@@ -1075,55 +827,15 @@ The 2023, 2024 and 2025 workbooks use geographical boundaries dated August 2024,
 #| fig-alt: "Line chart showing annual maternities from 2023 to 2025 for Birmingham, Dudley, Sandwell, Solihull, Walsall and Wolverhampton."
 #| fig-width: 10
 #| fig-height: 6
-ggplot(
-  la_maternities,
-  aes(x = year, y = maternities, colour = local_authority, group = local_authority)
-) +
-  geom_line(linewidth = 1.15) +
-  geom_point(size = 2.8) +
-  scale_x_continuous(breaks = 2023:2025) +
-  scale_y_continuous(labels = label_comma(), expand = expansion(mult = c(0.02, 0.08))) +
-  scale_colour_manual(values = c(
-    "Birmingham" = "#2c2825",
-    "Dudley" = "#5881c1",
-    "Sandwell" = "#d48b00",
-    "Solihull" = "#7b6aa8",
-    "Walsall" = "#00857c",
-    "Wolverhampton" = "#c44e52"
-  )) +
-  labs(
-    x = NULL,
-    y = "Number of maternities",
-    colour = NULL,
-    caption = "Source: ONS Births in England and Wales: birth registrations, Table 3."
-  ) +
-  theme_minimal(base_family = "Arial") +
-  theme(
-    panel.grid.minor = element_blank(),
-    panel.grid.major.x = element_blank(),
-    axis.title.y = element_text(face = "bold"),
-    legend.position = "bottom",
-    legend.text = element_text(size = 9),
-    plot.caption = element_text(colour = "#5f5b58", hjust = 0),
-    plot.margin = margin(8, 12, 8, 8)
-  )
+published_maternities_plot(la_maternities, area_colours)
 ```
 
 ### Table {#method-2-table}
 
 ```{r}
 #| label: method-2-maternities-table
-la_maternities |>
-  select(local_authority, year, maternities) |>
-  pivot_wider(names_from = year, values_from = maternities) |>
-  gt(rowname_col = "local_authority") |>
-  tab_stubhead(label = "Local authority") |>
-  fmt_integer(columns = everything(), sep_mark = ",") |>
-  cols_align(align = "right", columns = everything()) |>
-  tab_source_note(
-    source_note = "Source: ONS Births in England and Wales: birth registrations, Table 3."
-  ) |>
-  tab_options(table.font.names = c("Open Sans", "Arial", "sans-serif"))
+ons_year_table(la_maternities, maternities,
+  "Source: ONS Births in England and Wales: birth registrations, Table 3.")
 ```
 :::
 
@@ -1147,7 +859,8 @@ historic_trend_plot(
   historic_trends,
   estimated_maternities,
   "Estimated maternities",
-  "Calculated from ONS live births by maternal age using pooled 2023-2025 national age-specific maternity-to-live-birth ratios."
+  "Calculated from ONS live births by maternal age using pooled 2023-2025 national age-specific maternity-to-live-birth ratios.",
+  area_colours
 )
 ```
 
@@ -1155,17 +868,8 @@ historic_trend_plot(
 
 ```{r}
 #| label: method-2-historic-estimated-maternities-table
-historic_trends |>
-  select(local_authority, year, estimated_maternities) |>
-  pivot_wider(names_from = year, values_from = estimated_maternities) |>
-  gt(rowname_col = "local_authority") |>
-  tab_stubhead(label = "Local authority") |>
-  fmt_integer(columns = everything(), sep_mark = ",") |>
-  cols_align(align = "right", columns = everything()) |>
-  tab_source_note(
-    source_note = "Calculated from ONS live births by maternal age using pooled 2023-2025 national age-specific maternity-to-live-birth ratios."
-  ) |>
-  tab_options(table.font.names = c("Open Sans", "Arial", "sans-serif"))
+ons_year_table(historic_trends, estimated_maternities,
+  "Calculated from ONS live births by maternal age using pooled 2023-2025 national age-specific maternity-to-live-birth ratios.")
 ```
 
 ### Live births chart {#method-2-live-births-chart}
@@ -1179,7 +883,8 @@ historic_trend_plot(
   historic_trends,
   live_births,
   "Registered live births",
-  "Source: ONS Live births in England and Wales down to local authority area, via Nomis; mother's usual residence, April 2023 local-authority geography."
+  "Source: ONS Live births in England and Wales down to local authority area, via Nomis; mother's usual residence, April 2023 local-authority geography.",
+  area_colours
 )
 ```
 
@@ -1187,17 +892,8 @@ historic_trend_plot(
 
 ```{r}
 #| label: method-2-historic-live-births-table
-historic_trends |>
-  select(local_authority, year, live_births) |>
-  pivot_wider(names_from = year, values_from = live_births) |>
-  gt(rowname_col = "local_authority") |>
-  tab_stubhead(label = "Local authority") |>
-  fmt_integer(columns = everything(), sep_mark = ",") |>
-  cols_align(align = "right", columns = everything()) |>
-  tab_source_note(
-    source_note = "Source: ONS Live births in England and Wales down to local authority area, via Nomis; mother's usual residence."
-  ) |>
-  tab_options(table.font.names = c("Open Sans", "Arial", "sans-serif"))
+ons_year_table(historic_trends, live_births,
+  "Source: ONS Live births in England and Wales down to local authority area, via Nomis; mother's usual residence.")
 ```
 :::
 
@@ -1223,23 +919,7 @@ The table reports the ratio used for each age band. Multiply live births by that
 
 ```{r}
 #| label: method-2-maternity-modifier
-bind_rows(
-  maternity_modifiers |> mutate(age_band = as.character(age_band)),
-  projection_modifiers |> filter(age_band == "40+")
-) |>
-  transmute(
-    `Age band` = age_band,
-    `Live births per maternity` = live_births_per_maternity,
-    `Pooled count ratio` = maternity_modifier
-  ) |>
-  gt() |>
-  fmt_number(columns = where(is.numeric), decimals = 5) |>
-  tab_source_note(
-    source_note = md(
-      "Pooled 2023-2025 Table 7 counts: modifier = maternities / live births within each age band."
-    )
-  ) |>
-  tab_options(table.font.names = c("Open Sans", "Arial", "sans-serif"))
+maternity_modifier_table(maternity_modifiers, projection_modifiers, "count_ratio")
 ```
 
 ::: callout-note
@@ -1270,7 +950,8 @@ Every value here, including 2023–2025, is calculated from projected births. Th
 #| fig-height: 6
 projection_plot(
   total_maternity_projections,
-  "Source: ONS 2022-based migration-category projected live births, 2023 geography; pooled 2023-2025 age-specific maternity-to-live-birth ratios."
+  "Source: ONS 2022-based migration-category projected live births, 2023 geography; pooled 2023-2025 age-specific maternity-to-live-birth ratios.",
+  area_colours
 )
 ```
 
@@ -1282,7 +963,8 @@ projection_plot(
 #| fig-height: 6
 projection_plot(
   age_band_projections |> filter(age_band == "<20"),
-  "Under 20, including births assigned to model age 15. Source: ONS 2022-based SNPP; age-specific maternity-to-live-birth ratio applied."
+  "Under 20, including births assigned to model age 15. Source: ONS 2022-based SNPP; age-specific maternity-to-live-birth ratio applied.",
+  area_colours
 )
 ```
 
@@ -1294,7 +976,8 @@ projection_plot(
 #| fig-height: 6
 projection_plot(
   age_band_projections |> filter(age_band == "20-24"),
-  "Maternal ages 20-24. Source: ONS 2022-based SNPP; age-specific maternity-to-live-birth ratio applied."
+  "Maternal ages 20-24. Source: ONS 2022-based SNPP; age-specific maternity-to-live-birth ratio applied.",
+  area_colours
 )
 ```
 
@@ -1306,7 +989,8 @@ projection_plot(
 #| fig-height: 6
 projection_plot(
   age_band_projections |> filter(age_band == "25-29"),
-  "Maternal ages 25-29. Source: ONS 2022-based SNPP; age-specific maternity-to-live-birth ratio applied."
+  "Maternal ages 25-29. Source: ONS 2022-based SNPP; age-specific maternity-to-live-birth ratio applied.",
+  area_colours
 )
 ```
 
@@ -1318,7 +1002,8 @@ projection_plot(
 #| fig-height: 6
 projection_plot(
   age_band_projections |> filter(age_band == "30-34"),
-  "Maternal ages 30-34. Source: ONS 2022-based SNPP; age-specific maternity-to-live-birth ratio applied."
+  "Maternal ages 30-34. Source: ONS 2022-based SNPP; age-specific maternity-to-live-birth ratio applied.",
+  area_colours
 )
 ```
 
@@ -1330,7 +1015,8 @@ projection_plot(
 #| fig-height: 6
 projection_plot(
   age_band_projections |> filter(age_band == "35-39"),
-  "Maternal ages 35-39. Source: ONS 2022-based SNPP; age-specific maternity-to-live-birth ratio applied."
+  "Maternal ages 35-39. Source: ONS 2022-based SNPP; age-specific maternity-to-live-birth ratio applied.",
+  area_colours
 )
 ```
 
@@ -1342,7 +1028,8 @@ projection_plot(
 #| fig-height: 6
 projection_plot(
   age_band_projections |> filter(age_band == "40+"),
-  "Ages 40+, including births assigned to model age 44. Source: ONS 2022-based SNPP; age-specific maternity-to-live-birth ratio applied."
+  "Ages 40+, including births assigned to model age 44. Source: ONS 2022-based SNPP; age-specific maternity-to-live-birth ratio applied.",
+  area_colours
 )
 ```
 :::
@@ -1358,53 +1045,10 @@ Both cover all maternal ages, but their periods and methods differ. The calculat
 #| fig-alt: "Published calendar-year maternities for 2023 to 2025 and separate calculated mid-year projections for 2023 to 2047."
 #| fig-width: 11
 #| fig-height: 6.5
-
-
-ggplot() +
-  geom_line(
-    data = observed_trajectory,
-    aes(year, maternities, colour = area_name, group = area_name),
-    linewidth = 1.2
-  ) +
-  geom_point(
-    data = observed_trajectory,
-    aes(year, maternities, colour = area_name),
-    size = 2.7
-  ) +
-  geom_line(
-    data = projected_trajectory,
-    aes(year, maternities, colour = area_name, group = area_name),
-    linewidth = 1.05, linetype = "22"
-  ) +
-
-
-  scale_x_continuous(
-    breaks = c(2023:2026, seq(2030, 2047, by = 4), 2047),
-    expand = expansion(add = c(0.4, 0.4))
-  ) +
-  scale_y_continuous(labels = label_comma(), expand = expansion(mult = c(0.02, 0.1))) +
-  scale_colour_manual(values = area_colours) +
-  labs(
-    x = NULL,
-    y = "Maternities",
-    colour = NULL,
-    caption = paste(
-      "Solid: published calendar-year maternities. Dashed: calculated mid-year projections;",
-      "ONS migration-category births on 2023 geography with age-specific maternity-to-live-birth ratios."
-    )
-  ) +
-  theme_minimal(base_family = "Arial") +
-  theme(
-    plot.background = element_rect(fill = "white", colour = NA),
-    panel.background = element_rect(fill = "white", colour = NA),
-    panel.grid.minor = element_blank(),
-    panel.grid.major.x = element_blank(),
-    axis.title.y = element_text(face = "bold"),
-    legend.position = "bottom",
-    legend.text = element_text(size = 9),
-    plot.caption = element_text(colour = "#5f5b58", hjust = 0),
-    plot.margin = margin(12, 14, 10, 10)
-  )
+maternity_trajectory_plot(observed_trajectory, projected_trajectory,
+  paste("Solid: published calendar-year maternities. Dashed: calculated mid-year projections;",
+        "ONS migration-category births on 2023 geography with age-specific maternity-to-live-birth ratios."),
+  area_colours)
 ```
 
 ## Birth rates: secondary demographic context {#method-2-birth-rates-secondary-demographic-context}
@@ -1419,44 +1063,7 @@ The overlapping years are retained to show both sources separately. See the sour
 #| label: method-2-birth-rate-trend
 #| fig-alt: "Observed and projected general fertility rates by local authority, expressed as live births per 1,000 women aged 15 to 44."
 #| fig-height: 6.5
-
-ggplot() +
-  geom_line(
-    data = projected_birth_rates,
-    aes(year, general_fertility_rate, colour = area_name, group = area_name),
-    linewidth = 1.05, linetype = "22"
-  ) +
-  geom_line(
-    data = observed_birth_rates,
-    aes(year, general_fertility_rate, colour = area_name, group = area_name),
-    linewidth = 1.25
-  ) +
-  geom_point(
-    data = observed_birth_rates,
-    aes(year, general_fertility_rate, colour = area_name),
-    size = 2.7
-  ) +
-  scale_x_continuous(breaks = c(2023:2027, seq(2031, 2047, by = 4))) +
-  scale_y_continuous(labels = label_number(accuracy = 1), expand = expansion(mult = c(0.02, 0.08))) +
-  scale_colour_manual(values = area_colours) +
-  labs(
-    x = NULL,
-    y = "Live births per 1,000 women aged 15–44",
-    colour = NULL,
-    caption = paste(
-      "Solid: observed ONS general fertility rate, 2023–2025.",
-      "Dashed: calculated mid-year projection ratio, 2023–2047; periods differ from observed rates."
-    )
-  ) +
-  theme_minimal(base_family = "Arial") +
-  theme(
-    plot.background = element_rect(fill = "white", colour = NA),
-    panel.background = element_rect(fill = "white", colour = NA),
-    panel.grid.minor = element_blank(), panel.grid.major.x = element_blank(),
-    axis.title.y = element_text(face = "bold"), legend.position = "bottom",
-    legend.text = element_text(size = 9),
-    plot.caption = element_text(colour = "#5f5b58", hjust = 0)
-  )
+birth_rate_plot(observed_birth_rates, projected_birth_rates, area_colours)
 ```
 
 ## Projected female population by age {#method-2-projected-female-population-by-age}
@@ -1482,7 +1089,8 @@ population_plot(
     "Female population aged ", analysis_parameters[["minimum_maternal_age"]], "-",
     analysis_parameters[["maximum_maternal_age"]],
     ". Source: ONS 2022-based migration-category population projections, 2023 geography."
-  )
+  ),
+  area_colours
 )
 ```
 
@@ -1490,35 +1098,127 @@ population_plot(
 
 ```{r}
 #| label: method-2-projected-female-population-change-table
-female_population_projections |>
-  filter(year %in% range(year)) |>
-  pivot_wider(names_from = year, values_from = female_population) |>
-  mutate(
-    change = .data[[as.character(max(female_population_projections$year))]] -
-      .data[[as.character(min(female_population_projections$year))]],
-    percentage_change = change /
-      .data[[as.character(min(female_population_projections$year))]]
-  ) |>
-  select(area_name, age_band, all_of(as.character(range(female_population_projections$year))), change, percentage_change) |>
-  gt(groupname_col = "area_name") |>
-  cols_label(age_band = "Age band", change = "Change", percentage_change = "% change") |>
-  fmt_integer(columns = c(all_of(as.character(range(female_population_projections$year))), change), sep_mark = ",") |>
-  fmt_percent(columns = percentage_change, decimals = 1) |>
-  tab_source_note(source_note = "Source: ONS 2022-based migration-category population projections, 2023 geography; Strategy Unit aggregation.") |>
-  tab_options(table.font.names = c("Open Sans", "Arial", "sans-serif"))
+female_population_change_table(female_population_projections)
 ```
 
+### 13-14 {#method-2-population-age-13-14}
+
 ```{r}
-#| label: method-2-projected-female-population-tabs
-#| output: asis
-for (band in levels(female_population_projections$age_band)) {
-  cat("\n### ", band, "\n\n", sep = "")
-  print(population_plot(
-    female_population_projections |> filter(age_band == band),
-    paste0("Female population aged ", band, ". Source: ONS 2022-based migration-category population projections, 2023 geography.")
-  ))
-  cat("\n")
-}
+#| label: method-2-female-population-13-14
+
+population_plot(
+  female_population_projections |> filter(age_band == "13-14"),
+  "Female population aged 13-14. Source: ONS 2022-based migration-category population projections, 2023 geography.",
+  area_colours
+)
+```
+
+### 15-19 {#method-2-population-age-15-19}
+
+```{r}
+#| label: method-2-female-population-15-19
+
+population_plot(
+  female_population_projections |> filter(age_band == "15-19"),
+  "Female population aged 15-19. Source: ONS 2022-based migration-category population projections, 2023 geography.",
+  area_colours
+)
+```
+
+### 20-24 {#method-2-population-age-20-24}
+
+```{r}
+#| label: method-2-female-population-20-24
+
+population_plot(
+  female_population_projections |> filter(age_band == "20-24"),
+  "Female population aged 20-24. Source: ONS 2022-based migration-category population projections, 2023 geography.",
+  area_colours
+)
+```
+
+### 25-29 {#method-2-population-age-25-29}
+
+```{r}
+#| label: method-2-female-population-25-29
+
+population_plot(
+  female_population_projections |> filter(age_band == "25-29"),
+  "Female population aged 25-29. Source: ONS 2022-based migration-category population projections, 2023 geography.",
+  area_colours
+)
+```
+
+### 30-34 {#method-2-population-age-30-34}
+
+```{r}
+#| label: method-2-female-population-30-34
+
+population_plot(
+  female_population_projections |> filter(age_band == "30-34"),
+  "Female population aged 30-34. Source: ONS 2022-based migration-category population projections, 2023 geography.",
+  area_colours
+)
+```
+
+### 35-39 {#method-2-population-age-35-39}
+
+```{r}
+#| label: method-2-female-population-35-39
+
+population_plot(
+  female_population_projections |> filter(age_band == "35-39"),
+  "Female population aged 35-39. Source: ONS 2022-based migration-category population projections, 2023 geography.",
+  area_colours
+)
+```
+
+### 40-44 {#method-2-population-age-40-44}
+
+```{r}
+#| label: method-2-female-population-40-44
+
+population_plot(
+  female_population_projections |> filter(age_band == "40-44"),
+  "Female population aged 40-44. Source: ONS 2022-based migration-category population projections, 2023 geography.",
+  area_colours
+)
+```
+
+### 45-49 {#method-2-population-age-45-49}
+
+```{r}
+#| label: method-2-female-population-45-49
+
+population_plot(
+  female_population_projections |> filter(age_band == "45-49"),
+  "Female population aged 45-49. Source: ONS 2022-based migration-category population projections, 2023 geography.",
+  area_colours
+)
+```
+
+### 50-54 {#method-2-population-age-50-54}
+
+```{r}
+#| label: method-2-female-population-50-54
+
+population_plot(
+  female_population_projections |> filter(age_band == "50-54"),
+  "Female population aged 50-54. Source: ONS 2022-based migration-category population projections, 2023 geography.",
+  area_colours
+)
+```
+
+### 55 {#method-2-population-age-55}
+
+```{r}
+#| label: method-2-female-population-55
+
+population_plot(
+  female_population_projections |> filter(age_band == "55"),
+  "Female population aged 55. Source: ONS 2022-based migration-category population projections, 2023 geography.",
+  area_colours
+)
 ```
 :::
 
@@ -1528,18 +1228,7 @@ The table identifies the saved ONS inputs used in this report. References below 
 
 ```{r}
 #| label: method-2-source-register
-sources |>
-  transmute(
-    Source = source_name,
-    Type = source_type,
-    Period = period,
-    File = file_name,
-    `How it is used` = current_use,
-    Status = if_else(available, "Available", "Missing")
-  ) |>
-  gt() |>
-  sub_missing(columns = everything(), missing_text = "n.a.") |>
-  tab_options(table.font.names = c("Open Sans", "Arial", "sans-serif"))
+ons_source_table(sources)
 ```
 
 ## References {#method-2-patient-flows}
@@ -1585,13 +1274,6 @@ readRDS(".patient_flows.rds")$trust_sankey
 #| eval: !expr file.exists(".patient_flows.rds")
 
 patient_flows_by_year <- readRDS(".patient_flows.rds")$by_year
-flow_years <- c("2023/24", "2024/25", "2025/26")
-if (any(vapply(flow_years, function(year) {
-  is.null(patient_flows_by_year[[year]]$icb_table) ||
-    is.null(patient_flows_by_year[[year]]$trust_table)
-}, logical(1)))) {
-  stop("Run R/additional_analysis.R before rendering index.qmd.")
-}
 ```
 
 ## ICB of residence to ICB of birth
@@ -1731,7 +1413,7 @@ patient_flows_by_year[["2025/26"]]$trust_table
 cluster_activity <- if (file.exists(".patient_flows.rds")) {
   readRDS(".patient_flows.rds")$cluster_activity
 } else NULL
-cluster_activity_ready <- !is.null(cluster_activity) && isTRUE(cluster_activity$available)
+cluster_activity_ready <- !is.null(cluster_activity)
 ```
 
 ```{r}
@@ -1739,11 +1421,9 @@ cluster_activity_ready <- !is.null(cluster_activity) && isTRUE(cluster_activity$
 #| results: asis
 
 if (is.null(cluster_activity)) {
-  cat("Run R/additional_analysis.R before rendering index.qmd.")
-} else if (!cluster_activity_ready) {
-  cat(cluster_activity$missing)
+  cat("Run R/Run analysis.R before rendering index.qmd.")
 } else {
-  cat(cluster_activity$note, "\n\n", cluster_activity$excluded)
+  cat(cluster_activity$note)
 }
 ```
 
@@ -1849,9 +1529,6 @@ cat("\n\n", cluster_activity$pathway_needed)
 #| label: cluster-activity-pathway-icb-sankeys
 #| eval: !expr cluster_activity_ready
 
-if (is.null(cluster_activity$pathway_icb_sankeys)) {
-  stop("Run R/additional_analysis.R before rendering index.qmd.")
-}
 htmltools::browsable(cluster_activity$pathway_icb_sankeys)
 ```
 
@@ -1861,18 +1538,17 @@ htmltools::browsable(cluster_activity$pathway_icb_sankeys)
 #| label: cluster-activity-pathway-trust-sankeys
 #| eval: !expr cluster_activity_ready
 
-if (is.null(cluster_activity$pathway_trust_sankeys)) {
-  stop("Run R/additional_analysis.R before rendering index.qmd.")
-}
 htmltools::browsable(cluster_activity$pathway_trust_sankeys)
 ```
 :::
 
 # 7. Delivery episodes over time {#delivery-episodes-over-time}
 
-Each chart shows the four recorded pathway outcomes as a percentage of **all starts in the same organisation and booking financial year**, for 2023/24, 2024/25 and 2025/26. One start is one identified mother/pregnancy pair. Trusts refer to the booking provider; ICBs group those booking trusts. The whole cluster combines Black Country and Birmingham and Solihull providers. These are alternative views of the same starts.
+Each chart shows the four recorded pathway outcomes as a percentage of **all starts in the same organisation and booking financial year**, for 2023/24, 2024/25 and 2025/26. One start is one identified mother/pregnancy pair. Trusts refer to the booking provider; ICBs group those booking trusts. The combined cluster combines Black Country and Birmingham and Solihull providers. These are alternative views of the same starts.
 
 Outcomes follow the preceding section: delivery within the cluster, delivery outside the cluster, no recorded delivery, and delivery provider unknown. Deliveries can occur after the booking year. “No recorded delivery” does not confirm that a pregnancy ended without a birth. Recent booking cohorts may have less follow-up; interpretation depends on the extract end date and whether the source includes starts without births.
+
+Within/outside refers to cluster trust delivery locations; home births count as outside and remain in all starts.
 
 The final table gives every outcome's numerator, denominator and percentage. **Year-on-year and base-year changes are relative changes in the percentage**, calculated as (current percentage / reference percentage − 1) × 100. For example, a share rising from 20% to 25% is a 25% relative increase. The base year is 2023/24. Changes from a zero or unavailable reference share are unavailable; a year with no recorded starts has no percentage.
 
@@ -1883,12 +1559,7 @@ The final table gives every outcome's numerator, denominator and percentage. **Y
 delivery_over_time <- if (file.exists(".patient_flows.rds")) {
   readRDS(".patient_flows.rds")$delivery_over_time
 } else NULL
-delivery_over_time_ready <- !is.null(delivery_over_time) && isTRUE(delivery_over_time$available)
-delivery_grid_ready <- delivery_over_time_ready &&
-  all(c("Trust", "ICB", "Cluster") %in% names(delivery_over_time$chart_grids))
-delivery_change_ready <- delivery_over_time_ready &&
-  all(c("Trust", "ICB", "Cluster") %in% names(delivery_over_time$change_chart_grids)) &&
-  !is.null(delivery_over_time$change_table)
+delivery_over_time_ready <- !is.null(delivery_over_time)
 ```
 
 ```{r}
@@ -1896,14 +1567,7 @@ delivery_change_ready <- delivery_over_time_ready &&
 #| results: asis
 
 if (is.null(delivery_over_time)) {
-  cat("Run R/additional_analysis.R in the secure environment to prepare this section, then render index.qmd.")
-} else if (!delivery_over_time_ready) {
-  cat(delivery_over_time$missing)
-} else {
-  cat(delivery_over_time$excluded)
-  if (!delivery_grid_ready) {
-    cat("\n\nRe-run R/additional_analysis.R in the secure environment to prepare the grouped charts, then render index.qmd.")
-  }
+  cat("Run R/Run analysis.R to prepare this section, then render index.qmd.")
 }
 ```
 
@@ -1915,7 +1579,7 @@ if (is.null(delivery_over_time)) {
 
 ```{r}
 #| label: delivery-over-time-trust-charts
-#| eval: !expr delivery_grid_ready
+#| eval: !expr delivery_over_time_ready
 
 htmltools::browsable(delivery_over_time$chart_grids$Trust)
 ```
@@ -1924,16 +1588,16 @@ htmltools::browsable(delivery_over_time$chart_grids$Trust)
 
 ```{r}
 #| label: delivery-over-time-icb-charts
-#| eval: !expr delivery_grid_ready
+#| eval: !expr delivery_over_time_ready
 
 htmltools::browsable(delivery_over_time$chart_grids$ICB)
 ```
 
-### Cluster(s)
+### Combined cluster
 
 ```{r}
 #| label: delivery-over-time-cluster-charts
-#| eval: !expr delivery_grid_ready
+#| eval: !expr delivery_over_time_ready
 
 htmltools::browsable(delivery_over_time$chart_grids$Cluster)
 ```
@@ -1952,16 +1616,7 @@ delivery_over_time$table
 
 These charts show how each outcome's **share of all starts** changed relative to 2023/24. A positive value means a higher share than in the base year; a negative value means a lower share. The baseline is 0% wherever its outcome share is positive. A zero or unavailable baseline share has no calculable relative change and is shown as unavailable.
 
-The final table places one organisation on each row, grouped into trusts, ICBs and the whole cluster. Each financial-year heading contains the four delivery outcomes, with the same percentage-change values as the charts. Scroll horizontally to see all years. The detailed counts, denominators, outcome percentages and year-on-year changes remain in subsection 7.1's results table.
-
-```{r}
-#| label: delivery-change-notes
-#| results: asis
-
-if (delivery_over_time_ready && !delivery_change_ready) {
-  cat("Re-run R/additional_analysis.R in the secure environment to prepare the percentage-change outputs, then render index.qmd.")
-}
-```
+The final table places one organisation on each row, grouped into trusts, ICBs and the combined cluster. Each financial-year heading contains the four delivery outcomes, with the same percentage-change values as the charts. Scroll horizontally to see all years. The detailed counts, denominators, outcome percentages and year-on-year changes remain in subsection 7.1's results table.
 
 ::: panel-tabset
 
@@ -1969,7 +1624,7 @@ if (delivery_over_time_ready && !delivery_change_ready) {
 
 ```{r}
 #| label: delivery-change-trust-charts
-#| eval: !expr delivery_change_ready
+#| eval: !expr delivery_over_time_ready
 
 htmltools::browsable(delivery_over_time$change_chart_grids$Trust)
 ```
@@ -1978,16 +1633,16 @@ htmltools::browsable(delivery_over_time$change_chart_grids$Trust)
 
 ```{r}
 #| label: delivery-change-icb-charts
-#| eval: !expr delivery_change_ready
+#| eval: !expr delivery_over_time_ready
 
 htmltools::browsable(delivery_over_time$change_chart_grids$ICB)
 ```
 
-### Cluster(s)
+### Combined cluster
 
 ```{r}
 #| label: delivery-change-cluster-charts
-#| eval: !expr delivery_change_ready
+#| eval: !expr delivery_over_time_ready
 
 htmltools::browsable(delivery_over_time$change_chart_grids$Cluster)
 ```
@@ -1996,7 +1651,7 @@ htmltools::browsable(delivery_over_time$change_chart_grids$Cluster)
 
 ```{r}
 #| label: delivery-change-results-table
-#| eval: !expr delivery_change_ready
+#| eval: !expr delivery_over_time_ready
 
 delivery_over_time$change_table
 ```
@@ -2009,31 +1664,7 @@ delivery_over_time$change_table
 #| include: false
 
 delivery_geography <- if (file.exists(".delivery_geography.rds")) readRDS(".delivery_geography.rds") else NULL
-delivery_geography_ready <- !is.null(delivery_geography) && isTRUE(delivery_geography$ready)
-
-# Display only the organisation charts and tables prepared in the R script.
-show_delivery_geography_tabs <- function(fields, labels, section) {
-  levels <- c(Trust = "Trusts", ICB = "ICBs", Cluster = "Combined cluster")
-  for (level in names(levels)) {
-    organisations <- delivery_geography$organisations[delivery_geography$organisations$Level == level, , drop = FALSE]
-    child <- c(paste0("\n### ", levels[[level]], "\n"), ":::: panel-tabset", "")
-    for (i in seq_len(nrow(organisations))) {
-      org <- organisations[i, , drop = FALSE]
-      child <- c(child, paste0("#### ", org$Organisation, " {#delivery-geography-", section, "-", org$Key, "}\n"),
-                 "::::: panel-tabset", "")
-      for (j in seq_along(fields)) {
-        expression <- paste0("delivery_geography$outputs[[\"", org$Key, "\"]]$", fields[j])
-        if (grepl("chart$", fields[j])) expression <- paste0("htmltools::browsable(htmltools::tagList(", expression, "))")
-        child <- c(child, paste0("##### ", labels[j], "\n"), "```{r}",
-          paste0("#| label: delivery-geography-", section, "-", org$Key, "-", fields[j]),
-          expression, "```", "")
-      }
-      child <- c(child, ":::::", "")
-    }
-    child <- c(child, "::::", "")
-    cat(knitr::knit_child(text = child, envir = environment(), quiet = TRUE), sep = "\n")
-  }
-}
+delivery_geography_ready <- !is.null(delivery_geography)
 ```
 
 ```{r}
@@ -2041,25 +1672,15 @@ show_delivery_geography_tabs <- function(fields, labels, section) {
 #| results: asis
 
 if (is.null(delivery_geography)) {
-  cat("Run R/Run these to get needed objects.R in the secure environment, then render this report.")
-} else if (!delivery_geography_ready) {
-  cat(delivery_geography$note)
+  cat("Run R/Run analysis.R to prepare this section, then render index.qmd.")
 }
 ```
 
 ## 8.1 Resident LA to delivery destination, 2025/26 {#delivery-la-destinations}
 
-Recorded deliveries to cluster residents, plus deliveries associated with cluster providers from elsewhere. Flagged home births remain home destinations, including residents outside the cluster. The Sankey groups the 15 largest LAs and other LAs; tables retain every LA and destination.
+Recorded deliveries to cluster residents, plus deliveries associated with cluster providers from elsewhere. The Sankey shows cluster LAs and the ten largest additional feeder LAs, then All other feeder LAs. Destinations show the six main trusts and the ten largest other delivery organisations, then All other trusts; home births and unknown residence or providers stay separate. Labels use names only. The matrix uses these destination groups; All flows retains every LA and individual trust.
 
 ::: panel-tabset
-### Matrix
-
-```{r}
-#| label: delivery-la-destination-matrix
-#| eval: !expr delivery_geography_ready
-
-delivery_geography$matrix_table
-```
 
 ### Sankey
 
@@ -2068,6 +1689,15 @@ delivery_geography$matrix_table
 #| eval: !expr delivery_geography_ready
 
 htmltools::browsable(htmltools::tagList(delivery_geography$sankey_chart))
+```
+
+### Matrix
+
+```{r}
+#| label: delivery-la-destination-matrix
+#| eval: !expr delivery_geography_ready
+
+delivery_geography$matrix_table
 ```
 
 ### All flows
@@ -2082,42 +1712,1066 @@ delivery_geography$matrix_values_table
 
 ## 8.2 Hospital deliveries by resident LA and age, 2025/26 {#delivery-la-age-mapping}
 
-All feeder LAs, including residents outside the cluster. Percentages divide by **all hospital deliveries at the receiving organisation**. Home births are excluded from this hospital mapping; unknown LA and age remain labelled.
+LA contributions divide by all hospital deliveries at the receiving organisation. Age mix divides each age band by that LA's deliveries here. Charts keep cluster LAs and the ten largest additional 2025/26 feeder LAs, combining the rest; tables retain every LA. Home births are excluded and unknown LA or age remains labelled.
 
 ::: panel-tabset
 
-```{r}
-#| label: delivery-la-age-mapping-tabs
-#| eval: !expr delivery_geography_ready
-#| results: asis
+### Trusts
 
-show_delivery_geography_tabs(c("origin_chart", "age_chart", "table", "age_table"),
-  c("LA contributions", "LA and age bands", "LA table", "LA by age table"), "mapping")
+:::: panel-tabset
+
+#### Walsall Healthcare NHS Trust {#delivery-geography-mapping-trust-rbk}
+
+::::: panel-tabset
+
+##### LA contributions
+
+```{r}
+#| label: delivery-geography-mapping-trust-rbk-origin_chart
+#| eval: !expr delivery_geography_ready
+
+htmltools::browsable(htmltools::tagList(delivery_geography$outputs[["trust-rbk"]]$origin_chart))
 ```
+
+##### Age mix within each LA
+
+```{r}
+#| label: delivery-geography-mapping-trust-rbk-age_chart
+#| eval: !expr delivery_geography_ready
+
+htmltools::browsable(htmltools::tagList(delivery_geography$outputs[["trust-rbk"]]$age_chart))
+```
+
+##### LA table
+
+```{r}
+#| label: delivery-geography-mapping-trust-rbk-table
+#| eval: !expr delivery_geography_ready
+
+delivery_geography$outputs[["trust-rbk"]]$table
+```
+
+##### LA by age table
+
+```{r}
+#| label: delivery-geography-mapping-trust-rbk-age_table
+#| eval: !expr delivery_geography_ready
+
+delivery_geography$outputs[["trust-rbk"]]$age_table
+```
+
+:::::
+
+#### The Royal Wolverhampton NHS Trust {#delivery-geography-mapping-trust-rl4}
+
+::::: panel-tabset
+
+##### LA contributions
+
+```{r}
+#| label: delivery-geography-mapping-trust-rl4-origin_chart
+#| eval: !expr delivery_geography_ready
+
+htmltools::browsable(htmltools::tagList(delivery_geography$outputs[["trust-rl4"]]$origin_chart))
+```
+
+##### Age mix within each LA
+
+```{r}
+#| label: delivery-geography-mapping-trust-rl4-age_chart
+#| eval: !expr delivery_geography_ready
+
+htmltools::browsable(htmltools::tagList(delivery_geography$outputs[["trust-rl4"]]$age_chart))
+```
+
+##### LA table
+
+```{r}
+#| label: delivery-geography-mapping-trust-rl4-table
+#| eval: !expr delivery_geography_ready
+
+delivery_geography$outputs[["trust-rl4"]]$table
+```
+
+##### LA by age table
+
+```{r}
+#| label: delivery-geography-mapping-trust-rl4-age_table
+#| eval: !expr delivery_geography_ready
+
+delivery_geography$outputs[["trust-rl4"]]$age_table
+```
+
+:::::
+
+#### The Dudley Group NHS Foundation Trust {#delivery-geography-mapping-trust-rna}
+
+::::: panel-tabset
+
+##### LA contributions
+
+```{r}
+#| label: delivery-geography-mapping-trust-rna-origin_chart
+#| eval: !expr delivery_geography_ready
+
+htmltools::browsable(htmltools::tagList(delivery_geography$outputs[["trust-rna"]]$origin_chart))
+```
+
+##### Age mix within each LA
+
+```{r}
+#| label: delivery-geography-mapping-trust-rna-age_chart
+#| eval: !expr delivery_geography_ready
+
+htmltools::browsable(htmltools::tagList(delivery_geography$outputs[["trust-rna"]]$age_chart))
+```
+
+##### LA table
+
+```{r}
+#| label: delivery-geography-mapping-trust-rna-table
+#| eval: !expr delivery_geography_ready
+
+delivery_geography$outputs[["trust-rna"]]$table
+```
+
+##### LA by age table
+
+```{r}
+#| label: delivery-geography-mapping-trust-rna-age_table
+#| eval: !expr delivery_geography_ready
+
+delivery_geography$outputs[["trust-rna"]]$age_table
+```
+
+:::::
+
+#### Birmingham Women's and Children's NHS Foundation Trust {#delivery-geography-mapping-trust-rq3}
+
+::::: panel-tabset
+
+##### LA contributions
+
+```{r}
+#| label: delivery-geography-mapping-trust-rq3-origin_chart
+#| eval: !expr delivery_geography_ready
+
+htmltools::browsable(htmltools::tagList(delivery_geography$outputs[["trust-rq3"]]$origin_chart))
+```
+
+##### Age mix within each LA
+
+```{r}
+#| label: delivery-geography-mapping-trust-rq3-age_chart
+#| eval: !expr delivery_geography_ready
+
+htmltools::browsable(htmltools::tagList(delivery_geography$outputs[["trust-rq3"]]$age_chart))
+```
+
+##### LA table
+
+```{r}
+#| label: delivery-geography-mapping-trust-rq3-table
+#| eval: !expr delivery_geography_ready
+
+delivery_geography$outputs[["trust-rq3"]]$table
+```
+
+##### LA by age table
+
+```{r}
+#| label: delivery-geography-mapping-trust-rq3-age_table
+#| eval: !expr delivery_geography_ready
+
+delivery_geography$outputs[["trust-rq3"]]$age_table
+```
+
+:::::
+
+#### University Hospitals Birmingham NHS Foundation Trust {#delivery-geography-mapping-trust-rrk}
+
+::::: panel-tabset
+
+##### LA contributions
+
+```{r}
+#| label: delivery-geography-mapping-trust-rrk-origin_chart
+#| eval: !expr delivery_geography_ready
+
+htmltools::browsable(htmltools::tagList(delivery_geography$outputs[["trust-rrk"]]$origin_chart))
+```
+
+##### Age mix within each LA
+
+```{r}
+#| label: delivery-geography-mapping-trust-rrk-age_chart
+#| eval: !expr delivery_geography_ready
+
+htmltools::browsable(htmltools::tagList(delivery_geography$outputs[["trust-rrk"]]$age_chart))
+```
+
+##### LA table
+
+```{r}
+#| label: delivery-geography-mapping-trust-rrk-table
+#| eval: !expr delivery_geography_ready
+
+delivery_geography$outputs[["trust-rrk"]]$table
+```
+
+##### LA by age table
+
+```{r}
+#| label: delivery-geography-mapping-trust-rrk-age_table
+#| eval: !expr delivery_geography_ready
+
+delivery_geography$outputs[["trust-rrk"]]$age_table
+```
+
+:::::
+
+#### Sandwell and West Birmingham NHS Trust {#delivery-geography-mapping-trust-rxk}
+
+::::: panel-tabset
+
+##### LA contributions
+
+```{r}
+#| label: delivery-geography-mapping-trust-rxk-origin_chart
+#| eval: !expr delivery_geography_ready
+
+htmltools::browsable(htmltools::tagList(delivery_geography$outputs[["trust-rxk"]]$origin_chart))
+```
+
+##### Age mix within each LA
+
+```{r}
+#| label: delivery-geography-mapping-trust-rxk-age_chart
+#| eval: !expr delivery_geography_ready
+
+htmltools::browsable(htmltools::tagList(delivery_geography$outputs[["trust-rxk"]]$age_chart))
+```
+
+##### LA table
+
+```{r}
+#| label: delivery-geography-mapping-trust-rxk-table
+#| eval: !expr delivery_geography_ready
+
+delivery_geography$outputs[["trust-rxk"]]$table
+```
+
+##### LA by age table
+
+```{r}
+#| label: delivery-geography-mapping-trust-rxk-age_table
+#| eval: !expr delivery_geography_ready
+
+delivery_geography$outputs[["trust-rxk"]]$age_table
+```
+
+:::::
+
+::::
+
+### ICBs
+
+:::: panel-tabset
+
+#### Black Country ICB {#delivery-geography-mapping-icb-qua}
+
+::::: panel-tabset
+
+##### LA contributions
+
+```{r}
+#| label: delivery-geography-mapping-icb-qua-origin_chart
+#| eval: !expr delivery_geography_ready
+
+htmltools::browsable(htmltools::tagList(delivery_geography$outputs[["icb-qua"]]$origin_chart))
+```
+
+##### Age mix within each LA
+
+```{r}
+#| label: delivery-geography-mapping-icb-qua-age_chart
+#| eval: !expr delivery_geography_ready
+
+htmltools::browsable(htmltools::tagList(delivery_geography$outputs[["icb-qua"]]$age_chart))
+```
+
+##### LA table
+
+```{r}
+#| label: delivery-geography-mapping-icb-qua-table
+#| eval: !expr delivery_geography_ready
+
+delivery_geography$outputs[["icb-qua"]]$table
+```
+
+##### LA by age table
+
+```{r}
+#| label: delivery-geography-mapping-icb-qua-age_table
+#| eval: !expr delivery_geography_ready
+
+delivery_geography$outputs[["icb-qua"]]$age_table
+```
+
+:::::
+
+#### Birmingham and Solihull ICB {#delivery-geography-mapping-icb-qhl}
+
+::::: panel-tabset
+
+##### LA contributions
+
+```{r}
+#| label: delivery-geography-mapping-icb-qhl-origin_chart
+#| eval: !expr delivery_geography_ready
+
+htmltools::browsable(htmltools::tagList(delivery_geography$outputs[["icb-qhl"]]$origin_chart))
+```
+
+##### Age mix within each LA
+
+```{r}
+#| label: delivery-geography-mapping-icb-qhl-age_chart
+#| eval: !expr delivery_geography_ready
+
+htmltools::browsable(htmltools::tagList(delivery_geography$outputs[["icb-qhl"]]$age_chart))
+```
+
+##### LA table
+
+```{r}
+#| label: delivery-geography-mapping-icb-qhl-table
+#| eval: !expr delivery_geography_ready
+
+delivery_geography$outputs[["icb-qhl"]]$table
+```
+
+##### LA by age table
+
+```{r}
+#| label: delivery-geography-mapping-icb-qhl-age_table
+#| eval: !expr delivery_geography_ready
+
+delivery_geography$outputs[["icb-qhl"]]$age_table
+```
+
+:::::
+
+::::
+
+### Combined cluster
+
+:::: panel-tabset
+
+#### Combined cluster {#delivery-geography-mapping-cluster}
+
+::::: panel-tabset
+
+##### LA contributions
+
+```{r}
+#| label: delivery-geography-mapping-cluster-origin_chart
+#| eval: !expr delivery_geography_ready
+
+htmltools::browsable(htmltools::tagList(delivery_geography$outputs[["cluster"]]$origin_chart))
+```
+
+##### Age mix within each LA
+
+```{r}
+#| label: delivery-geography-mapping-cluster-age_chart
+#| eval: !expr delivery_geography_ready
+
+htmltools::browsable(htmltools::tagList(delivery_geography$outputs[["cluster"]]$age_chart))
+```
+
+##### LA table
+
+```{r}
+#| label: delivery-geography-mapping-cluster-table
+#| eval: !expr delivery_geography_ready
+
+delivery_geography$outputs[["cluster"]]$table
+```
+
+##### LA by age table
+
+```{r}
+#| label: delivery-geography-mapping-cluster-age_table
+#| eval: !expr delivery_geography_ready
+
+delivery_geography$outputs[["cluster"]]$age_table
+```
+
+:::::
+
+::::
 :::
 
-## 8.3 Stability of the LA mapping, 2023/24 to 2025/26 {#delivery-la-mapping-stability}
+## 8.3a Counts and LA contributions, 2023/24 to 2025/26 {#delivery-la-mapping-counts}
 
-Charts keep the seven largest 2025/26 feeder LAs fixed across all three years; other LAs are combined and unknown residence stays separate. Share trends show the mapping; count changes use 2023/24 as the base. Tables retain every LA.
+Counts and shares of each organisation's hospital deliveries, by resident LA. Charts keep cluster LAs and the ten largest additional 2025/26 feeder LAs fixed across the three years, then All other feeder LAs and unknown residence. Tables retain all LAs and annual totals. LA codes are used as recorded; geography changes may affect comparisons.
 
 ::: panel-tabset
 
-```{r}
-#| label: delivery-la-mapping-stability-tabs
-#| eval: !expr delivery_geography_ready
-#| results: asis
+### Trusts
 
-show_delivery_geography_tabs(c("stability_chart", "change_chart", "stability_table"),
-  c("LA shares over time", "Count change from 2023/24", "All LA values"), "stability")
+:::: panel-tabset
+
+#### Walsall Healthcare NHS Trust {#delivery-geography-counts-trust-rbk}
+
+::::: panel-tabset
+
+##### Counts
+
+```{r}
+#| label: delivery-geography-counts-trust-rbk-count_chart
+#| eval: !expr delivery_geography_ready
+
+htmltools::browsable(htmltools::tagList(delivery_geography$outputs[["trust-rbk"]]$count_chart))
 ```
+
+##### LA shares over time
+
+```{r}
+#| label: delivery-geography-counts-trust-rbk-stability_chart
+#| eval: !expr delivery_geography_ready
+
+htmltools::browsable(htmltools::tagList(delivery_geography$outputs[["trust-rbk"]]$stability_chart))
+```
+
+##### All LA values
+
+```{r}
+#| label: delivery-geography-counts-trust-rbk-count_table
+#| eval: !expr delivery_geography_ready
+
+delivery_geography$outputs[["trust-rbk"]]$count_table
+```
+
+:::::
+
+#### The Royal Wolverhampton NHS Trust {#delivery-geography-counts-trust-rl4}
+
+::::: panel-tabset
+
+##### Counts
+
+```{r}
+#| label: delivery-geography-counts-trust-rl4-count_chart
+#| eval: !expr delivery_geography_ready
+
+htmltools::browsable(htmltools::tagList(delivery_geography$outputs[["trust-rl4"]]$count_chart))
+```
+
+##### LA shares over time
+
+```{r}
+#| label: delivery-geography-counts-trust-rl4-stability_chart
+#| eval: !expr delivery_geography_ready
+
+htmltools::browsable(htmltools::tagList(delivery_geography$outputs[["trust-rl4"]]$stability_chart))
+```
+
+##### All LA values
+
+```{r}
+#| label: delivery-geography-counts-trust-rl4-count_table
+#| eval: !expr delivery_geography_ready
+
+delivery_geography$outputs[["trust-rl4"]]$count_table
+```
+
+:::::
+
+#### The Dudley Group NHS Foundation Trust {#delivery-geography-counts-trust-rna}
+
+::::: panel-tabset
+
+##### Counts
+
+```{r}
+#| label: delivery-geography-counts-trust-rna-count_chart
+#| eval: !expr delivery_geography_ready
+
+htmltools::browsable(htmltools::tagList(delivery_geography$outputs[["trust-rna"]]$count_chart))
+```
+
+##### LA shares over time
+
+```{r}
+#| label: delivery-geography-counts-trust-rna-stability_chart
+#| eval: !expr delivery_geography_ready
+
+htmltools::browsable(htmltools::tagList(delivery_geography$outputs[["trust-rna"]]$stability_chart))
+```
+
+##### All LA values
+
+```{r}
+#| label: delivery-geography-counts-trust-rna-count_table
+#| eval: !expr delivery_geography_ready
+
+delivery_geography$outputs[["trust-rna"]]$count_table
+```
+
+:::::
+
+#### Birmingham Women's and Children's NHS Foundation Trust {#delivery-geography-counts-trust-rq3}
+
+::::: panel-tabset
+
+##### Counts
+
+```{r}
+#| label: delivery-geography-counts-trust-rq3-count_chart
+#| eval: !expr delivery_geography_ready
+
+htmltools::browsable(htmltools::tagList(delivery_geography$outputs[["trust-rq3"]]$count_chart))
+```
+
+##### LA shares over time
+
+```{r}
+#| label: delivery-geography-counts-trust-rq3-stability_chart
+#| eval: !expr delivery_geography_ready
+
+htmltools::browsable(htmltools::tagList(delivery_geography$outputs[["trust-rq3"]]$stability_chart))
+```
+
+##### All LA values
+
+```{r}
+#| label: delivery-geography-counts-trust-rq3-count_table
+#| eval: !expr delivery_geography_ready
+
+delivery_geography$outputs[["trust-rq3"]]$count_table
+```
+
+:::::
+
+#### University Hospitals Birmingham NHS Foundation Trust {#delivery-geography-counts-trust-rrk}
+
+::::: panel-tabset
+
+##### Counts
+
+```{r}
+#| label: delivery-geography-counts-trust-rrk-count_chart
+#| eval: !expr delivery_geography_ready
+
+htmltools::browsable(htmltools::tagList(delivery_geography$outputs[["trust-rrk"]]$count_chart))
+```
+
+##### LA shares over time
+
+```{r}
+#| label: delivery-geography-counts-trust-rrk-stability_chart
+#| eval: !expr delivery_geography_ready
+
+htmltools::browsable(htmltools::tagList(delivery_geography$outputs[["trust-rrk"]]$stability_chart))
+```
+
+##### All LA values
+
+```{r}
+#| label: delivery-geography-counts-trust-rrk-count_table
+#| eval: !expr delivery_geography_ready
+
+delivery_geography$outputs[["trust-rrk"]]$count_table
+```
+
+:::::
+
+#### Sandwell and West Birmingham NHS Trust {#delivery-geography-counts-trust-rxk}
+
+::::: panel-tabset
+
+##### Counts
+
+```{r}
+#| label: delivery-geography-counts-trust-rxk-count_chart
+#| eval: !expr delivery_geography_ready
+
+htmltools::browsable(htmltools::tagList(delivery_geography$outputs[["trust-rxk"]]$count_chart))
+```
+
+##### LA shares over time
+
+```{r}
+#| label: delivery-geography-counts-trust-rxk-stability_chart
+#| eval: !expr delivery_geography_ready
+
+htmltools::browsable(htmltools::tagList(delivery_geography$outputs[["trust-rxk"]]$stability_chart))
+```
+
+##### All LA values
+
+```{r}
+#| label: delivery-geography-counts-trust-rxk-count_table
+#| eval: !expr delivery_geography_ready
+
+delivery_geography$outputs[["trust-rxk"]]$count_table
+```
+
+:::::
+
+::::
+
+### ICBs
+
+:::: panel-tabset
+
+#### Black Country ICB {#delivery-geography-counts-icb-qua}
+
+::::: panel-tabset
+
+##### Counts
+
+```{r}
+#| label: delivery-geography-counts-icb-qua-count_chart
+#| eval: !expr delivery_geography_ready
+
+htmltools::browsable(htmltools::tagList(delivery_geography$outputs[["icb-qua"]]$count_chart))
+```
+
+##### LA shares over time
+
+```{r}
+#| label: delivery-geography-counts-icb-qua-stability_chart
+#| eval: !expr delivery_geography_ready
+
+htmltools::browsable(htmltools::tagList(delivery_geography$outputs[["icb-qua"]]$stability_chart))
+```
+
+##### All LA values
+
+```{r}
+#| label: delivery-geography-counts-icb-qua-count_table
+#| eval: !expr delivery_geography_ready
+
+delivery_geography$outputs[["icb-qua"]]$count_table
+```
+
+:::::
+
+#### Birmingham and Solihull ICB {#delivery-geography-counts-icb-qhl}
+
+::::: panel-tabset
+
+##### Counts
+
+```{r}
+#| label: delivery-geography-counts-icb-qhl-count_chart
+#| eval: !expr delivery_geography_ready
+
+htmltools::browsable(htmltools::tagList(delivery_geography$outputs[["icb-qhl"]]$count_chart))
+```
+
+##### LA shares over time
+
+```{r}
+#| label: delivery-geography-counts-icb-qhl-stability_chart
+#| eval: !expr delivery_geography_ready
+
+htmltools::browsable(htmltools::tagList(delivery_geography$outputs[["icb-qhl"]]$stability_chart))
+```
+
+##### All LA values
+
+```{r}
+#| label: delivery-geography-counts-icb-qhl-count_table
+#| eval: !expr delivery_geography_ready
+
+delivery_geography$outputs[["icb-qhl"]]$count_table
+```
+
+:::::
+
+::::
+
+### Combined cluster
+
+:::: panel-tabset
+
+#### Combined cluster {#delivery-geography-counts-cluster}
+
+::::: panel-tabset
+
+##### Counts
+
+```{r}
+#| label: delivery-geography-counts-cluster-count_chart
+#| eval: !expr delivery_geography_ready
+
+htmltools::browsable(htmltools::tagList(delivery_geography$outputs[["cluster"]]$count_chart))
+```
+
+##### LA shares over time
+
+```{r}
+#| label: delivery-geography-counts-cluster-stability_chart
+#| eval: !expr delivery_geography_ready
+
+htmltools::browsable(htmltools::tagList(delivery_geography$outputs[["cluster"]]$stability_chart))
+```
+
+##### All LA values
+
+```{r}
+#| label: delivery-geography-counts-cluster-count_table
+#| eval: !expr delivery_geography_ready
+
+delivery_geography$outputs[["cluster"]]$count_table
+```
+
+:::::
+
+::::
 
 ### All organisations - table
 
 ```{r}
-#| label: delivery-la-all-organisation-values
+#| label: delivery-la-all-organisation-counts
 #| eval: !expr delivery_geography_ready
 
 delivery_geography$all_results_table
+```
+:::
+
+## 8.3b Change from 2023/24 {#delivery-la-mapping-changes}
+
+Count changes are percentages relative to 2023/24; LA share changes are percentage points of the organisation's hospital deliveries. Charts use the same fixed LA groups as 8.3a, ranked using 2025/26. Tables retain all LAs, with relative count and share changes; a zero base has no calculable relative change.
+
+::: panel-tabset
+
+### Trusts
+
+:::: panel-tabset
+
+#### Walsall Healthcare NHS Trust {#delivery-geography-changes-trust-rbk}
+
+::::: panel-tabset
+
+##### Count change
+
+```{r}
+#| label: delivery-geography-changes-trust-rbk-change_chart
+#| eval: !expr delivery_geography_ready
+
+htmltools::browsable(htmltools::tagList(delivery_geography$outputs[["trust-rbk"]]$change_chart))
+```
+
+##### LA share change
+
+```{r}
+#| label: delivery-geography-changes-trust-rbk-share_change_chart
+#| eval: !expr delivery_geography_ready
+
+htmltools::browsable(htmltools::tagList(delivery_geography$outputs[["trust-rbk"]]$share_change_chart))
+```
+
+##### All LA values
+
+```{r}
+#| label: delivery-geography-changes-trust-rbk-change_table
+#| eval: !expr delivery_geography_ready
+
+delivery_geography$outputs[["trust-rbk"]]$change_table
+```
+
+:::::
+
+#### The Royal Wolverhampton NHS Trust {#delivery-geography-changes-trust-rl4}
+
+::::: panel-tabset
+
+##### Count change
+
+```{r}
+#| label: delivery-geography-changes-trust-rl4-change_chart
+#| eval: !expr delivery_geography_ready
+
+htmltools::browsable(htmltools::tagList(delivery_geography$outputs[["trust-rl4"]]$change_chart))
+```
+
+##### LA share change
+
+```{r}
+#| label: delivery-geography-changes-trust-rl4-share_change_chart
+#| eval: !expr delivery_geography_ready
+
+htmltools::browsable(htmltools::tagList(delivery_geography$outputs[["trust-rl4"]]$share_change_chart))
+```
+
+##### All LA values
+
+```{r}
+#| label: delivery-geography-changes-trust-rl4-change_table
+#| eval: !expr delivery_geography_ready
+
+delivery_geography$outputs[["trust-rl4"]]$change_table
+```
+
+:::::
+
+#### The Dudley Group NHS Foundation Trust {#delivery-geography-changes-trust-rna}
+
+::::: panel-tabset
+
+##### Count change
+
+```{r}
+#| label: delivery-geography-changes-trust-rna-change_chart
+#| eval: !expr delivery_geography_ready
+
+htmltools::browsable(htmltools::tagList(delivery_geography$outputs[["trust-rna"]]$change_chart))
+```
+
+##### LA share change
+
+```{r}
+#| label: delivery-geography-changes-trust-rna-share_change_chart
+#| eval: !expr delivery_geography_ready
+
+htmltools::browsable(htmltools::tagList(delivery_geography$outputs[["trust-rna"]]$share_change_chart))
+```
+
+##### All LA values
+
+```{r}
+#| label: delivery-geography-changes-trust-rna-change_table
+#| eval: !expr delivery_geography_ready
+
+delivery_geography$outputs[["trust-rna"]]$change_table
+```
+
+:::::
+
+#### Birmingham Women's and Children's NHS Foundation Trust {#delivery-geography-changes-trust-rq3}
+
+::::: panel-tabset
+
+##### Count change
+
+```{r}
+#| label: delivery-geography-changes-trust-rq3-change_chart
+#| eval: !expr delivery_geography_ready
+
+htmltools::browsable(htmltools::tagList(delivery_geography$outputs[["trust-rq3"]]$change_chart))
+```
+
+##### LA share change
+
+```{r}
+#| label: delivery-geography-changes-trust-rq3-share_change_chart
+#| eval: !expr delivery_geography_ready
+
+htmltools::browsable(htmltools::tagList(delivery_geography$outputs[["trust-rq3"]]$share_change_chart))
+```
+
+##### All LA values
+
+```{r}
+#| label: delivery-geography-changes-trust-rq3-change_table
+#| eval: !expr delivery_geography_ready
+
+delivery_geography$outputs[["trust-rq3"]]$change_table
+```
+
+:::::
+
+#### University Hospitals Birmingham NHS Foundation Trust {#delivery-geography-changes-trust-rrk}
+
+::::: panel-tabset
+
+##### Count change
+
+```{r}
+#| label: delivery-geography-changes-trust-rrk-change_chart
+#| eval: !expr delivery_geography_ready
+
+htmltools::browsable(htmltools::tagList(delivery_geography$outputs[["trust-rrk"]]$change_chart))
+```
+
+##### LA share change
+
+```{r}
+#| label: delivery-geography-changes-trust-rrk-share_change_chart
+#| eval: !expr delivery_geography_ready
+
+htmltools::browsable(htmltools::tagList(delivery_geography$outputs[["trust-rrk"]]$share_change_chart))
+```
+
+##### All LA values
+
+```{r}
+#| label: delivery-geography-changes-trust-rrk-change_table
+#| eval: !expr delivery_geography_ready
+
+delivery_geography$outputs[["trust-rrk"]]$change_table
+```
+
+:::::
+
+#### Sandwell and West Birmingham NHS Trust {#delivery-geography-changes-trust-rxk}
+
+::::: panel-tabset
+
+##### Count change
+
+```{r}
+#| label: delivery-geography-changes-trust-rxk-change_chart
+#| eval: !expr delivery_geography_ready
+
+htmltools::browsable(htmltools::tagList(delivery_geography$outputs[["trust-rxk"]]$change_chart))
+```
+
+##### LA share change
+
+```{r}
+#| label: delivery-geography-changes-trust-rxk-share_change_chart
+#| eval: !expr delivery_geography_ready
+
+htmltools::browsable(htmltools::tagList(delivery_geography$outputs[["trust-rxk"]]$share_change_chart))
+```
+
+##### All LA values
+
+```{r}
+#| label: delivery-geography-changes-trust-rxk-change_table
+#| eval: !expr delivery_geography_ready
+
+delivery_geography$outputs[["trust-rxk"]]$change_table
+```
+
+:::::
+
+::::
+
+### ICBs
+
+:::: panel-tabset
+
+#### Black Country ICB {#delivery-geography-changes-icb-qua}
+
+::::: panel-tabset
+
+##### Count change
+
+```{r}
+#| label: delivery-geography-changes-icb-qua-change_chart
+#| eval: !expr delivery_geography_ready
+
+htmltools::browsable(htmltools::tagList(delivery_geography$outputs[["icb-qua"]]$change_chart))
+```
+
+##### LA share change
+
+```{r}
+#| label: delivery-geography-changes-icb-qua-share_change_chart
+#| eval: !expr delivery_geography_ready
+
+htmltools::browsable(htmltools::tagList(delivery_geography$outputs[["icb-qua"]]$share_change_chart))
+```
+
+##### All LA values
+
+```{r}
+#| label: delivery-geography-changes-icb-qua-change_table
+#| eval: !expr delivery_geography_ready
+
+delivery_geography$outputs[["icb-qua"]]$change_table
+```
+
+:::::
+
+#### Birmingham and Solihull ICB {#delivery-geography-changes-icb-qhl}
+
+::::: panel-tabset
+
+##### Count change
+
+```{r}
+#| label: delivery-geography-changes-icb-qhl-change_chart
+#| eval: !expr delivery_geography_ready
+
+htmltools::browsable(htmltools::tagList(delivery_geography$outputs[["icb-qhl"]]$change_chart))
+```
+
+##### LA share change
+
+```{r}
+#| label: delivery-geography-changes-icb-qhl-share_change_chart
+#| eval: !expr delivery_geography_ready
+
+htmltools::browsable(htmltools::tagList(delivery_geography$outputs[["icb-qhl"]]$share_change_chart))
+```
+
+##### All LA values
+
+```{r}
+#| label: delivery-geography-changes-icb-qhl-change_table
+#| eval: !expr delivery_geography_ready
+
+delivery_geography$outputs[["icb-qhl"]]$change_table
+```
+
+:::::
+
+::::
+
+### Combined cluster
+
+:::: panel-tabset
+
+#### Combined cluster {#delivery-geography-changes-cluster}
+
+::::: panel-tabset
+
+##### Count change
+
+```{r}
+#| label: delivery-geography-changes-cluster-change_chart
+#| eval: !expr delivery_geography_ready
+
+htmltools::browsable(htmltools::tagList(delivery_geography$outputs[["cluster"]]$change_chart))
+```
+
+##### LA share change
+
+```{r}
+#| label: delivery-geography-changes-cluster-share_change_chart
+#| eval: !expr delivery_geography_ready
+
+htmltools::browsable(htmltools::tagList(delivery_geography$outputs[["cluster"]]$share_change_chart))
+```
+
+##### All LA values
+
+```{r}
+#| label: delivery-geography-changes-cluster-change_table
+#| eval: !expr delivery_geography_ready
+
+delivery_geography$outputs[["cluster"]]$change_table
+```
+
+:::::
+
+::::
+
+### All organisations - table
+
+```{r}
+#| label: delivery-la-all-organisation-changes
+#| eval: !expr delivery_geography_ready
+
+delivery_geography$all_changes_table
 ```
 :::
 
@@ -2128,31 +2782,7 @@ delivery_geography$all_results_table
 #| include: false
 
 first_draft_projections <- if (file.exists(".projections.rds")) readRDS(".projections.rds") else NULL
-projection_mapping_ready <- !is.null(first_draft_projections) && isTRUE(first_draft_projections$mapping_ready)
-projection_forecast_ready <- !is.null(first_draft_projections) && isTRUE(first_draft_projections$forecast_ready)
-projection_backtest_ready <- !is.null(first_draft_projections) && isTRUE(first_draft_projections$backtest$ready)
-
-# Presentation only: labelled organisation tabs with nested chart/table tabs.
-# The R script prepares every object displayed here.
-show_projection_tabs <- function(output_name, fields, labels, section) {
-  for (i in seq_len(nrow(first_draft_projections$organisations))) {
-    org <- first_draft_projections$organisations[i, , drop = FALSE]
-    child <- c(paste0("\n### ", org$Organisation, " {#projection-", section, "-", org$Key, "}\n"),
-               ":::: panel-tabset", "")
-    for (j in seq_along(fields)) {
-      expression <- paste0("first_draft_projections$", output_name,
-                           "[[\"", org$Key, "\"]]$", fields[j])
-      if (grepl("chart$", fields[j])) {
-        expression <- paste0("htmltools::browsable(htmltools::tagList(", expression, "))")
-      }
-      child <- c(child, paste0("#### ", labels[j], "\n"), "```{r}",
-        paste0("#| label: projection-", section, "-", org$Key, "-", fields[j]),
-        expression, "```", "")
-    }
-    child <- c(child, "::::", "")
-    cat(knitr::knit_child(text = child, envir = environment(), quiet = TRUE), sep = "\n")
-  }
-}
+projections_ready <- !is.null(first_draft_projections)
 ```
 
 ```{r}
@@ -2160,7 +2790,7 @@ show_projection_tabs <- function(output_name, fields, labels, section) {
 #| results: asis
 
 if (is.null(first_draft_projections)) {
-  cat("Run R/Run these to get needed objects.R in the secure environment, then render this report.")
+  cat("Run R/Run analysis.R in the secure environment, then render this report.")
 } else if (nzchar(first_draft_projections$note)) {
   cat(first_draft_projections$note)
 }
@@ -2168,23 +2798,231 @@ if (is.null(first_draft_projections)) {
 
 ## 9.1 Feeder LA and age-band shares, 2025/26 {#projection-feeder-mapping}
 
-Flows show the 12 largest contributing LAs in volume order, then other LAs, through age bands to the organisation; widths are delivery counts. LA-to-age hover and tables show deliveries here ÷ all pregnancies in the same LA and age band; tables retain every LA. Home births remain in LA totals; ICBs and the cluster group delivery trusts.
+Flows show cluster LAs and the ten largest additional 2025/26 feeder LAs, then All other feeder LAs, through age bands to the organisation; widths are delivery counts and labels use names only. LA-to-age hover and tables show deliveries here ÷ all pregnancies in the same LA and age band; tables retain every LA. Home births remain in LA totals; ICBs and the cluster group delivery trusts.
 
 ::: panel-tabset
 
-```{r}
-#| label: first-draft-mapping-tabs
-#| eval: !expr projection_mapping_ready
-#| results: asis
+### Walsall Healthcare NHS Trust {#projection-mapping-trust-rbk}
 
-show_projection_tabs("mapping_outputs", c("chart", "table"), c("Chart", "Table"), "mapping")
+:::: panel-tabset
+
+#### Chart
+
+```{r}
+#| label: projection-mapping-trust-rbk-chart
+#| eval: !expr projections_ready
+
+htmltools::browsable(htmltools::tagList(first_draft_projections$mapping_outputs[["trust-rbk"]]$chart))
 ```
+
+#### Table
+
+```{r}
+#| label: projection-mapping-trust-rbk-table
+#| eval: !expr projections_ready
+
+first_draft_projections$mapping_outputs[["trust-rbk"]]$table
+```
+
+::::
+
+### The Royal Wolverhampton NHS Trust {#projection-mapping-trust-rl4}
+
+:::: panel-tabset
+
+#### Chart
+
+```{r}
+#| label: projection-mapping-trust-rl4-chart
+#| eval: !expr projections_ready
+
+htmltools::browsable(htmltools::tagList(first_draft_projections$mapping_outputs[["trust-rl4"]]$chart))
+```
+
+#### Table
+
+```{r}
+#| label: projection-mapping-trust-rl4-table
+#| eval: !expr projections_ready
+
+first_draft_projections$mapping_outputs[["trust-rl4"]]$table
+```
+
+::::
+
+### The Dudley Group NHS Foundation Trust {#projection-mapping-trust-rna}
+
+:::: panel-tabset
+
+#### Chart
+
+```{r}
+#| label: projection-mapping-trust-rna-chart
+#| eval: !expr projections_ready
+
+htmltools::browsable(htmltools::tagList(first_draft_projections$mapping_outputs[["trust-rna"]]$chart))
+```
+
+#### Table
+
+```{r}
+#| label: projection-mapping-trust-rna-table
+#| eval: !expr projections_ready
+
+first_draft_projections$mapping_outputs[["trust-rna"]]$table
+```
+
+::::
+
+### Birmingham Women's and Children's NHS Foundation Trust {#projection-mapping-trust-rq3}
+
+:::: panel-tabset
+
+#### Chart
+
+```{r}
+#| label: projection-mapping-trust-rq3-chart
+#| eval: !expr projections_ready
+
+htmltools::browsable(htmltools::tagList(first_draft_projections$mapping_outputs[["trust-rq3"]]$chart))
+```
+
+#### Table
+
+```{r}
+#| label: projection-mapping-trust-rq3-table
+#| eval: !expr projections_ready
+
+first_draft_projections$mapping_outputs[["trust-rq3"]]$table
+```
+
+::::
+
+### University Hospitals Birmingham NHS Foundation Trust {#projection-mapping-trust-rrk}
+
+:::: panel-tabset
+
+#### Chart
+
+```{r}
+#| label: projection-mapping-trust-rrk-chart
+#| eval: !expr projections_ready
+
+htmltools::browsable(htmltools::tagList(first_draft_projections$mapping_outputs[["trust-rrk"]]$chart))
+```
+
+#### Table
+
+```{r}
+#| label: projection-mapping-trust-rrk-table
+#| eval: !expr projections_ready
+
+first_draft_projections$mapping_outputs[["trust-rrk"]]$table
+```
+
+::::
+
+### Sandwell and West Birmingham NHS Trust {#projection-mapping-trust-rxk}
+
+:::: panel-tabset
+
+#### Chart
+
+```{r}
+#| label: projection-mapping-trust-rxk-chart
+#| eval: !expr projections_ready
+
+htmltools::browsable(htmltools::tagList(first_draft_projections$mapping_outputs[["trust-rxk"]]$chart))
+```
+
+#### Table
+
+```{r}
+#| label: projection-mapping-trust-rxk-table
+#| eval: !expr projections_ready
+
+first_draft_projections$mapping_outputs[["trust-rxk"]]$table
+```
+
+::::
+
+### Black Country ICB {#projection-mapping-icb-qua}
+
+:::: panel-tabset
+
+#### Chart
+
+```{r}
+#| label: projection-mapping-icb-qua-chart
+#| eval: !expr projections_ready
+
+htmltools::browsable(htmltools::tagList(first_draft_projections$mapping_outputs[["icb-qua"]]$chart))
+```
+
+#### Table
+
+```{r}
+#| label: projection-mapping-icb-qua-table
+#| eval: !expr projections_ready
+
+first_draft_projections$mapping_outputs[["icb-qua"]]$table
+```
+
+::::
+
+### Birmingham and Solihull ICB {#projection-mapping-icb-qhl}
+
+:::: panel-tabset
+
+#### Chart
+
+```{r}
+#| label: projection-mapping-icb-qhl-chart
+#| eval: !expr projections_ready
+
+htmltools::browsable(htmltools::tagList(first_draft_projections$mapping_outputs[["icb-qhl"]]$chart))
+```
+
+#### Table
+
+```{r}
+#| label: projection-mapping-icb-qhl-table
+#| eval: !expr projections_ready
+
+first_draft_projections$mapping_outputs[["icb-qhl"]]$table
+```
+
+::::
+
+### Combined cluster {#projection-mapping-cluster}
+
+:::: panel-tabset
+
+#### Chart
+
+```{r}
+#| label: projection-mapping-cluster-chart
+#| eval: !expr projections_ready
+
+htmltools::browsable(htmltools::tagList(first_draft_projections$mapping_outputs[["cluster"]]$chart))
+```
+
+#### Table
+
+```{r}
+#| label: projection-mapping-cluster-table
+#| eval: !expr projections_ready
+
+first_draft_projections$mapping_outputs[["cluster"]]$table
+```
+
+::::
 
 ### All destinations — accounting
 
 ```{r}
 #| label: first-draft-mapping-accounting
-#| eval: !expr projection_mapping_ready
+#| eval: !expr projections_ready
 
 first_draft_projections$accounting_table
 ```
@@ -2193,7 +3031,7 @@ first_draft_projections$accounting_table
 
 ```{r}
 #| label: first-draft-projection-coverage
-#| eval: !expr projection_mapping_ready
+#| eval: !expr projections_ready
 
 first_draft_projections$coverage_table
 first_draft_projections$coverage_details_table
@@ -2207,16 +3045,383 @@ Method 1 ONS maternity growth is applied within each feeder LA and age band, usi
 
 ::: panel-tabset
 
-```{r}
-#| label: first-draft-age-flow-tabs
-#| eval: !expr projection_forecast_ready
-#| results: asis
+### Walsall Healthcare NHS Trust {#projection-age-flows-trust-rbk}
 
-show_projection_tabs("forecast_outputs",
-  c("growth_chart", "incoming_chart", "growth_table", "incoming_table"),
-  c("ONS growth — chart", "Incoming flows — chart", "ONS growth — table", "Incoming flows — table"),
-  "age-flows")
+:::: panel-tabset
+
+#### ONS growth — chart
+
+```{r}
+#| label: projection-age-flows-trust-rbk-growth_chart
+#| eval: !expr projections_ready
+
+htmltools::browsable(htmltools::tagList(first_draft_projections$forecast_outputs[["trust-rbk"]]$growth_chart))
 ```
+
+#### Incoming flows — chart
+
+```{r}
+#| label: projection-age-flows-trust-rbk-incoming_chart
+#| eval: !expr projections_ready
+
+htmltools::browsable(htmltools::tagList(first_draft_projections$forecast_outputs[["trust-rbk"]]$incoming_chart))
+```
+
+#### ONS growth — table
+
+```{r}
+#| label: projection-age-flows-trust-rbk-growth_table
+#| eval: !expr projections_ready
+
+first_draft_projections$forecast_outputs[["trust-rbk"]]$growth_table
+```
+
+#### Incoming flows — table
+
+```{r}
+#| label: projection-age-flows-trust-rbk-incoming_table
+#| eval: !expr projections_ready
+
+first_draft_projections$forecast_outputs[["trust-rbk"]]$incoming_table
+```
+
+::::
+
+### The Royal Wolverhampton NHS Trust {#projection-age-flows-trust-rl4}
+
+:::: panel-tabset
+
+#### ONS growth — chart
+
+```{r}
+#| label: projection-age-flows-trust-rl4-growth_chart
+#| eval: !expr projections_ready
+
+htmltools::browsable(htmltools::tagList(first_draft_projections$forecast_outputs[["trust-rl4"]]$growth_chart))
+```
+
+#### Incoming flows — chart
+
+```{r}
+#| label: projection-age-flows-trust-rl4-incoming_chart
+#| eval: !expr projections_ready
+
+htmltools::browsable(htmltools::tagList(first_draft_projections$forecast_outputs[["trust-rl4"]]$incoming_chart))
+```
+
+#### ONS growth — table
+
+```{r}
+#| label: projection-age-flows-trust-rl4-growth_table
+#| eval: !expr projections_ready
+
+first_draft_projections$forecast_outputs[["trust-rl4"]]$growth_table
+```
+
+#### Incoming flows — table
+
+```{r}
+#| label: projection-age-flows-trust-rl4-incoming_table
+#| eval: !expr projections_ready
+
+first_draft_projections$forecast_outputs[["trust-rl4"]]$incoming_table
+```
+
+::::
+
+### The Dudley Group NHS Foundation Trust {#projection-age-flows-trust-rna}
+
+:::: panel-tabset
+
+#### ONS growth — chart
+
+```{r}
+#| label: projection-age-flows-trust-rna-growth_chart
+#| eval: !expr projections_ready
+
+htmltools::browsable(htmltools::tagList(first_draft_projections$forecast_outputs[["trust-rna"]]$growth_chart))
+```
+
+#### Incoming flows — chart
+
+```{r}
+#| label: projection-age-flows-trust-rna-incoming_chart
+#| eval: !expr projections_ready
+
+htmltools::browsable(htmltools::tagList(first_draft_projections$forecast_outputs[["trust-rna"]]$incoming_chart))
+```
+
+#### ONS growth — table
+
+```{r}
+#| label: projection-age-flows-trust-rna-growth_table
+#| eval: !expr projections_ready
+
+first_draft_projections$forecast_outputs[["trust-rna"]]$growth_table
+```
+
+#### Incoming flows — table
+
+```{r}
+#| label: projection-age-flows-trust-rna-incoming_table
+#| eval: !expr projections_ready
+
+first_draft_projections$forecast_outputs[["trust-rna"]]$incoming_table
+```
+
+::::
+
+### Birmingham Women's and Children's NHS Foundation Trust {#projection-age-flows-trust-rq3}
+
+:::: panel-tabset
+
+#### ONS growth — chart
+
+```{r}
+#| label: projection-age-flows-trust-rq3-growth_chart
+#| eval: !expr projections_ready
+
+htmltools::browsable(htmltools::tagList(first_draft_projections$forecast_outputs[["trust-rq3"]]$growth_chart))
+```
+
+#### Incoming flows — chart
+
+```{r}
+#| label: projection-age-flows-trust-rq3-incoming_chart
+#| eval: !expr projections_ready
+
+htmltools::browsable(htmltools::tagList(first_draft_projections$forecast_outputs[["trust-rq3"]]$incoming_chart))
+```
+
+#### ONS growth — table
+
+```{r}
+#| label: projection-age-flows-trust-rq3-growth_table
+#| eval: !expr projections_ready
+
+first_draft_projections$forecast_outputs[["trust-rq3"]]$growth_table
+```
+
+#### Incoming flows — table
+
+```{r}
+#| label: projection-age-flows-trust-rq3-incoming_table
+#| eval: !expr projections_ready
+
+first_draft_projections$forecast_outputs[["trust-rq3"]]$incoming_table
+```
+
+::::
+
+### University Hospitals Birmingham NHS Foundation Trust {#projection-age-flows-trust-rrk}
+
+:::: panel-tabset
+
+#### ONS growth — chart
+
+```{r}
+#| label: projection-age-flows-trust-rrk-growth_chart
+#| eval: !expr projections_ready
+
+htmltools::browsable(htmltools::tagList(first_draft_projections$forecast_outputs[["trust-rrk"]]$growth_chart))
+```
+
+#### Incoming flows — chart
+
+```{r}
+#| label: projection-age-flows-trust-rrk-incoming_chart
+#| eval: !expr projections_ready
+
+htmltools::browsable(htmltools::tagList(first_draft_projections$forecast_outputs[["trust-rrk"]]$incoming_chart))
+```
+
+#### ONS growth — table
+
+```{r}
+#| label: projection-age-flows-trust-rrk-growth_table
+#| eval: !expr projections_ready
+
+first_draft_projections$forecast_outputs[["trust-rrk"]]$growth_table
+```
+
+#### Incoming flows — table
+
+```{r}
+#| label: projection-age-flows-trust-rrk-incoming_table
+#| eval: !expr projections_ready
+
+first_draft_projections$forecast_outputs[["trust-rrk"]]$incoming_table
+```
+
+::::
+
+### Sandwell and West Birmingham NHS Trust {#projection-age-flows-trust-rxk}
+
+:::: panel-tabset
+
+#### ONS growth — chart
+
+```{r}
+#| label: projection-age-flows-trust-rxk-growth_chart
+#| eval: !expr projections_ready
+
+htmltools::browsable(htmltools::tagList(first_draft_projections$forecast_outputs[["trust-rxk"]]$growth_chart))
+```
+
+#### Incoming flows — chart
+
+```{r}
+#| label: projection-age-flows-trust-rxk-incoming_chart
+#| eval: !expr projections_ready
+
+htmltools::browsable(htmltools::tagList(first_draft_projections$forecast_outputs[["trust-rxk"]]$incoming_chart))
+```
+
+#### ONS growth — table
+
+```{r}
+#| label: projection-age-flows-trust-rxk-growth_table
+#| eval: !expr projections_ready
+
+first_draft_projections$forecast_outputs[["trust-rxk"]]$growth_table
+```
+
+#### Incoming flows — table
+
+```{r}
+#| label: projection-age-flows-trust-rxk-incoming_table
+#| eval: !expr projections_ready
+
+first_draft_projections$forecast_outputs[["trust-rxk"]]$incoming_table
+```
+
+::::
+
+### Black Country ICB {#projection-age-flows-icb-qua}
+
+:::: panel-tabset
+
+#### ONS growth — chart
+
+```{r}
+#| label: projection-age-flows-icb-qua-growth_chart
+#| eval: !expr projections_ready
+
+htmltools::browsable(htmltools::tagList(first_draft_projections$forecast_outputs[["icb-qua"]]$growth_chart))
+```
+
+#### Incoming flows — chart
+
+```{r}
+#| label: projection-age-flows-icb-qua-incoming_chart
+#| eval: !expr projections_ready
+
+htmltools::browsable(htmltools::tagList(first_draft_projections$forecast_outputs[["icb-qua"]]$incoming_chart))
+```
+
+#### ONS growth — table
+
+```{r}
+#| label: projection-age-flows-icb-qua-growth_table
+#| eval: !expr projections_ready
+
+first_draft_projections$forecast_outputs[["icb-qua"]]$growth_table
+```
+
+#### Incoming flows — table
+
+```{r}
+#| label: projection-age-flows-icb-qua-incoming_table
+#| eval: !expr projections_ready
+
+first_draft_projections$forecast_outputs[["icb-qua"]]$incoming_table
+```
+
+::::
+
+### Birmingham and Solihull ICB {#projection-age-flows-icb-qhl}
+
+:::: panel-tabset
+
+#### ONS growth — chart
+
+```{r}
+#| label: projection-age-flows-icb-qhl-growth_chart
+#| eval: !expr projections_ready
+
+htmltools::browsable(htmltools::tagList(first_draft_projections$forecast_outputs[["icb-qhl"]]$growth_chart))
+```
+
+#### Incoming flows — chart
+
+```{r}
+#| label: projection-age-flows-icb-qhl-incoming_chart
+#| eval: !expr projections_ready
+
+htmltools::browsable(htmltools::tagList(first_draft_projections$forecast_outputs[["icb-qhl"]]$incoming_chart))
+```
+
+#### ONS growth — table
+
+```{r}
+#| label: projection-age-flows-icb-qhl-growth_table
+#| eval: !expr projections_ready
+
+first_draft_projections$forecast_outputs[["icb-qhl"]]$growth_table
+```
+
+#### Incoming flows — table
+
+```{r}
+#| label: projection-age-flows-icb-qhl-incoming_table
+#| eval: !expr projections_ready
+
+first_draft_projections$forecast_outputs[["icb-qhl"]]$incoming_table
+```
+
+::::
+
+### Combined cluster {#projection-age-flows-cluster}
+
+:::: panel-tabset
+
+#### ONS growth — chart
+
+```{r}
+#| label: projection-age-flows-cluster-growth_chart
+#| eval: !expr projections_ready
+
+htmltools::browsable(htmltools::tagList(first_draft_projections$forecast_outputs[["cluster"]]$growth_chart))
+```
+
+#### Incoming flows — chart
+
+```{r}
+#| label: projection-age-flows-cluster-incoming_chart
+#| eval: !expr projections_ready
+
+htmltools::browsable(htmltools::tagList(first_draft_projections$forecast_outputs[["cluster"]]$incoming_chart))
+```
+
+#### ONS growth — table
+
+```{r}
+#| label: projection-age-flows-cluster-growth_table
+#| eval: !expr projections_ready
+
+first_draft_projections$forecast_outputs[["cluster"]]$growth_table
+```
+
+#### Incoming flows — table
+
+```{r}
+#| label: projection-age-flows-cluster-incoming_table
+#| eval: !expr projections_ready
+
+first_draft_projections$forecast_outputs[["cluster"]]$incoming_table
+```
+
+::::
 :::
 
 ## 9.3 Total maternity projections {#projection-total-maternities}
@@ -2225,24 +3430,229 @@ Incoming flows summed across all feeder LAs and ages. Baseline: actual 2025/26; 
 
 ::: panel-tabset
 
-```{r}
-#| label: first-draft-total-tabs
-#| eval: !expr projection_forecast_ready
-#| results: asis
+### Walsall Healthcare NHS Trust {#projection-totals-trust-rbk}
 
-show_projection_tabs("forecast_outputs", c("total_chart", "total_table"), c("Chart", "Table"), "totals")
+:::: panel-tabset
+
+#### Chart
+
+```{r}
+#| label: projection-totals-trust-rbk-total_chart
+#| eval: !expr projections_ready
+
+htmltools::browsable(htmltools::tagList(first_draft_projections$forecast_outputs[["trust-rbk"]]$total_chart))
 ```
+
+#### Table
+
+```{r}
+#| label: projection-totals-trust-rbk-total_table
+#| eval: !expr projections_ready
+
+first_draft_projections$forecast_outputs[["trust-rbk"]]$total_table
+```
+
+::::
+
+### The Royal Wolverhampton NHS Trust {#projection-totals-trust-rl4}
+
+:::: panel-tabset
+
+#### Chart
+
+```{r}
+#| label: projection-totals-trust-rl4-total_chart
+#| eval: !expr projections_ready
+
+htmltools::browsable(htmltools::tagList(first_draft_projections$forecast_outputs[["trust-rl4"]]$total_chart))
+```
+
+#### Table
+
+```{r}
+#| label: projection-totals-trust-rl4-total_table
+#| eval: !expr projections_ready
+
+first_draft_projections$forecast_outputs[["trust-rl4"]]$total_table
+```
+
+::::
+
+### The Dudley Group NHS Foundation Trust {#projection-totals-trust-rna}
+
+:::: panel-tabset
+
+#### Chart
+
+```{r}
+#| label: projection-totals-trust-rna-total_chart
+#| eval: !expr projections_ready
+
+htmltools::browsable(htmltools::tagList(first_draft_projections$forecast_outputs[["trust-rna"]]$total_chart))
+```
+
+#### Table
+
+```{r}
+#| label: projection-totals-trust-rna-total_table
+#| eval: !expr projections_ready
+
+first_draft_projections$forecast_outputs[["trust-rna"]]$total_table
+```
+
+::::
+
+### Birmingham Women's and Children's NHS Foundation Trust {#projection-totals-trust-rq3}
+
+:::: panel-tabset
+
+#### Chart
+
+```{r}
+#| label: projection-totals-trust-rq3-total_chart
+#| eval: !expr projections_ready
+
+htmltools::browsable(htmltools::tagList(first_draft_projections$forecast_outputs[["trust-rq3"]]$total_chart))
+```
+
+#### Table
+
+```{r}
+#| label: projection-totals-trust-rq3-total_table
+#| eval: !expr projections_ready
+
+first_draft_projections$forecast_outputs[["trust-rq3"]]$total_table
+```
+
+::::
+
+### University Hospitals Birmingham NHS Foundation Trust {#projection-totals-trust-rrk}
+
+:::: panel-tabset
+
+#### Chart
+
+```{r}
+#| label: projection-totals-trust-rrk-total_chart
+#| eval: !expr projections_ready
+
+htmltools::browsable(htmltools::tagList(first_draft_projections$forecast_outputs[["trust-rrk"]]$total_chart))
+```
+
+#### Table
+
+```{r}
+#| label: projection-totals-trust-rrk-total_table
+#| eval: !expr projections_ready
+
+first_draft_projections$forecast_outputs[["trust-rrk"]]$total_table
+```
+
+::::
+
+### Sandwell and West Birmingham NHS Trust {#projection-totals-trust-rxk}
+
+:::: panel-tabset
+
+#### Chart
+
+```{r}
+#| label: projection-totals-trust-rxk-total_chart
+#| eval: !expr projections_ready
+
+htmltools::browsable(htmltools::tagList(first_draft_projections$forecast_outputs[["trust-rxk"]]$total_chart))
+```
+
+#### Table
+
+```{r}
+#| label: projection-totals-trust-rxk-total_table
+#| eval: !expr projections_ready
+
+first_draft_projections$forecast_outputs[["trust-rxk"]]$total_table
+```
+
+::::
+
+### Black Country ICB {#projection-totals-icb-qua}
+
+:::: panel-tabset
+
+#### Chart
+
+```{r}
+#| label: projection-totals-icb-qua-total_chart
+#| eval: !expr projections_ready
+
+htmltools::browsable(htmltools::tagList(first_draft_projections$forecast_outputs[["icb-qua"]]$total_chart))
+```
+
+#### Table
+
+```{r}
+#| label: projection-totals-icb-qua-total_table
+#| eval: !expr projections_ready
+
+first_draft_projections$forecast_outputs[["icb-qua"]]$total_table
+```
+
+::::
+
+### Birmingham and Solihull ICB {#projection-totals-icb-qhl}
+
+:::: panel-tabset
+
+#### Chart
+
+```{r}
+#| label: projection-totals-icb-qhl-total_chart
+#| eval: !expr projections_ready
+
+htmltools::browsable(htmltools::tagList(first_draft_projections$forecast_outputs[["icb-qhl"]]$total_chart))
+```
+
+#### Table
+
+```{r}
+#| label: projection-totals-icb-qhl-total_table
+#| eval: !expr projections_ready
+
+first_draft_projections$forecast_outputs[["icb-qhl"]]$total_table
+```
+
+::::
+
+### Combined cluster {#projection-totals-cluster}
+
+:::: panel-tabset
+
+#### Chart
+
+```{r}
+#| label: projection-totals-cluster-total_chart
+#| eval: !expr projections_ready
+
+htmltools::browsable(htmltools::tagList(first_draft_projections$forecast_outputs[["cluster"]]$total_chart))
+```
+
+#### Table
+
+```{r}
+#| label: projection-totals-cluster-total_table
+#| eval: !expr projections_ready
+
+first_draft_projections$forecast_outputs[["cluster"]]$total_table
+```
+
+::::
 
 ### All organisations — table
 
 ```{r}
 #| label: first-draft-all-totals
+#| eval: !expr projections_ready
 
-if (projection_forecast_ready) {
-  first_draft_projections$all_totals_table
-} else {
-  htmltools::div("Projection preparation needs attention. Re-run the analysis runner and check the projection coverage table.")
-}
+first_draft_projections$all_totals_table
 ```
 :::
 
@@ -2252,24 +3662,229 @@ Relative change in total maternities from actual 2025/26, using the same project
 
 ::: panel-tabset
 
-```{r}
-#| label: first-draft-change-tabs
-#| eval: !expr projection_forecast_ready
-#| results: asis
+### Walsall Healthcare NHS Trust {#projection-changes-trust-rbk}
 
-show_projection_tabs("forecast_outputs", c("change_chart", "change_table"), c("Chart", "Table"), "changes")
+:::: panel-tabset
+
+#### Chart
+
+```{r}
+#| label: projection-changes-trust-rbk-change_chart
+#| eval: !expr projections_ready
+
+htmltools::browsable(htmltools::tagList(first_draft_projections$forecast_outputs[["trust-rbk"]]$change_chart))
 ```
+
+#### Table
+
+```{r}
+#| label: projection-changes-trust-rbk-change_table
+#| eval: !expr projections_ready
+
+first_draft_projections$forecast_outputs[["trust-rbk"]]$change_table
+```
+
+::::
+
+### The Royal Wolverhampton NHS Trust {#projection-changes-trust-rl4}
+
+:::: panel-tabset
+
+#### Chart
+
+```{r}
+#| label: projection-changes-trust-rl4-change_chart
+#| eval: !expr projections_ready
+
+htmltools::browsable(htmltools::tagList(first_draft_projections$forecast_outputs[["trust-rl4"]]$change_chart))
+```
+
+#### Table
+
+```{r}
+#| label: projection-changes-trust-rl4-change_table
+#| eval: !expr projections_ready
+
+first_draft_projections$forecast_outputs[["trust-rl4"]]$change_table
+```
+
+::::
+
+### The Dudley Group NHS Foundation Trust {#projection-changes-trust-rna}
+
+:::: panel-tabset
+
+#### Chart
+
+```{r}
+#| label: projection-changes-trust-rna-change_chart
+#| eval: !expr projections_ready
+
+htmltools::browsable(htmltools::tagList(first_draft_projections$forecast_outputs[["trust-rna"]]$change_chart))
+```
+
+#### Table
+
+```{r}
+#| label: projection-changes-trust-rna-change_table
+#| eval: !expr projections_ready
+
+first_draft_projections$forecast_outputs[["trust-rna"]]$change_table
+```
+
+::::
+
+### Birmingham Women's and Children's NHS Foundation Trust {#projection-changes-trust-rq3}
+
+:::: panel-tabset
+
+#### Chart
+
+```{r}
+#| label: projection-changes-trust-rq3-change_chart
+#| eval: !expr projections_ready
+
+htmltools::browsable(htmltools::tagList(first_draft_projections$forecast_outputs[["trust-rq3"]]$change_chart))
+```
+
+#### Table
+
+```{r}
+#| label: projection-changes-trust-rq3-change_table
+#| eval: !expr projections_ready
+
+first_draft_projections$forecast_outputs[["trust-rq3"]]$change_table
+```
+
+::::
+
+### University Hospitals Birmingham NHS Foundation Trust {#projection-changes-trust-rrk}
+
+:::: panel-tabset
+
+#### Chart
+
+```{r}
+#| label: projection-changes-trust-rrk-change_chart
+#| eval: !expr projections_ready
+
+htmltools::browsable(htmltools::tagList(first_draft_projections$forecast_outputs[["trust-rrk"]]$change_chart))
+```
+
+#### Table
+
+```{r}
+#| label: projection-changes-trust-rrk-change_table
+#| eval: !expr projections_ready
+
+first_draft_projections$forecast_outputs[["trust-rrk"]]$change_table
+```
+
+::::
+
+### Sandwell and West Birmingham NHS Trust {#projection-changes-trust-rxk}
+
+:::: panel-tabset
+
+#### Chart
+
+```{r}
+#| label: projection-changes-trust-rxk-change_chart
+#| eval: !expr projections_ready
+
+htmltools::browsable(htmltools::tagList(first_draft_projections$forecast_outputs[["trust-rxk"]]$change_chart))
+```
+
+#### Table
+
+```{r}
+#| label: projection-changes-trust-rxk-change_table
+#| eval: !expr projections_ready
+
+first_draft_projections$forecast_outputs[["trust-rxk"]]$change_table
+```
+
+::::
+
+### Black Country ICB {#projection-changes-icb-qua}
+
+:::: panel-tabset
+
+#### Chart
+
+```{r}
+#| label: projection-changes-icb-qua-change_chart
+#| eval: !expr projections_ready
+
+htmltools::browsable(htmltools::tagList(first_draft_projections$forecast_outputs[["icb-qua"]]$change_chart))
+```
+
+#### Table
+
+```{r}
+#| label: projection-changes-icb-qua-change_table
+#| eval: !expr projections_ready
+
+first_draft_projections$forecast_outputs[["icb-qua"]]$change_table
+```
+
+::::
+
+### Birmingham and Solihull ICB {#projection-changes-icb-qhl}
+
+:::: panel-tabset
+
+#### Chart
+
+```{r}
+#| label: projection-changes-icb-qhl-change_chart
+#| eval: !expr projections_ready
+
+htmltools::browsable(htmltools::tagList(first_draft_projections$forecast_outputs[["icb-qhl"]]$change_chart))
+```
+
+#### Table
+
+```{r}
+#| label: projection-changes-icb-qhl-change_table
+#| eval: !expr projections_ready
+
+first_draft_projections$forecast_outputs[["icb-qhl"]]$change_table
+```
+
+::::
+
+### Combined cluster {#projection-changes-cluster}
+
+:::: panel-tabset
+
+#### Chart
+
+```{r}
+#| label: projection-changes-cluster-change_chart
+#| eval: !expr projections_ready
+
+htmltools::browsable(htmltools::tagList(first_draft_projections$forecast_outputs[["cluster"]]$change_chart))
+```
+
+#### Table
+
+```{r}
+#| label: projection-changes-cluster-change_table
+#| eval: !expr projections_ready
+
+first_draft_projections$forecast_outputs[["cluster"]]$change_table
+```
+
+::::
 
 ### All organisations — table
 
 ```{r}
 #| label: first-draft-all-changes
+#| eval: !expr projections_ready
 
-if (projection_forecast_ready) {
-  first_draft_projections$all_changes_table
-} else {
-  htmltools::div("Percentage changes will appear when projection preparation succeeds. Check projection coverage.")
-}
+first_draft_projections$all_changes_table
 ```
 :::
 
@@ -2281,29 +3896,36 @@ Actual 2023/24 flows and LA/age shares are held fixed to model 2024/25 and 2025/
 #| label: first-draft-backtest-notes
 #| results: asis
 
-if (!is.null(first_draft_projections) && !projection_backtest_ready) {
-  cat(if (is.null(first_draft_projections$backtest)) "Re-run the analysis runner to prepare the retrospective check." else
-        first_draft_projections$backtest$note)
-} else if (projection_backtest_ready && nzchar(first_draft_projections$backtest$note)) {
+if (projections_ready && nzchar(first_draft_projections$backtest$note)) {
   cat(first_draft_projections$backtest$note)
 }
 ```
 
 ::: panel-tabset
 
-```{r}
-#| label: first-draft-backtest-tabs
-#| eval: !expr projection_backtest_ready
-#| results: asis
+### Trusts
 
-show_projection_tabs("backtest_outputs", c("chart", "table"), c("Chart", "Table"), "backtest")
+```{r}
+#| label: first-draft-backtest-trust-grid
+#| eval: !expr projections_ready
+
+htmltools::browsable(htmltools::tagList(first_draft_projections$backtest$trust_grid))
+```
+
+### ICBs and combined cluster
+
+```{r}
+#| label: first-draft-backtest-icb-cluster-grid
+#| eval: !expr projections_ready
+
+htmltools::browsable(htmltools::tagList(first_draft_projections$backtest$icb_cluster_grid))
 ```
 
 ### All organisations — comparison table
 
 ```{r}
 #| label: first-draft-all-backtests
-#| eval: !expr projection_backtest_ready
+#| eval: !expr projections_ready
 
 first_draft_projections$backtest$all_table
 ```
@@ -2312,7 +3934,7 @@ first_draft_projections$backtest$all_table
 
 ```{r}
 #| label: first-draft-backtest-coverage
-#| eval: !expr projection_backtest_ready
+#| eval: !expr projections_ready
 
 first_draft_projections$backtest$coverage_table
 first_draft_projections$backtest$coverage_details_table

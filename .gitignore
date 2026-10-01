@@ -14,7 +14,6 @@
 !/LICENSE
 !/README.md
 !/ONS-analysis-notes.md
-!/terminology-key.md
 !/index.qmd
 !/_quarto.yml
 !/_brand.yml
@@ -32,6 +31,9 @@
 !/data/ons_2022_based_female_population_projections.csv
 !/data/ons_2022_based_female_population_projections_2023_geography.csv
 !/data/ons_live_births_la_2013_2025.csv
+!/data/lookups/
+!/data/lookups/la_names.csv
+!/data/lookups/trust_names.csv
 !/ONS Birth Methods Review.docx
 
 # Generated Quarto files and separately supplied data stay local.

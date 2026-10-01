@@ -1867,3 +1867,120 @@ if (is.null(cluster_activity$pathway_trust_sankeys)) {
 htmltools::browsable(cluster_activity$pathway_trust_sankeys)
 ```
 :::
+
+# 7. Delivery episodes over time {#delivery-episodes-over-time}
+
+Each chart shows the four recorded pathway outcomes as a percentage of **all starts in the same organisation and booking financial year**, for 2023/24, 2024/25 and 2025/26. One start is one identified mother/pregnancy pair. Trusts refer to the booking provider; ICBs group those booking trusts. The whole cluster combines Black Country and Birmingham and Solihull providers. These are alternative views of the same starts.
+
+Outcomes follow the preceding section: delivery within the cluster, delivery outside the cluster, no recorded delivery, and delivery provider unknown. Deliveries can occur after the booking year. “No recorded delivery” does not confirm that a pregnancy ended without a birth. Recent booking cohorts may have less follow-up; interpretation depends on the extract end date and whether the source includes starts without births.
+
+The final table gives every outcome's numerator, denominator and percentage. **Year-on-year and base-year changes are relative changes in the percentage**, calculated as (current percentage / reference percentage − 1) × 100. For example, a share rising from 20% to 25% is a 25% relative increase. The base year is 2023/24. Changes from a zero or unavailable reference share are unavailable; a year with no recorded starts has no percentage.
+
+```{r}
+#| label: delivery-over-time-setup
+#| include: false
+
+delivery_over_time <- if (file.exists(".patient_flows.rds")) {
+  readRDS(".patient_flows.rds")$delivery_over_time
+} else NULL
+delivery_over_time_ready <- !is.null(delivery_over_time) && isTRUE(delivery_over_time$available)
+delivery_change_ready <- delivery_over_time_ready &&
+  !is.null(delivery_over_time$change_charts) && !is.null(delivery_over_time$change_table)
+```
+
+```{r}
+#| label: delivery-over-time-notes
+#| results: asis
+
+if (is.null(delivery_over_time)) {
+  cat("Run R/additional_analysis.R in the secure environment to prepare this section, then render index.qmd.")
+} else if (!delivery_over_time_ready) {
+  cat(delivery_over_time$missing)
+} else {
+  cat(delivery_over_time$excluded)
+}
+```
+
+## 7.1 Outcome percentages {#delivery-outcome-percentages}
+
+::: panel-tabset
+
+```{r}
+#| label: delivery-over-time-chart-tabs
+#| eval: !expr delivery_over_time_ready
+#| results: asis
+
+# Render one labelled tab per saved chart, including any additional booking trusts.
+# Child chunks let knitr register each Plotly widget's dependencies normally.
+for (i in seq_len(nrow(delivery_over_time$organisations))) {
+  organisation <- delivery_over_time$organisations[i, , drop = FALSE]
+  tab_text <- c(
+    paste0("\n### ", organisation$Organisation, " {#delivery-trend-", organisation$Key, "}\n"),
+    "```{r}",
+    paste0("#| label: delivery-trend-chart-", organisation$Key),
+    "#| out-width: \"100%\"",
+    paste0("delivery_over_time$charts[[\"", organisation$Key, "\"]]"),
+    "```", ""
+  )
+  cat(knitr::knit_child(text = tab_text, envir = environment(), quiet = TRUE), sep = "\n")
+}
+```
+
+### All results — table
+
+```{r}
+#| label: delivery-over-time-results-table
+#| eval: !expr delivery_over_time_ready
+
+delivery_over_time$table
+```
+:::
+
+## 7.2 Percentage change from 2023/24 {#delivery-outcome-percentage-change}
+
+These charts show how each outcome's **share of all starts** changed relative to 2023/24. A positive value means a higher share than in the base year; a negative value means a lower share. The baseline is 0% wherever its outcome share is positive. A zero or unavailable baseline share has no calculable relative change and is shown as unavailable.
+
+The final table places one organisation on each row, grouped into trusts, ICBs and the whole cluster. Each financial-year heading contains the four delivery outcomes, with the same percentage-change values as the charts. Scroll horizontally to see all years. The detailed counts, denominators, outcome percentages and year-on-year changes remain in subsection 7.1's results table.
+
+```{r}
+#| label: delivery-change-notes
+#| results: asis
+
+if (delivery_over_time_ready && !delivery_change_ready) {
+  cat("Re-run R/additional_analysis.R in the secure environment to prepare the percentage-change outputs, then render index.qmd.")
+}
+```
+
+::: panel-tabset
+
+```{r}
+#| label: delivery-change-chart-tabs
+#| eval: !expr delivery_change_ready
+#| results: asis
+
+# Only label and display the percentage-change charts prepared in additional_analysis.R.
+for (i in seq_len(nrow(delivery_over_time$organisations))) {
+  organisation <- delivery_over_time$organisations[i, , drop = FALSE]
+  tab_text <- c(
+    paste0("\n### ", organisation$Organisation, " {#delivery-change-", organisation$Key, "}\n"),
+    "```{r}",
+    paste0("#| label: delivery-change-chart-", organisation$Key),
+    "#| out-width: \"100%\"",
+    paste0("delivery_over_time$change_charts[[\"", organisation$Key, "\"]]"),
+    "```", ""
+  )
+  cat(knitr::knit_child(text = tab_text, envir = environment(), quiet = TRUE), sep = "\n")
+}
+```
+
+### All percentage changes — table
+
+```{r}
+#| label: delivery-change-results-table
+#| eval: !expr delivery_change_ready
+
+delivery_over_time$change_table
+```
+:::
+
+# 8. Deliveries by LA and Age Bands {#deliveries-by-la-and-age-bands}

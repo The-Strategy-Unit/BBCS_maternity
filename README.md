@@ -47,6 +47,20 @@ Sankeys and cluster-activity tables in `index.qmd`. Without this file, those
 outputs are skipped. The generated RDS and HTML, and the separately supplied
 `sankey data/` folder, are ignored by Git.
 
+The **Delivery episodes over time** section is also prepared entirely in
+`R/additional_analysis.R`; the QMD loads its saved charts and table and labels
+their tabs. It extends the four antenatal pathway outcomes across booking
+financial years 2023/24–2025/26, with separate tabs for each booking trust, each
+cluster ICB and the whole cluster, followed by an all-results table. Percentages
+use all identified starts in the organisation/year as the denominator. Change
+columns are relative changes in those shares, year on year and from 2023/24;
+zero or unavailable reference shares produce `n.a.`. Subsection 7.2 has a
+second set of organisation tabs showing relative changes in shares from
+2023/24. Its final table has one organisation per row, grouped by level, with
+the four outcome columns nested under each financial year; it scrolls
+horizontally. Re-source the script in the secure environment to refresh
+`.patient_flows.rds` before rendering.
+
 ## ONS inputs
 
 The six files in `data/` are the three birth-registration workbooks (2023–2025),

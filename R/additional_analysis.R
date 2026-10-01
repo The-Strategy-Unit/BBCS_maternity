@@ -300,6 +300,13 @@ activity_episodes <- unique(activity_cohort[identified, episode_fields])
 activity_conflicts <- any(duplicated(activity_episodes[c("person_id_mother", "uniq_preg_id")]))
 missing_activity_years <- setdiff(2023:2025, activity_episodes$delivery_year)
 
+# Shared pathway definition for the latest-year and three-year outputs.
+classify_pathway_outcome <- function(episodes) {
+  ifelse(is.na(episodes$delivery_year) & is.na(episodes$delivery_date), "No recorded delivery",
+    ifelse(episodes$birth_code %in% cluster_trusts, "Within cluster",
+      ifelse(grepl("^R[A-Z0-9]{2}$", episodes$birth_code), "Outside cluster", "Unknown provider")))
+}
+
 # Section 6 hand-off; earlier sections remain available
 cluster_activity <- list(
   available = !activity_conflicts && !length(missing_activity_years),
@@ -430,9 +437,7 @@ if (cluster_activity$available) {
   starts <- activity_episodes[
     !is.na(activity_episodes$booking_year) & activity_episodes$booking_year == 2025L &
       activity_episodes$booking_code %in% cluster_trusts, ]
-  starts$outcome <- ifelse(is.na(starts$delivery_year) & is.na(starts$delivery_date), "No recorded delivery",
-    ifelse(starts$birth_code %in% cluster_trusts, "Within cluster",
-      ifelse(grepl("^R[A-Z0-9]{2}$", starts$birth_code), "Outside cluster", "Unknown provider")))
+  starts$outcome <- classify_pathway_outcome(starts)
   booking_codes <- unique(c(names(trust_labels)[names(trust_labels) != "Other"], starts$booking_code))
   booking_name <- function(code) {
     label <- unname(trust_labels[code])
@@ -542,9 +547,233 @@ if (cluster_activity$available) {
   cluster_activity$pathway_trust_sankeys <- pathway_grid("Trust")
 }
 
+## 6. Delivery episodes over time -------------------------------------------
+# Booking-year cohorts: all starts, including those without a recorded delivery.
+# ICBs group booking trusts, matching the preceding antenatal pathway section.
+pathway_years <- 2023:2025
+trend_starts <- activity_episodes[
+  !is.na(activity_episodes$booking_year) &
+    activity_episodes$booking_year %in% pathway_years &
+    activity_episodes$booking_code %in% cluster_trusts, , drop = FALSE]
+missing_booking_years <- setdiff(pathway_years, trend_starts$booking_year)
+delivery_over_time <- list(
+  available = !activity_conflicts && !length(missing_booking_years),
+  missing = paste(c(
+    if (activity_conflicts) "Conflicting mother/pregnancy details must be resolved before counting starts.",
+    if (length(missing_booking_years)) paste0(
+      "No cluster starts with a usable booking date for financial years starting ",
+      paste(missing_booking_years, collapse = ", "),
+      ". Check booking dates and cohort coverage; missing years cannot be reported as zero starts.")
+  ), collapse = " "),
+  excluded = paste0(
+    scales::comma(excluded_activity_rows, accuracy = 1),
+    " cohort rows excluded because a mother or pregnancy identifier was missing. ",
+    scales::comma(sum(activity_episodes$booking_code %in% cluster_trusts &
+      is.na(activity_episodes$booking_year)), accuracy = 1),
+    " identified cluster episodes excluded because their booking date was missing or unusable.")
+)
+
+if (delivery_over_time$available) {
+  trend_starts$outcome <- classify_pathway_outcome(trend_starts)
+  trend_outcomes <- c("Within cluster", "Outside cluster", "No recorded delivery", "Unknown provider")
+  trend_labels <- c("Delivery within cluster", "Delivery outside cluster",
+                    "No recorded delivery", "Delivery provider unknown")
+  trend_colours <- c("#00856A", "#D55E00", "#727272", "#8E5EA2")
+  # Always show the six named trusts; include any additional cluster booking trusts observed.
+  trend_trusts <- unique(c(names(trust_labels)[names(trust_labels) != "Other"],
+                           sort(unique(trend_starts$booking_code))))
+  trend_trust_names <- unname(trust_labels[trend_trusts])
+  trend_trust_names[is.na(trend_trust_names)] <- paste0(
+    "Trust ", trend_trusts[is.na(trend_trust_names)])
+  organisations <- rbind(
+    data.frame(Key = paste0("trust-", tolower(trend_trusts)), Level = "Trust",
+               Code = trend_trusts, Organisation = trend_trust_names),
+    data.frame(Key = paste0("icb-", tolower(cluster_icbs)), Level = "ICB",
+               Code = cluster_icbs, Organisation = unname(icb_labels[cluster_icbs])),
+    data.frame(Key = "cluster", Level = "Cluster", Code = "Cluster",
+               Organisation = "Whole cluster")
+  )
+
+  share_of_starts <- function(n, denominator) {
+    result <- rep(NA_real_, length(n))
+    valid <- denominator > 0
+    result[valid] <- n[valid] / denominator[valid]
+    result
+  }
+  relative_share_change <- function(current, reference) {
+    result <- rep(NA_real_, length(current))
+    valid <- !is.na(current) & !is.na(reference) & reference > 0
+    result[valid] <- (current[valid] / reference[valid]) - 1
+    result
+  }
+  summarise_pathway_trend <- function(organisation) {
+    keep <- switch(organisation$Level[[1]],
+      Trust = trend_starts$booking_code == organisation$Code[[1]],
+      ICB = unname(provider_icb[trend_starts$booking_code]) == organisation$Code[[1]],
+      Cluster = rep(TRUE, nrow(trend_starts)))
+    selected <- trend_starts[keep, , drop = FALSE]
+    result <- do.call(rbind, lapply(pathway_years, function(year) {
+      episodes <- selected[selected$booking_year == year, , drop = FALSE]
+      numerator <- vapply(trend_outcomes, function(outcome)
+        sum(episodes$outcome == outcome), integer(1))
+      denominator <- rep(nrow(episodes), length(trend_outcomes))
+      stopifnot(sum(numerator) == nrow(episodes))
+      data.frame(Key = organisation$Key[[1]], Level = organisation$Level[[1]],
+        Organisation = organisation$Organisation[[1]], Year_start = year,
+        Year = paste0(year, "/", substr(year + 1L, 3, 4)),
+        Outcome = trend_labels, Numerator = unname(numerator),
+        Denominator = denominator, Share = share_of_starts(numerator, denominator))
+    }))
+    result$YoY_change <- NA_real_
+    result$Base_change <- NA_real_
+    for (outcome in trend_labels) {
+      rows <- which(result$Outcome == outcome)
+      shares <- result$Share[rows]
+      result$YoY_change[rows] <- relative_share_change(shares, c(NA_real_, head(shares, -1)))
+      result$Base_change[rows] <- relative_share_change(shares, rep(shares[1], length(shares)))
+    }
+    result
+  }
+  trend_summary <- do.call(rbind, lapply(seq_len(nrow(organisations)), function(i)
+    summarise_pathway_trend(organisations[i, , drop = FALSE])))
+
+  # Alternative aggregation levels must reconcile; never add these levels together.
+  totals_for_level <- function(level) {
+    stats::aggregate(cbind(Numerator, Denominator) ~ Year_start + Outcome,
+      data = trend_summary[trend_summary$Level == level, ], FUN = sum)
+  }
+  stopifnot(isTRUE(all.equal(totals_for_level("Trust"), totals_for_level("Cluster"))),
+            isTRUE(all.equal(totals_for_level("ICB"), totals_for_level("Cluster"))))
+
+  make_delivery_trend_chart <- function(key, measure = c("share", "base_change")) {
+    measure <- match.arg(measure)
+    show_change <- measure == "base_change"
+    data <- trend_summary[trend_summary$Key == key, , drop = FALSE]
+    chart <- plotly::plot_ly(height = 480)
+    for (i in seq_along(trend_labels)) {
+      line <- data[data$Outcome == trend_labels[i], , drop = FALSE]
+      hover <- paste0(line$Year, "<br>", line$Outcome,
+        "<br>Episodes: ", scales::comma(line$Numerator, accuracy = 1),
+        "<br>All starts: ", scales::comma(line$Denominator, accuracy = 1),
+        "<br>Share: ", ifelse(is.na(line$Share), "not available",
+                               scales::percent(line$Share, accuracy = 0.1)))
+      if (show_change) {
+        hover <- paste0(hover,
+          "<br>2023/24 share: ", ifelse(is.na(line$Share[1]), "not available",
+                                        scales::percent(line$Share[1], accuracy = 0.1)),
+          "<br>Change from 2023/24: ", ifelse(is.na(line$Base_change), "not available",
+                                             scales::percent(line$Base_change, accuracy = 0.1)))
+      }
+      values <- if (show_change) line$Base_change else line$Share
+      chart <- plotly::add_trace(chart, x = line$Year_start, y = values,
+        type = "scatter", mode = "lines+markers", name = trend_labels[i],
+        line = list(color = trend_colours[i], width = 2),
+        marker = list(color = trend_colours[i], size = 7),
+        text = hover, hovertemplate = "%{text}<extra></extra>", connectgaps = FALSE)
+    }
+    chart <- plotly::layout(chart,
+      xaxis = list(title = "Booking financial year", tickmode = "array",
+        tickvals = pathway_years, ticktext = c("2023/24", "2024/25", "2025/26")),
+      yaxis = if (show_change) {
+        list(title = "% change in share from 2023/24", tickformat = ".0%",
+             rangemode = "tozero", zeroline = TRUE, zerolinecolor = "#727272", zerolinewidth = 1)
+      } else list(title = "% of all starts", range = c(0, 1), tickformat = ".0%"),
+      legend = list(orientation = "h", x = 0, y = -0.22),
+      margin = list(l = 75, r = 20, t = 25, b = 125),
+      font = list(family = "Arial"), paper_bgcolor = "white", plot_bgcolor = "white") |>
+      plotly::config(displayModeBar = FALSE, responsive = TRUE)
+    empty_years <- unique(data$Year[data$Denominator == 0])
+    chart_notes <- if (length(empty_years)) paste0(
+      "No starts recorded: ", paste(empty_years, collapse = ", "), "; percentages unavailable.")
+    if (show_change) {
+      unavailable_outcomes <- data$Outcome[data$Year_start == 2023L &
+        (is.na(data$Share) | data$Share == 0)]
+      if (length(unavailable_outcomes)) chart_notes <- c(chart_notes,
+        paste0("Zero or unavailable 2023/24 share; change unavailable for:<br>",
+               paste(unavailable_outcomes, collapse = "<br>"), "."))
+    }
+    if (length(chart_notes)) {
+      chart <- plotly::layout(chart, annotations = list(list(
+        text = paste(chart_notes, collapse = "<br>"),
+        x = 0, y = 1.02, xref = "paper", yref = "paper", showarrow = FALSE,
+        xanchor = "left", yanchor = "bottom", align = "left")), margin = list(t = 95))
+    }
+    chart
+  }
+  delivery_over_time$organisations <- organisations
+  delivery_over_time$data <- trend_summary
+  delivery_over_time$charts <- stats::setNames(
+    lapply(organisations$Key, make_delivery_trend_chart), organisations$Key)
+  delivery_over_time$change_charts <- stats::setNames(
+    lapply(organisations$Key, make_delivery_trend_chart, measure = "base_change"), organisations$Key)
+  delivery_over_time$table <- trend_summary |>
+    dplyr::mutate(Group = paste(Level, Organisation, sep = ": ")) |>
+    dplyr::select(Group, Year, Outcome, Numerator, Denominator,
+                  Share, YoY_change, Base_change) |>
+    gt::gt(groupname_col = "Group") |>
+    gt::tab_header(title = "Delivery pathway outcomes over time",
+                   subtitle = "Booking financial years 2023/24 to 2025/26") |>
+    gt::cols_label(Year = "Booking year", Outcome = "Outcome",
+      Numerator = "Numerator: outcome episodes", Denominator = "Denominator: all starts",
+      Share = "% of all starts", YoY_change = "% change in share year on year",
+      Base_change = "% change in share from 2023/24") |>
+    gt::fmt_number(columns = c("Numerator", "Denominator"), decimals = 0, use_seps = TRUE) |>
+    gt::fmt_percent(columns = c("Share", "YoY_change", "Base_change"), decimals = 1) |>
+    gt::sub_missing(missing_text = "n.a.") |>
+    gt::tab_source_note(source_note = paste0(
+      "Share = outcome episodes / all starts in the same organisation and booking year. ",
+      "Changes are relative changes in that share: (current share / reference share - 1) x 100, ",
+      "not percentage-point differences. n.a. = no starts, no prior year, or a zero/unavailable reference share. ",
+      "The base-year change is 0% where the 2023/24 share is positive. ",
+      "Trust, ICB and cluster totals are alternative aggregations of the same starts.")) |>
+    gt::tab_options(table.font.names = c("Open Sans", "Arial", "sans-serif"))
+
+  # One row per organisation; financial-year spanners contain the four outcome columns.
+  change_column_key <- expand.grid(Outcome_index = seq_along(trend_labels),
+                                  Year_start = pathway_years)
+  change_column_key$Column <- paste0("y", change_column_key$Year_start,
+                                     "_o", change_column_key$Outcome_index)
+  change_columns <- change_column_key$Column
+  change_wide <- trend_summary |>
+    dplyr::mutate(Column = paste0("y", Year_start, "_o", match(Outcome, trend_labels))) |>
+    tidyr::pivot_wider(id_cols = c(Key, Level, Organisation),
+                       names_from = Column, values_from = Base_change) |>
+    dplyr::arrange(match(Key, organisations$Key)) |>
+    dplyr::select(Level, Organisation, dplyr::all_of(change_columns))
+  # The twelve wide-table cells per organisation retain exactly the chart values.
+  stopifnot(nrow(change_wide) == nrow(organisations),
+            length(change_columns) == length(pathway_years) * length(trend_labels))
+  outcome_short_labels <- c("Within cluster", "Outside cluster", "No recorded delivery", "Provider unknown")
+  change_table <- gt::gt(change_wide, groupname_col = "Level", rowname_col = "Organisation") |>
+    gt::tab_header(title = "Percentage change in delivery outcome shares",
+                   subtitle = "Relative change from booking financial year 2023/24") |>
+    gt::tab_stubhead(label = "Booking organisation") |>
+    gt::cols_label(.list = stats::setNames(
+      as.list(outcome_short_labels[change_column_key$Outcome_index]), change_columns)) |>
+    gt::fmt_percent(columns = dplyr::all_of(change_columns), decimals = 1) |>
+    gt::sub_missing(missing_text = "n.a.") |>
+    gt::tab_source_note(source_note = paste0(
+      "Every cell is (the year's outcome share / its 2023/24 share - 1) x 100. ",
+      "Outcome share = outcome episodes / all starts in that booking organisation and year. ",
+      "Positive values indicate a higher share; negative values indicate a lower share. ",
+      "2023/24 is 0% where its share is positive; n.a. means no starts or a zero/unavailable baseline share. ",
+      "Numerators, denominators, shares and year-on-year changes are in subsection 7.1's results table.")) |>
+    gt::tab_options(table.font.names = c("Open Sans", "Arial", "sans-serif"),
+                    table.font.size = gt::px(12), table.width = gt::px(1550),
+                    container.width = "100%", container.overflow.x = TRUE)
+  for (year in pathway_years) {
+    change_table <- gt::tab_spanner(change_table,
+      label = paste0(year, "/", substr(year + 1L, 3, 4)),
+      columns = change_column_key$Column[change_column_key$Year_start == year],
+      id = paste0("change-year-", year), gather = FALSE)
+  }
+  delivery_over_time$change_data <- change_wide
+  delivery_over_time$change_table <- change_table
+}
+
 # Index report hand-off
 saveRDS(
   list(icb_sankey = icb_sankey, trust_sankey = trust_sankey, by_year = by_year,
-       cluster_activity = cluster_activity),
+       cluster_activity = cluster_activity, delivery_over_time = delivery_over_time),
   ".patient_flows.rds"
 )

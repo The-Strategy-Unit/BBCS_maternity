@@ -7,8 +7,9 @@ Method 1 is used for the service projections; Method 2 remains for comparison.
 
 ## Run the report
 
-Run the full report on the computer with access to the Azure data. Install R and
-Quarto, and work from the project folder containing `index.qmd`, `R/` and `data/`.
+Run the full report in UDAL since it needs to be able to access Azure data. 
+
+Install R and Quarto, and work from the project folder containing `index.qmd`, `R/` and `data/`.
 Open `BBCS_maternity.Rproj` in RStudio if it is available; keep the R working
 directory at the project root.
 

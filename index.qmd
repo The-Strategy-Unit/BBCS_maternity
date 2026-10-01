@@ -18,7 +18,7 @@ Both methods estimate maternities from ONS projected live births using a factor 
 ## Pros and cons
 
 | Approach | Calculation within each age band | Pros | Cons / assumptions |
-|----|----|----|----|
+|------------------|------------------|------------------|------------------|
 | **Method 1: multiplicity** | Average the 2023–2025 annual proportions of singleton, twin, triplet and four-plus maternities. Modifier = 1 / (p1 + 2p2 + 3p3 + 4p4+). | Explicitly shows how multiple births translate babies into maternities. Retains age differences. Each year has equal weight. | Assumes the age-specific multiplicity mix stays constant and applies locally. Four-plus is approximated as four. Applied to live births, it does not separately account for stillbirth-only or mixed-outcome maternities, unlike the published all-maternity count. |
 | **Method 2: count ratio** | Pool 2023–2025 maternity counts and divide by pooled live births. | Retains age differences. Uses actual counts, including all maternities in the numerator. No four-plus approximation. Matches national live births to all maternities in the calibration data. | Assumes the age-specific national ratio stays constant and applies locally. Combines multiplicity and stillbirth effects, making them less explicit. Years with more live births receive more weight. |
 
@@ -126,7 +126,7 @@ ONS compiles observed births and maternities from civil registration, mainly by 
 ### Core counting terms {#method-1-core-counting-terms}
 
 | Term | Plain-English meaning | Use in this analysis or pathway model |
-|----|----|----|
+|------------------------|------------------------|------------------------|
 | **Live birth** | One baby born showing signs of life. | The unit in the ONS birth projections used here. Two live-born twins count as two. |
 | **Stillbirth** | One baby born without signs of life at 24 or more completed weeks. | Excluded from live-birth counts; included in the definition of a maternity. |
 | **Total births** | Live births plus stillbirths: a count of babies. | Always specify “live births” or “total births”; the projected input here is live births. |
@@ -141,7 +141,7 @@ The ONS definitions above follow the [birth statistics user guide](https://www.o
 ### Terms used in the calculations {#method-1-terms-used-in-the-calculations}
 
 | Term | Meaning here |
-|----|----|
+|------------------------------------|------------------------------------|
 | **Observed / published count** | An ONS figure derived from registered events that have already happened. |
 | **Projected live births** | [Future baby counts from the [ONS subnational population projection model](#method-1-ref-snpp-method), conditional on its assumptions. (LM edit)]{.lm-edit} |
 | **Estimated / projected maternities** | Counts calculated by this analysis from observed or projected live births using [the multiplicity modifier to adjust for multiple births. This does not separately add stillbirth-only maternities. (LM edit)]{.lm-edit} |
@@ -169,7 +169,7 @@ Three further distinctions matter:
 The six authorities are Birmingham, Dudley, Sandwell, Solihull, Walsall and Wolverhampton. The following series are kept distinct:
 
 | Series | Period | Source and use |
-|----|----|----|
+|------------------------|------------------------|------------------------|
 | Observed live births | Calendar years 2013–2025 | Nomis local-authority counts, total and maternal age bands; shown directly and converted to estimated maternities. |
 | Observed GFR and maternities | Calendar years 2023–2025 | ONS registration workbooks, Tables 1 and 3; published values used directly. |
 | National maternities and live births by age and multiplicity | Calendar years 2023–2025 | Table 7; age-specific multiplicity proportions provide the modifiers. |
@@ -757,7 +757,7 @@ ONS compiles observed births and maternities from civil registration, mainly by 
 ### Core counting terms {#method-2-core-counting-terms}
 
 | Term | Plain-English meaning | Use in this analysis or pathway model |
-|----|----|----|
+|------------------------|------------------------|------------------------|
 | **Live birth** | One baby born showing signs of life. | The unit in the ONS birth projections used here. Two live-born twins count as two. |
 | **Stillbirth** | One baby born without signs of life at 24 or more completed weeks. | Excluded from live-birth counts; included in the definition of a maternity. |
 | **Total births** | Live births plus stillbirths: a count of babies. | Always specify “live births” or “total births”; the projected input here is live births. |
@@ -772,7 +772,7 @@ The ONS definitions above follow the [birth statistics user guide](https://www.o
 ### Terms used in the calculations {#method-2-terms-used-in-the-calculations}
 
 | Term | Meaning here |
-|----|----|
+|------------------------------------|------------------------------------|
 | **Observed / published count** | An ONS figure derived from registered events that have already happened. |
 | **Projected live births** | [Future baby counts from the [ONS subnational population projection model](#method-2-ref-snpp-method), conditional on its assumptions. (LM edit)]{.lm-edit} |
 | **Estimated / projected maternities** | Counts calculated by this analysis from observed or projected live births using [the pooled count ratio, which reflects multiple births and includes stillbirth-only maternities in its national calibration. (LM edit)]{.lm-edit} |
@@ -800,7 +800,7 @@ Three further distinctions matter:
 The six authorities are Birmingham, Dudley, Sandwell, Solihull, Walsall and Wolverhampton. The following series are kept distinct:
 
 | Series | Period | Source and use |
-|----|----|----|
+|------------------------|------------------------|------------------------|
 | Observed live births | Calendar years 2013–2025 | Nomis local-authority counts, total and maternal age bands; shown directly and converted to estimated maternities. |
 | Observed GFR and maternities | Calendar years 2023–2025 | ONS registration workbooks, Tables 1 and 3; published values used directly. |
 | National maternities and live births by age and multiplicity | Calendar years 2023–2025 | Table 7; age-specific maternity and live-birth counts provide the modifiers. |
@@ -1598,7 +1598,6 @@ delivery_geography <- readRDS(".delivery_geography.rds")
 Recorded deliveries to cluster residents, plus deliveries associated with cluster providers from elsewhere. Each Sankey shows one resident LA's destinations or one destination's feeder LAs, ordered by volume. Charts retain cluster LAs and the ten largest additional feeders, and the six main trusts and ten largest other delivery organisations; smaller flows are grouped. Home births and unknown residence or providers stay separate. Hover gives counts and percentages of the chart's recorded deliveries; All flows retains every LA and individual trust.
 
 ::: panel-tabset
-
 ### From each resident LA
 
 ```{r}
@@ -1637,11 +1636,9 @@ delivery_geography$matrix_values_table
 LA contributions divide by all hospital deliveries at the receiving organisation. Age mix divides each age band by that LA's deliveries here. Charts keep cluster LAs and the ten largest additional 2025/26 feeder LAs, combining the rest; tables retain every LA. Home births are excluded and unknown LA or age remains labelled. Scroll horizontally for wider grids.
 
 ::::: panel-tabset
-
 ### Trusts
 
 ::: panel-tabset
-
 #### LA contributions
 
 ```{r}
@@ -1657,13 +1654,11 @@ htmltools::browsable(htmltools::tagList(delivery_geography$mapping_grids$Trust$o
 
 htmltools::browsable(htmltools::tagList(delivery_geography$mapping_grids$Trust$age_chart))
 ```
-
 :::
 
 ### ICBs and combined cluster
 
 ::: panel-tabset
-
 #### LA contributions
 
 ```{r}
@@ -1679,7 +1674,6 @@ htmltools::browsable(htmltools::tagList(delivery_geography$mapping_grids$ICB_Clu
 
 htmltools::browsable(htmltools::tagList(delivery_geography$mapping_grids$ICB_Cluster$age_chart))
 ```
-
 :::
 
 ### All LA tables
@@ -1697,7 +1691,6 @@ htmltools::browsable(htmltools::tagList(delivery_geography$mapping_tables$table)
 
 htmltools::browsable(htmltools::tagList(delivery_geography$mapping_tables$age_table))
 ```
-
 :::::
 
 ## 8.3a Counts and LA contributions, 2023/24 to 2025/26 {#delivery-la-mapping-counts}
@@ -1736,7 +1729,7 @@ delivery_geography$outputs[["trust-rbk"]]$count_table
 ```
 :::
 
-#### The Royal Wolverhampton NHS Trust {#delivery-geography-counts-trust-rl4}
+#### The Royal Wolverhampton NHS Trust
 
 ::: panel-tabset
 ##### Counts
@@ -2279,7 +2272,6 @@ if (nzchar(first_draft_projections$note)) {
 Each coloured dot shows the percentage of an LA's pregnancies in that age band delivered here. LAs are ordered by delivery volume, keeping cluster LAs and the ten largest additional feeders; All other feeder LAs combines the remaining contributing LAs. Home births remain in LA denominators. Tables retain every LA and include unknown residence or age.
 
 ::: panel-tabset
-
 ### Trusts
 
 ```{r}
@@ -2328,11 +2320,9 @@ first_draft_projections$geography_table
 Method 1 ONS maternity growth is applied within each feeder LA and age band, using 2023 LA geography. Actual 2025/26 flows are unchanged; growth uses ONS mid-2026 as its reference. Unmatched flows stay at baseline counts; see projection coverage.
 
 ::::: panel-tabset
-
 ### Trusts
 
 ::: panel-tabset
-
 #### ONS growth
 
 ```{r}
@@ -2348,13 +2338,11 @@ htmltools::browsable(htmltools::tagList(first_draft_projections$age_grids$Trust$
 
 htmltools::browsable(htmltools::tagList(first_draft_projections$age_grids$Trust$incoming_chart))
 ```
-
 :::
 
 ### ICBs and whole cluster
 
 ::: panel-tabset
-
 #### ONS growth
 
 ```{r}
@@ -2370,7 +2358,6 @@ htmltools::browsable(htmltools::tagList(first_draft_projections$age_grids$ICB_Cl
 
 htmltools::browsable(htmltools::tagList(first_draft_projections$age_grids$ICB_Cluster$incoming_chart))
 ```
-
 :::
 
 ### ONS growth — tables
@@ -2388,7 +2375,6 @@ htmltools::browsable(first_draft_projections$age_tables$growth_table)
 
 htmltools::browsable(first_draft_projections$age_tables$incoming_table)
 ```
-
 :::::
 
 ## 9.3 Total maternity projections {#projection-total-maternities}
@@ -2396,7 +2382,6 @@ htmltools::browsable(first_draft_projections$age_tables$incoming_table)
 Incoming flows summed across all feeder LAs and ages. Baseline: actual 2025/26; later years: ONS mid-year growth, with the 2025/26 mapping held fixed. Each line represents one organisation.
 
 ::: panel-tabset
-
 ### Trusts
 
 ```{r}
@@ -2428,7 +2413,6 @@ htmltools::browsable(htmltools::tagList(first_draft_projections$total_charts$Clu
 
 first_draft_projections$all_totals_table
 ```
-
 :::
 
 ## 9.4 Percentage change from 2025/26 {#projection-percentage-change}
@@ -2436,7 +2420,6 @@ first_draft_projections$all_totals_table
 Relative change in total maternities from actual 2025/26, using the same projections. Each line represents one organisation. A zero baseline has no calculable percentage change.
 
 ::: panel-tabset
-
 ### Trusts
 
 ```{r}
@@ -2460,7 +2443,6 @@ htmltools::browsable(htmltools::tagList(first_draft_projections$change_charts$IC
 
 first_draft_projections$all_changes_table
 ```
-
 :::
 
 ## 9.5 Retrospective check: observed versus modelled, 2023/24–2025/26 {#projection-retrospective-check}

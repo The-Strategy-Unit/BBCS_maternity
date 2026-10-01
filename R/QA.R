@@ -174,8 +174,43 @@ if (file.exists(".delivery_geography.rds")) {
     numbers_match(sum(delivery_mapping$sankey_links$N), destination_total))
   qa_check("Section 8 grouped matrix retains all destination counts",
     numbers_match(sum(delivery_mapping$grouped_matrix$N), destination_total))
-  qa_check("Section 8 shows no more than ten additional delivery organisations",
-    length(delivery_mapping$visible_other_trusts) <= 10L)
+  qa_check("Section 8.1 destination grid shows no more than ten additional organisations",
+    length(delivery_mapping$visible_other_trusts) <= delivery_mapping$sankey_focus_n)
+  # Check the separately grouped charts against their original delivery counts.
+  la_links <- delivery_mapping$sankey_by_la_links
+  destination_links <- delivery_mapping$sankey_by_destination_links
+  qa_check("Section 8.1 LA charts retain all recorded deliveries",
+    numbers_match(sum(vapply(la_links, function(links) sum(links$N), numeric(1))), destination_total))
+  qa_check("Section 8.1 destination charts retain all recorded deliveries",
+    numbers_match(sum(vapply(destination_links, function(links) sum(links$N), numeric(1))), destination_total))
+  chart_counts <- delivery_mapping$matrix_data |>
+    dplyr::mutate(Origin_focus = dplyr::case_when(
+      grepl("^Unknown|^L999", LA) ~ "Unknown LA",
+      LA %in% names(la_links) ~ LA, TRUE ~ "All other feeder LAs"),
+      Destination_focus = ifelse(Destination %in% names(destination_links), Destination, "All other trusts"))
+  main_trust_codes <- setdiff(names(trust_labels), "Other")
+  cluster_la_codes <- readr::read_csv("config/local_authorities.csv", show_col_types = FALSE)$area_code
+  for (origin in names(la_links)) {
+    links <- la_links[[origin]]
+    original <- chart_counts[chart_counts$Origin_focus == origin, , drop = FALSE]
+    qa_check(paste("Section 8.1 LA chart keeps its deliveries and home births:", origin),
+      numbers_match(c(sum(links$N), sum(links$N[links$Destination_group == "Home"])),
+        c(sum(original$N), sum(original$N[original$Destination == "Home"]))))
+    extra_trusts <- setdiff(unique(links$Destination_group),
+      c(main_trust_codes, "Home", "Unknown provider", "All other trusts"))
+    qa_check(paste("Section 8.1 LA chart has up to five other trusts, ranked by volume:", origin),
+      length(extra_trusts) <= delivery_mapping$sankey_top_n && all(diff(links$N) <= 0))
+  }
+  for (destination in names(destination_links)) {
+    links <- destination_links[[destination]]
+    original <- chart_counts[chart_counts$Destination_focus == destination, , drop = FALSE]
+    qa_check(paste("Section 8.1 destination chart keeps its recorded deliveries:", destination),
+      numbers_match(sum(links$N), sum(original$N)))
+    extra_las <- setdiff(unique(links$Origin),
+      c(cluster_la_codes, "Unknown LA", "All other feeder LAs"))
+    qa_check(paste("Section 8.1 destination chart has up to five other LAs, ranked by volume:", destination),
+      length(extra_las) <= delivery_mapping$sankey_top_n && all(diff(links$N) <= 0))
+  }
   qa_details$unmatched_la_names <- delivery_records |>
     dplyr::filter(LA_name == "Unmatched LA") |> dplyr::distinct(LA)
   qa_details$unmatched_trust_names <- delivery_mapping$matrix_data |>

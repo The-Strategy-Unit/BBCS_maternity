@@ -1,11 +1,12 @@
 # Section 8: Deliveries by LA and Age Bands.
 # Run after additional_analysis.R, or use R/Run analysis.R.
 
-# Settings: keep the cluster LAs/trusts and the ten largest additional flows.
+# Settings: retain ten additional chart areas; show five additional flows within each 8.1 chart.
 delivery_years <- c("2023/24", "2024/25", "2025/26")
 delivery_age_bands <- c("<20", "20-24", "25-29", "30-34", "35-39", "40+", "Unknown")
 additional_las_to_show <- 10L
-additional_trusts_to_show <- 10L
+sankey_focus_n <- 10L
+sankey_top_n <- 5L
 delivery_chart_blue <- "#005EB8"
 delivery_palette <- "Dark 3"
 cluster_las <- readr::read_csv("config/local_authorities.csv", show_col_types = FALSE)$area_code
@@ -111,7 +112,7 @@ build_delivery_geography <- function(years = delivery_years, age_bands = deliver
     dplyr::group_by(Destination) |>
     dplyr::summarise(N = sum(N), .groups = "drop") |>
     dplyr::arrange(dplyr::desc(N), Destination) |>
-    dplyr::slice_head(n = additional_trusts_to_show) |>
+    dplyr::slice_head(n = sankey_focus_n) |>
     dplyr::pull(Destination)
   destination_matrix <- destination_matrix |>
     dplyr::mutate(Destination_group = dplyr::case_when(
@@ -146,14 +147,15 @@ build_delivery_geography <- function(years = delivery_years, age_bands = deliver
     gt::fmt_number(columns = c("N", "Origin_total"), decimals = 0) |>
     gt::fmt_percent(columns = "Share", decimals = 1)
 
-  # Step 4: turn the destination matrix into a Sankey, ordered by volume.
+  # Step 4: choose a manageable set of LA and destination charts using overall counts.
+  # Within each chart, the five additional flows are chosen again from its own raw data.
   origin_rank <- destination_matrix |>
     dplyr::group_by(LA, Resident_LA) |>
     dplyr::summarise(N = sum(N), .groups = "drop") |>
     dplyr::arrange(dplyr::desc(N), Resident_LA)
   unknown_las <- origin_rank$LA[grepl("^Unknown|^L999", origin_rank$LA)]
   top_las <- c(intersect(cluster_las, origin_rank$LA),
-    head(origin_rank$LA[!origin_rank$LA %in% c(cluster_las, unknown_las)], additional_las_to_show))
+    head(origin_rank$LA[!origin_rank$LA %in% c(cluster_las, unknown_las)], sankey_focus_n))
   sankey_links <- destination_matrix |>
     dplyr::mutate(Origin = dplyr::case_when(LA %in% unknown_las ~ "Unknown LA",
       LA %in% top_las ~ LA, TRUE ~ "All other feeder LAs")) |>
@@ -195,11 +197,68 @@ build_delivery_geography <- function(years = delivery_years, age_bands = deliver
     plotly::layout(font = list(family = "Arial", size = 11), margin = list(l = 12, r = 12, t = 15, b = 15)) |>
     plotly::config(displayModeBar = FALSE, responsive = TRUE)
 
-  # Step 4a: split the same flows into readable charts, keeping each LA's colour.
-  # One view follows a single LA to its destinations; the other shows a destination's feeder LAs.
+  # Step 4a: keep raw destinations and LAs until each chart's top five has been selected.
+  # The focus groups choose which records belong to each chart; they do not group its flows.
+  raw_sankey_flows <- destination_matrix |>
+    dplyr::mutate(LA = ifelse(LA %in% unknown_las, "Unknown LA", LA),
+      Origin_focus = ifelse(LA %in% c(top_las, "Unknown LA"), LA, "All other feeder LAs"),
+      Destination_focus = Destination_group) |>
+    dplyr::select(LA, Destination, Origin_focus, Destination_focus, N)
+
+  # Select five additional delivery trusts separately for every LA chart.
+  # Main trusts, home births and unknown providers never enter the top-five competition.
+  sankey_by_la_links <- stats::setNames(lapply(origins, function(origin) {
+    raw <- raw_sankey_flows[raw_sankey_flows$Origin_focus == origin, , drop = FALSE]
+    local_other_trusts <- raw |>
+      dplyr::filter(!Destination %in% c(main_trusts, "Home", "Unknown provider")) |>
+      dplyr::group_by(Destination) |>
+      dplyr::summarise(N = sum(N), .groups = "drop") |>
+      dplyr::arrange(dplyr::desc(N), Destination) |>
+      dplyr::slice_head(n = sankey_top_n) |>
+      dplyr::pull(Destination)
+    raw |>
+      dplyr::mutate(Origin = origin, Destination_group = ifelse(
+        Destination %in% c(main_trusts, local_other_trusts, "Home", "Unknown provider"),
+        Destination, "All other trusts")) |>
+      dplyr::group_by(Origin, Destination_group) |>
+      dplyr::summarise(N = sum(N), .groups = "drop") |>
+      dplyr::arrange(dplyr::desc(N), Destination_group)
+  }), origins)
+
+  # Select five additional feeder LAs separately for every delivery destination chart.
+  sankey_by_destination_links <- stats::setNames(lapply(destinations, function(destination) {
+    raw <- raw_sankey_flows[raw_sankey_flows$Destination_focus == destination, , drop = FALSE]
+    local_other_las <- raw |>
+      dplyr::filter(!LA %in% c(cluster_las, "Unknown LA")) |>
+      dplyr::group_by(LA) |>
+      dplyr::summarise(N = sum(N), .groups = "drop") |>
+      dplyr::arrange(dplyr::desc(N), LA) |>
+      dplyr::slice_head(n = sankey_top_n) |>
+      dplyr::pull(LA)
+    raw |>
+      dplyr::mutate(Origin = ifelse(LA %in% c(cluster_las, local_other_las, "Unknown LA"),
+        LA, "All other feeder LAs"), Destination_group = destination) |>
+      dplyr::group_by(Origin, Destination_group) |>
+      dplyr::summarise(N = sum(N), .groups = "drop") |>
+      dplyr::arrange(dplyr::desc(N), Origin)
+  }), destinations)
+
+  # Use complete name/colour maps: a locally important feeder may not be in the overall chart list.
+  all_origin_labels <- stats::setNames(la_names$Resident_LA, la_names$LA)
+  all_origin_labels["Unknown LA"] <- "Unknown LA"
+  all_origin_labels["All other feeder LAs"] <- "All other feeder LAs"
+  all_destination_labels <- destination_matrix |>
+    dplyr::distinct(Destination, Delivery_destination)
+  all_destination_labels <- stats::setNames(all_destination_labels$Delivery_destination,
+    all_destination_labels$Destination)
+  all_destination_labels["All other trusts"] <- "All other trusts"
+  all_origins <- c(sort(unique(raw_sankey_flows$LA)), "All other feeder LAs")
+  origin_colours <- stats::setNames(grDevices::hcl.colors(length(all_origins), palette = delivery_palette), all_origins)
+
+  # Draw names without wrapping, with every node ranked by that chart's own volume.
   small_sankey <- function(links, origin_codes, destination_codes, percentage_label) {
-    source_names <- origin_labels[match(origin_codes, origins)]
-    target_names <- destination_labels[match(destination_codes, destinations)]
+    source_names <- unname(all_origin_labels[origin_codes])
+    target_names <- unname(all_destination_labels[destination_codes])
     source_counts <- vapply(origin_codes, function(code) sum(links$N[links$Origin == code]), numeric(1))
     target_counts <- vapply(destination_codes, function(code) sum(links$N[links$Destination_group == code]), numeric(1))
     total <- sum(links$N)
@@ -218,16 +277,16 @@ build_delivery_geography <- function(years = delivery_years, age_bands = deliver
         pad = 28, thickness = 18,
         x = c(rep(0.02, length(origin_codes)), rep(0.98, length(destination_codes))),
         y = c(node_positions(source_counts), node_positions(target_counts)),
-        color = c(palette[match(origin_codes, origins)], rep("#727272", length(destination_codes))),
+        color = c(unname(origin_colours[origin_codes]), rep("#727272", length(destination_codes))),
         customdata = paste0(node_names, "<br>Recorded deliveries: ", scales::comma(node_counts, accuracy = 1)),
         hovertemplate = "%{customdata}<extra></extra>"),
       link = list(
         source = match(links$Origin, origin_codes) - 1L,
         target = length(origin_codes) + match(links$Destination_group, destination_codes) - 1L,
         value = links$N,
-        color = grDevices::adjustcolor(palette[match(links$Origin, origins)], alpha.f = 0.45),
-        customdata = paste0(origin_labels[match(links$Origin, origins)], " to ",
-          destination_labels[match(links$Destination_group, destinations)],
+        color = grDevices::adjustcolor(unname(origin_colours[links$Origin]), alpha.f = 0.45),
+        customdata = paste0(unname(all_origin_labels[links$Origin]), " to ",
+          unname(all_destination_labels[links$Destination_group]),
           "<br>Deliveries: ", scales::comma(links$N, accuracy = 1),
           "<br>% of ", percentage_label, ": ", scales::percent(links$N / total, accuracy = 0.1)),
         hovertemplate = "%{customdata}<extra></extra>")) |>
@@ -237,21 +296,17 @@ build_delivery_geography <- function(years = delivery_years, age_bands = deliver
   sankey_by_la_grid <- htmltools::div(
     style = "display: grid; grid-template-columns: repeat(2, minmax(600px, 1fr)); gap: 24px; overflow-x: auto;",
     htmltools::tagList(lapply(origins, function(origin) {
-      links <- sankey_links |>
-        dplyr::filter(Origin == origin) |>
-        dplyr::arrange(dplyr::desc(N), Destination_group)
+      links <- sankey_by_la_links[[origin]]
       htmltools::div(style = "min-width: 0;",
         htmltools::h3(style = "font-size: 15px; margin: 0 0 8px;", origin_labels[match(origin, origins)]),
         small_sankey(links, origin, links$Destination_group, "recorded deliveries from this LA group"))
     })))
 
-  # Step 4b: use the same counts to show where each delivery destination's mothers lived.
+  # Step 4b: show each destination's locally selected feeder LAs, including the home-birth chart.
   sankey_by_destination_grid <- htmltools::div(
     style = "display: grid; grid-template-columns: repeat(2, minmax(600px, 1fr)); gap: 24px; overflow-x: auto;",
     htmltools::tagList(lapply(destinations, function(destination) {
-      links <- sankey_links |>
-        dplyr::filter(Destination_group == destination) |>
-        dplyr::arrange(dplyr::desc(N), Origin)
+      links <- sankey_by_destination_links[[destination]]
       htmltools::div(style = "min-width: 0;",
         htmltools::h3(style = "font-size: 15px; margin: 0 0 8px;", destination_labels[match(destination, destinations)]),
         small_sankey(links, links$Origin, destination, "recorded deliveries at this destination"))
@@ -495,6 +550,8 @@ build_delivery_geography <- function(years = delivery_years, age_bands = deliver
     la_lookup = la_lookup, trust_lookup = trust_lookup,
     matrix_values_table = matrix_values_table, sankey_chart = scroll_chart(sankey_chart), sankey_links = sankey_links,
     sankey_by_la_grid = sankey_by_la_grid, sankey_by_destination_grid = sankey_by_destination_grid,
+    sankey_by_la_links = sankey_by_la_links, sankey_by_destination_links = sankey_by_destination_links,
+    sankey_focus_n = sankey_focus_n, sankey_top_n = sankey_top_n,
     hospital_mapping = hospital_mapping, la_trends = la_trends, outputs = organisation_plots,
     mapping_grids = mapping_grids, mapping_tables = mapping_tables,
     all_results_table = wide_trend_table(la_trends, "All organisations: hospital deliveries by resident LA", grouped = TRUE),

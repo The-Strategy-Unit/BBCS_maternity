@@ -8,7 +8,7 @@ library(readr)
 library(readxl)
 library(tidyr)
 
-ons_data_dir <- function() file.path("..", "data")
+ons_data_dir <- function() "data"
 
 read_area_config <- function(path = file.path("config", "local_authorities.csv")) {
   config <- read_csv(path, show_col_types = FALSE, col_types = cols(.default = col_character())) |>

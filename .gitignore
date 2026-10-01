@@ -2,35 +2,42 @@
 # Generated output, private Sankey data, local files and old report copies stay local.
 *
 !/data/
-!/ons/
-!/ons/R/
-!/ons/*.R
-!/ons/*.qmd
-!/ons/R/*.R
-!/ons/assets/
-!/ons/config/
+!/R/
+!/assets/
+!/config/
 !/.gitignore
 !/CODEOWNERS
 !/LICENSE
 !/README.md
-!/Read parquet files from azure.R
-!/matrix of booking appts and births.R
-!/ons/.gitignore
-!/ons/index.qmd
-!/ons/additional_analysis.R
-!/ons/R/ons_data.R
-!/ons/_quarto.yml
-!/ons/_brand.yml
-!/ons/styles.css
-!/ons/config/analysis_parameters.csv
-!/ons/config/local_authorities.csv
-!/ons/assets/logo_black_favicon.png
-!/ons/assets/logo_black_medium.png
-!/ons/assets/logo_yellow_medium.png
+!/ONS-analysis-notes.md
+!/terminology-key.md
+!/R/Read parquet files from azure.R
+!/R/matrix of booking appts and births.R
+!/index.qmd
+!/R/additional_analysis.R
+!/R/ons_data.R
+!/_quarto.yml
+!/_brand.yml
+!/styles.css
+!/config/analysis_parameters.csv
+!/config/local_authorities.csv
+!/assets/logo_black_favicon.png
+!/assets/logo_black_medium.png
+!/assets/logo_yellow_medium.png
 !/data/2023birthregistrations.xlsx
 !/data/2024birthregistrations.xlsx
 !/data/2025birthregistrations.xlsx
 !/data/ons_2022_based_births_migration_category.csv
 !/data/ons_2022_based_female_population_projections.csv
 !/data/ons_live_births_la_2013_2025.csv
-!/ons/ONS Birth Methods Review.docx
+!/ONS Birth Methods Review.docx
+
+# Generated Quarto files and separately supplied data stay local.
+/.quarto/
+**/*.quarto_ipynb
+/_site/
+/_freeze/
+/*_files/
+/*_cache/
+/sankey data/
+/.patient_flows.rds

@@ -1,5 +1,5 @@
-# Run: Read parquet files from azure.R; matrix of booking appts and births.R
-# Then: source("ons/additional_analysis.R")
+# From the project root, run R/Read parquet files from azure.R;
+# R/matrix of booking appts and births.R; then source("R/additional_analysis.R")
 
 ## 1. Patient flows ----------------------------------------------------------
 # Inputs: icb_matrix_data; trust_matrix_data
@@ -150,9 +150,9 @@ trust_sankey <- make_sankey(
 )
 
 ## 2. Patient flows by financial year ---------------------------------------
-# Input: final_cohort_2326 from Read parquet files from azure.R
+# Input: final_cohort_2326 from R/Read parquet files from azure.R
 if (!exists("final_cohort_2326")) {
-  stop("Run Read parquet files from azure.R before additional_analysis.R.")
+  stop("Run R/Read parquet files from azure.R before R/additional_analysis.R.")
 }
 
 # Dates: preserve Date/POSIX values; ISO or UK text
@@ -543,9 +543,8 @@ if (cluster_activity$available) {
 }
 
 # Index report hand-off
-analysis_dir <- if (file.exists("ons/additional_analysis.R")) "ons" else "."
 saveRDS(
   list(icb_sankey = icb_sankey, trust_sankey = trust_sankey, by_year = by_year,
        cluster_activity = cluster_activity),
-  file.path(analysis_dir, ".patient_flows.rds")
+  ".patient_flows.rds"
 )

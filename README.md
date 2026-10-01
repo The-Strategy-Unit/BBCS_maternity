@@ -15,27 +15,37 @@ install.packages(c("dplyr", "janitor", "purrr", "readr", "readxl", "tidyr",
 From the repository root run:
 
 ```sh
-quarto render ons
+quarto render
 ```
 
-Open `ons/_site/index.html` to see the result. Generated files are ignored by Git.
+Open `_site/index.html` to see the result. Generated files are ignored by Git.
 The ONS calculations run on every render; freezing is disabled. Edit
-`ons/index.qmd` for report changes and `ons/R/ons_data.R` for ONS data
-preparation. Area and population-age settings are in `ons/config/`.
+`index.qmd` for report changes and `R/ons_data.R` for ONS data
+preparation. Area and population-age settings are in `config/`.
+The Quarto project runs its R chunks from this repository root, alongside the
+`data/` folder. Open `BBCS_maternity.Rproj` when working interactively in RStudio.
+
+`index.qmd` is the report source. Files such as `index.rmarkdown`, `index_files/`
+and `_site/` are generated output; regenerate them in the secure environment.
+Historical setup and QA notes are preserved in `ONS-analysis-notes.md`.
 
 ## Patient flows
 
 From the repository root, run these in the secure R session before rendering:
 
 ```r
-source("Read parquet files from azure.R")
-source("matrix of booking appts and births.R")
-source("ons/additional_analysis.R")
+source("R/Read parquet files from azure.R")
+source("R/matrix of booking appts and births.R")
+source("R/additional_analysis.R")
 ```
 
-`additional_analysis.R` saves `ons/.patient_flows.rds` for the Sankeys in
-`ons/index.qmd`. Without this file, those charts are skipped. The generated RDS
-and HTML are ignored by Git.
+Keep the working directory at the project root when sourcing these scripts.
+All R scripts live in `R/`; their data paths use the project root.
+
+`R/additional_analysis.R` saves `.patient_flows.rds` in the project root for the
+Sankeys and cluster-activity tables in `index.qmd`. Without this file, those
+outputs are skipped. The generated RDS and HTML, and the separately supplied
+`sankey data/` folder, are ignored by Git.
 
 ## ONS inputs
 

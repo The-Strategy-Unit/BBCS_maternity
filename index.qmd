@@ -1590,7 +1590,7 @@ if (any(vapply(flow_years, function(year) {
   is.null(patient_flows_by_year[[year]]$icb_table) ||
     is.null(patient_flows_by_year[[year]]$trust_table)
 }, logical(1)))) {
-  stop("Run ons/additional_analysis.R before rendering ons/index.qmd.")
+  stop("Run R/additional_analysis.R before rendering index.qmd.")
 }
 ```
 
@@ -1739,7 +1739,7 @@ cluster_activity_ready <- !is.null(cluster_activity) && isTRUE(cluster_activity$
 #| results: asis
 
 if (is.null(cluster_activity)) {
-  cat("Run ons/additional_analysis.R before rendering ons/index.qmd.")
+  cat("Run R/additional_analysis.R before rendering index.qmd.")
 } else if (!cluster_activity_ready) {
   cat(cluster_activity$missing)
 } else {
@@ -1850,7 +1850,7 @@ cat("\n\n", cluster_activity$pathway_needed)
 #| eval: !expr cluster_activity_ready
 
 if (is.null(cluster_activity$pathway_icb_sankeys)) {
-  stop("Run ons/additional_analysis.R before rendering ons/index.qmd.")
+  stop("Run R/additional_analysis.R before rendering index.qmd.")
 }
 htmltools::browsable(cluster_activity$pathway_icb_sankeys)
 ```
@@ -1862,7 +1862,7 @@ htmltools::browsable(cluster_activity$pathway_icb_sankeys)
 #| eval: !expr cluster_activity_ready
 
 if (is.null(cluster_activity$pathway_trust_sankeys)) {
-  stop("Run ons/additional_analysis.R before rendering ons/index.qmd.")
+  stop("Run R/additional_analysis.R before rendering index.qmd.")
 }
 htmltools::browsable(cluster_activity$pathway_trust_sankeys)
 ```

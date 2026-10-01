@@ -4,6 +4,9 @@
 !/data/
 !/ons/
 !/ons/R/
+!/ons/*.R
+!/ons/*.qmd
+!/ons/R/*.R
 !/ons/assets/
 !/ons/config/
 !/.gitignore
@@ -14,6 +17,7 @@
 !/matrix of booking appts and births.R
 !/ons/.gitignore
 !/ons/index.qmd
+!/ons/additional_analysis.R
 !/ons/R/ons_data.R
 !/ons/_quarto.yml
 !/ons/_brand.yml
@@ -29,3 +33,4 @@
 !/data/ons_2022_based_births_migration_category.csv
 !/data/ons_2022_based_female_population_projections.csv
 !/data/ons_live_births_la_2013_2025.csv
+!/ons/ONS Birth Methods Review.docx

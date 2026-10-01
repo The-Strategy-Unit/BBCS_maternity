@@ -71,6 +71,20 @@ thead {
 }
 
 a { color: var(--su-blue); }
+
+/* Visible review markup for Lucy Morgan's wording edits and questions. */
+.lm-edit, .lm-query, .lm-edit a, .lm-query a {
+  color: #b42318;
+}
+
+.lm-query {
+  display: block;
+  padding: 0.65rem 0.85rem;
+  border-left: 3px solid #b42318;
+  background: #fff;
+  font-style: italic;
+}
+
 /* Indented, readable word equations; allow scrolling on narrow screens. */
 .word-formulas {
   margin: 1.2rem 0 1.5rem 1.5rem;

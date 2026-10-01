@@ -2032,7 +2032,7 @@ if (is.null(first_draft_projections)) {
 
 ## 9.1 Feeder LA and age-band shares, 2025/26 {#projection-feeder-mapping}
 
-MSDS deliveries here ÷ all pregnancies in the same resident LA and age band. Home births remain in LA totals; ICBs and the cluster group delivery trusts. The totals file's `count` is assumed to count pregnancies.
+MSDS deliveries here ÷ all pregnancies in the same resident LA and age band. Home births remain in LA totals; ICBs and the cluster group delivery trusts.
 
 ::: panel-tabset
 

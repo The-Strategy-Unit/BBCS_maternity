@@ -12,18 +12,9 @@ local({
     "R/Imaginary Example.R"
   )
 
-  missing_scripts <- scripts[!file.exists(scripts)]
-  if (length(missing_scripts)) {
-    stop(
-      "Run this script from the BBCS_maternity project root. ",
-      "Open BBCS_maternity.Rproj first. Missing scripts: ",
-      paste(missing_scripts, collapse = ", "),
-      call. = FALSE
-    )
-  }
-
   # Clear old report data before starting, so a failed run cannot leave stale charts.
-  unlink(c(".patient_flows.rds", ".delivery_geography.rds", ".projections.rds"))
+  unlink(c(".patient_flows.rds", ".delivery_geography.rds", ".projections.rds",
+           ".imaginary_example.rds"))
 
   # Run each script in order; an error stops preparation at the problem.
   for (i in seq_along(scripts)) {

@@ -39,10 +39,14 @@ Then run this in the terminal, from the same project folder:
 quarto render index.qmd
 ```
 
-Open `_site/index.html`. Rendering recalculates the public ONS methods and the
-imaginary example, but reads saved outputs for sections 4–9. It does not rerun the
+Open `_site/index.html`. Rendering recalculates the public ONS methods, but reads
+saved outputs for sections 4–10. It does not rerun the
 Azure preparation. Run the preparation script again after changing those analysis
 scripts or their data, then render again.
+
+To view an individual chart or table in RStudio, run the preparation script first,
+then use the green Run button on that chart or table's chunk. Section setup chunks
+only load saved objects and do not display a chart.
 
 ## Which files do what?
 
@@ -142,10 +146,11 @@ The preparation scripts save these files in the project root:
 | `.patient_flows.rds` | Sections 4–7 |
 | `.delivery_geography.rds` | Section 8 |
 | `.projections.rds` | Section 9, including the retrospective comparison |
+| `.imaginary_example.rds` | Section 10: imaginary worked example |
 
-If a section is missing or unavailable, read its message and the preparation
-console output. Correct the reported input issue, rerun preparation and render
-again. Re-rendering alone will not refresh these files.
+The QMD reads these files directly. If one is missing, R reports an error rather
+than skipping its section. Run preparation again to refresh the saved outputs;
+re-rendering alone will not refresh these files.
 
 Generated RDS files and HTML stay local and are ignored by Git. Prepare the RDS
 files on the data computer; they are not transferred with code changes. Current

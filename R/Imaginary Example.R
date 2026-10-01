@@ -139,3 +139,5 @@ make_imaginary_example <- function() {
 }
 
 imaginary_example <- make_imaginary_example()
+# Save the finished example so rendering does not repeat the ONS calculations.
+saveRDS(imaginary_example, ".imaginary_example.rds")

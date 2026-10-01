@@ -28,6 +28,8 @@ format:
     smooth-scroll: true
     code-fold: true
     code-summary: "Show R code"
+    # GT already formats the tables; leave that HTML unchanged.
+    html-table-processing: none
     embed-resources: true
 
 execute:

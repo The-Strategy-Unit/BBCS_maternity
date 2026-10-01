@@ -3,6 +3,10 @@
 *
 !/data/
 !/R/
+# Include current and future R scripts, including scripts in subfolders.
+!/R/**/
+!/R/**/*.R
+!/R/**/*.r
 !/assets/
 !/config/
 !/.gitignore
@@ -11,11 +15,7 @@
 !/README.md
 !/ONS-analysis-notes.md
 !/terminology-key.md
-!/R/Read parquet files from azure.R
-!/R/matrix of booking appts and births.R
 !/index.qmd
-!/R/additional_analysis.R
-!/R/ons_data.R
 !/_quarto.yml
 !/_brand.yml
 !/styles.css

@@ -157,9 +157,12 @@ counts combine the same booking starts shown in the two ICB charts.
 
 Section 8 repeats section 7 with five outcome lines: the within-cluster delivery
 group is split into the same trust as booking and a different cluster trust.
-The comparison always uses booking and delivery trust codes, including in ICB
-and combined-cluster panels. Both sections retain the same all-starts booking-year
-denominators, follow-up rules and relative-percentage-change calculation.
+The trust-comparison panels retain this split when grouped into ICB and cluster totals.
+Separate ICB-comparison tabs in 8.1 and 8.2 compare the booking trust's ICB with
+the delivery trust's ICB: a transfer between trusts in the same ICB stays in the
+same-ICB group. The combined cluster pools these comparisons across both ICBs.
+Both views retain the same all-starts booking-year denominators, follow-up rules
+and relative-percentage-change calculation; they do not use residence ICB.
 
 ## Saved outputs and missing sections
 

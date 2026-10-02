@@ -533,9 +533,9 @@ build_delivery_geography <- function(years = delivery_years, age_bands = deliver
     origin_chart = mapping_grid(rows, "origin_chart"),
     age_chart = mapping_grid(rows, "age_chart")))
   # A common LA colour key for each grid leaves space for the actual trend charts.
-  trend_key <- dplyr::bind_rows(
-    data.frame(Origin_group = character(), Origin_name = character()),
-    lapply(organisation_plots, function(x) x$trend_groups)) |>
+  trend_key <- dplyr::bind_rows(c(
+    list(data.frame(Origin_group = character(), Origin_name = character())),
+    lapply(organisation_plots, function(x) x$trend_groups))) |>
     dplyr::distinct(Origin_group, Origin_name)
   trend_colours <- stats::setNames(grDevices::hcl.colors(nrow(trend_key), palette = delivery_palette),
     trend_key$Origin_group)

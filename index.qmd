@@ -1298,7 +1298,7 @@ ons_source_table(sources)
 
 # 4. Patient flows {#method-2-icb-of-residence-to-icb-of-birth}
 
-These diagrams show where **2025/26 recorded non-home deliveries** came from: first by the mother's residence ICB, then by booking trust. The destination is the delivery provider or its ICB.
+These diagrams show **2025/26 recorded non-home deliveries** by the mother's residence ICB, booking trust and delivery provider. Use the tabs to compare the two-stage flows or view residence, booking and birth together.
 
 **Shared counting rules for sections 4–10:** Sarah's supplied cohort is already one row per pregnancy. Each row contributes once, with no additional deduplication or exclusion for a missing identifier. Delivery-year totals require `birth_flag = 1` and a valid `birth_yr`; non-home totals also require `home_birth = 0`. Codes are trimmed and capitalised, and numeric values are read safely even when stored as factors.
 
@@ -1312,6 +1312,8 @@ readRDS(".patient_flows.rds")$flow_coverage_table
 ```
 
 The table accounts for records excluded by these rules. Home births and unknown home status appear separately in [section 9.1](#delivery-la-destinations). Unknown providers remain visible but cannot be assigned to a named trust.
+
+::: panel-tabset
 
 ### ICB of residence to ICB of birth
 
@@ -1332,6 +1334,22 @@ readRDS(".patient_flows.rds")$icb_sankey
 
 readRDS(".patient_flows.rds")$trust_sankey
 ```
+
+### Residence, booking and birth {#residence-booking-birth-flow}
+
+The same recorded non-home deliveries run from **residence ICB → booking trust → birth trust**. Unknown values remain visible. Each link describes the flow between adjacent stages.
+
+```{r}
+#| label: patient-flow-residence-booking-birth
+#| fig-alt: "Three-stage Sankey diagram showing recorded non-home deliveries in 2025/26 from the mother's residence ICB to booking trust and then birth trust, retaining unknown values at each stage."
+#| out-width: "100%"
+
+residence_booking_birth_sankey <- readRDS(".patient_flows.rds")$residence_booking_birth_sankey
+if (is.null(residence_booking_birth_sankey)) stop(
+  "Section 4 needs refreshed analysis outputs. Run source('R/Run analysis.R') before rendering.")
+residence_booking_birth_sankey
+```
+:::
 
 # 5. Patient flows by financial year {#patient-flows-by-year}
 
@@ -1586,7 +1604,7 @@ These charts show what happened after booking: delivery at a cluster trust, deli
 
 **Booking-year rules for sections 6–8:** one supplied pregnancy row with a cluster booking provider and a booking date in the year contributes one start. All starts stay in the denominator. Outcomes follow the supplied birth flag and location, including deliveries after the booking year or without a delivery-year value. If `birth_flag` is not 1, the outcome is “No recorded delivery”; a recorded birth with unknown home status or an unusable non-home provider has unknown location. Home births can still involve NHS care. Recent cohorts may have less follow-up, and “No recorded delivery” does not confirm that a pregnancy ended without a birth. Interpretation depends on the extract end date and whether starts without births are included.
 
-These booking-year denominators differ from the delivery-year totals elsewhere. [Section 8](#booking-delivery-destination-over-time) splits cluster deliveries into the same trust as booking and another cluster trust.
+These booking-year denominators differ from the delivery-year totals elsewhere. [Section 8](#booking-delivery-destination-over-time) splits cluster deliveries by whether the delivery trust or ICB matches booking.
 
 Tables include counts, all-starts denominators, percentages and changes. **Relative change = (current percentage / reference percentage − 1) × 100**: 20% rising to 25% is a 25% increase. The base year is 2023/24. No starts means no outcome percentage; a zero or unavailable reference share means no relative change.
 
@@ -1655,33 +1673,33 @@ delivery_over_time$change_table
 ```
 :::
 
-# 8. Booking organisation and delivery destination over time {#booking-delivery-destination-over-time}
+# 8. Booking trust, booking ICB and delivery destination over time {#booking-delivery-destination-over-time}
 
-These charts repeat section 7 with **delivery at the same booking trust** and **delivery at another cluster trust** shown separately. Compare five outcome shares using the same all-starts booking-year denominators, follow-up rules and relative-change calculation.
+These charts repeat section 7 with cluster deliveries split in two ways: **same or different trust from booking**, and **same or different ICB from booking**. Both use the same all-starts booking-year denominators, follow-up rules and relative-change calculation.
 
-| Outcome | Classification |
-|---|---|
-| Delivery at same organisation as booking | Recorded non-home delivery at the booking trust. |
-| Delivery at different organisation within cluster | Recorded non-home delivery at another cluster trust. |
-| Delivery outside cluster or home birth | Recorded non-home delivery at a known outside provider, or a recorded home birth. A home birth stays here even if its provider matches the booking trust. |
-| No recorded delivery | `birth_flag` is not 1, including missing or invalid flags. |
-| Delivery location unknown | Recorded birth with missing/invalid home status, or a non-home birth with an unusable provider. |
+| Comparison | Same as booking | Different within the cluster |
+|---|---|---|
+| Trust | Delivery at same trust as booking | Delivery at different trust within cluster |
+| ICB | Delivery ICB same as booking ICB | Delivery ICB different to booking ICB but within cluster |
 
-“Recorded” requires `birth_flag = 1`; “non-home” requires `home_birth = 0`. **Same organisation always compares booking trust with delivery trust**, including in the ICB and combined-cluster panels. A move between trusts in the same ICB is therefore a different-organisation delivery. The two cluster shares sum to section 7's cluster share; the other outcomes are unchanged.
+**Booking ICB means the booking trust's ICB, not the mother's residence ICB.** A transfer between two trusts in the same ICB is a different-trust delivery but a same-ICB delivery. The trust-comparison ICB panels simply group booking trusts; they still compare trusts. In the ICB-comparison panels, each pregnancy's booking and delivery ICBs are compared before the results are added for an ICB or the combined cluster.
+
+Both comparisons retain the other three outcomes: **delivery outside cluster or home birth**, **no recorded delivery**, and **delivery location unknown**. Recorded birth requires `birth_flag = 1`; same/different trust or ICB requires `home_birth = 0`. Home births remain in the outside/home group even when their provider matches booking. Missing/invalid home status or an unusable non-home provider means unknown location; a birth flag other than 1 means no recorded delivery. In either comparison, the two within-cluster shares sum to section 7's cluster share.
 
 ```{r}
 #| label: booking-delivery-over-time-setup
 #| include: false
 
 booking_delivery_over_time <- readRDS(".patient_flows.rds")$booking_delivery_over_time
-if (is.null(booking_delivery_over_time)) stop(
+booking_icb_delivery_over_time <- readRDS(".patient_flows.rds")$booking_icb_delivery_over_time
+if (is.null(booking_delivery_over_time) || is.null(booking_icb_delivery_over_time)) stop(
   "Section 8 needs refreshed analysis outputs. Run source('R/Run analysis.R') before rendering.")
 ```
 
 ## 8.1 Outcome percentages {#booking-delivery-outcome-percentages}
 
 ::: panel-tabset
-### Trusts
+### Trust comparison — trusts
 
 ```{r}
 #| label: booking-delivery-over-time-trust-charts
@@ -1689,7 +1707,7 @@ if (is.null(booking_delivery_over_time)) stop(
 htmltools::browsable(booking_delivery_over_time$chart_grids$Trust)
 ```
 
-### ICBs and combined cluster
+### Trust comparison — ICB and cluster totals
 
 ```{r}
 #| label: booking-delivery-over-time-icbs-cluster-charts
@@ -1697,21 +1715,39 @@ htmltools::browsable(booking_delivery_over_time$chart_grids$Trust)
 htmltools::browsable(booking_delivery_over_time$chart_grids$ICB_Cluster)
 ```
 
-### All results — table
+### ICB comparison — ICBs and cluster
+
+```{r}
+#| label: booking-icb-delivery-over-time-charts
+
+htmltools::browsable(booking_icb_delivery_over_time$chart_grids$ICB_Cluster)
+```
+
+### All results — tables
+
+#### Trust comparison
 
 ```{r}
 #| label: booking-delivery-over-time-results-table
 
 booking_delivery_over_time$table
 ```
+
+#### ICB comparison
+
+```{r}
+#| label: booking-icb-delivery-over-time-results-table
+
+booking_icb_delivery_over_time$table
+```
 :::
 
 ## 8.2 Percentage change from 2023/24 {#booking-delivery-outcome-percentage-change}
 
-Compare each outcome's share with 2023/24 using the [same relative-change calculation as section 7](#delivery-episodes-over-time). A zero or unavailable baseline share has no calculable change. The table groups the five outcomes under each year; counts and denominators are in subsection 8.1.
+Compare each outcome's share with 2023/24 using the [same relative-change calculation as section 7](#delivery-episodes-over-time). A zero or unavailable baseline share has no calculable change. Each table groups its five outcomes under each year; counts and denominators are in subsection 8.1.
 
 ::: panel-tabset
-### Trusts
+### Trust comparison — trusts
 
 ```{r}
 #| label: booking-delivery-change-trust-charts
@@ -1719,7 +1755,7 @@ Compare each outcome's share with 2023/24 using the [same relative-change calcul
 htmltools::browsable(booking_delivery_over_time$change_chart_grids$Trust)
 ```
 
-### ICBs and combined cluster
+### Trust comparison — ICB and cluster totals
 
 ```{r}
 #| label: booking-delivery-change-icbs-cluster-charts
@@ -1727,12 +1763,30 @@ htmltools::browsable(booking_delivery_over_time$change_chart_grids$Trust)
 htmltools::browsable(booking_delivery_over_time$change_chart_grids$ICB_Cluster)
 ```
 
-### All percentage changes — table
+### ICB comparison — ICBs and cluster
+
+```{r}
+#| label: booking-icb-delivery-change-charts
+
+htmltools::browsable(booking_icb_delivery_over_time$change_chart_grids$ICB_Cluster)
+```
+
+### All percentage changes — tables
+
+#### Trust comparison
 
 ```{r}
 #| label: booking-delivery-change-results-table
 
 booking_delivery_over_time$change_table
+```
+
+#### ICB comparison
+
+```{r}
+#| label: booking-icb-delivery-change-results-table
+
+booking_icb_delivery_over_time$change_table
 ```
 :::
 

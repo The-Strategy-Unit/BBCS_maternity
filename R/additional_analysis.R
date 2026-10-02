@@ -71,20 +71,21 @@ if (length(missing_objects)) stop("Run the preparation scripts first. Missing: "
 report_episodes <- prepare_report_cohort(final_cohort_2326)
 
 # Section 4: patient flows in 2025/26
-# This bit makes the residence-to-birth and booking-to-birth Sankeys.
+# Two-stage flows and the combined residence-to-booking-to-birth flow.
 # Clean the supplied codes and group providers outside the labelled areas as Other.
-# Each call below names its source, destination and count explicitly.
+group_flow_code <- function(x, keep_codes) {
+  code <- report_code(x)
+  code_pattern <- paste0("^", substr(keep_codes[1], 1, 1), "[A-Z0-9]{2}$")
+  ifelse(code %in% keep_codes, code,
+    ifelse(code == "OTHER" | grepl(code_pattern, code), "Other", "Unknown"))
+}
+
 make_flows <- function(source, target, count, keep_codes) {
-  group_code <- function(x) {
-    code <- report_code(x)
-    code_pattern <- paste0("^", substr(keep_codes[1], 1, 1), "[A-Z0-9]{2}$")
-    ifelse(code %in% keep_codes, code,
-      ifelse(code == "OTHER" | grepl(code_pattern, code), "Other", "Unknown"))
-  }
   count <- report_number(count)
   valid <- is.finite(count) & count > 0
   links <- data.frame(
-    source = group_code(source)[valid], target = group_code(target)[valid], n = count[valid]) |>
+    source = group_flow_code(source, keep_codes)[valid],
+    target = group_flow_code(target, keep_codes)[valid], n = count[valid]) |>
     dplyr::group_by(source, target) |>
     dplyr::summarise(n = sum(n), .groups = "drop")
   list(links = links)
@@ -108,6 +109,25 @@ make_cohort_year_flows <- function(start_year) {
 latest_flows <- make_cohort_year_flows(latest_year)
 icb_flow <- latest_flows$icb
 trust_flow <- latest_flows$trust
+
+# Keep each pregnancy's three organisations together before counting either leg.
+# The booking nodes combine origins; ribbons describe adjacent stages only.
+make_residence_booking_birth_flow <- function(cohort) {
+  paths <- tibble::tibble(
+    residence = group_flow_code(cohort$Resident_ICB, setdiff(names(icb_labels), "Other")),
+    booking = group_flow_code(cohort$Booking_Trust, setdiff(names(trust_labels), "Other")),
+    birth = group_flow_code(cohort$Trust, setdiff(names(trust_labels), "Other"))) |>
+    dplyr::count(residence, booking, birth, name = "n")
+  list(paths = paths,
+    residence_booking = paths |>
+      dplyr::group_by(source = residence, target = booking) |>
+      dplyr::summarise(n = sum(n), .groups = "drop"),
+    booking_birth = paths |>
+      dplyr::group_by(source = booking, target = birth) |>
+      dplyr::summarise(n = sum(n), .groups = "drop"))
+}
+residence_booking_birth_flow <- make_residence_booking_birth_flow(report_episodes |>
+  dplyr::filter(Delivery_year == latest_year, Birth_recorded, Home == 0))
 
 # Visible inclusion accounting: these mutually exclusive delivery categories add up.
 flow_coverage <- report_episodes |>
@@ -183,6 +203,67 @@ make_sankey <- function(flow, labels, source_suffix, target_suffix,
     plotly::config(displayModeBar = FALSE, responsive = TRUE)
 }
 
+# Three distinct node layers: the same trust at booking and birth has different IDs.
+make_three_stage_sankey <- function(flow) {
+  total <- sum(flow$paths$n)
+  if (!nrow(flow$paths)) return(htmltools::div("No recorded non-home deliveries in this year."))
+
+  residence <- icb_source_order[icb_source_order %in% flow$paths$residence]
+  booking <- trust_source_order[trust_source_order %in% flow$paths$booking]
+  birth <- trust_target_order[trust_target_order %in% flow$paths$birth]
+  stage <- rep(c("ICB of residence", "Booking trust", "Birth trust"),
+               c(length(residence), length(booking), length(birth)))
+  full_labels <- unname(c(flow_icb_labels[residence], flow_trust_labels[booking],
+                         flow_trust_labels[birth]))
+  short_labels <- sub(" NHS.*$", "", sub(" ICB$", "", full_labels))
+  short_labels <- vapply(short_labels, function(label)
+    paste(strwrap(label, width = 24), collapse = "<br>"), character(1))
+  icb_colours <- setNames(rep(flow_palette, length.out = length(icb_source_order)), icb_source_order)
+  trust_colours <- setNames(rep(flow_palette, length.out = length(trust_source_order)), trust_source_order)
+  icb_colours["Unknown"] <- trust_colours["Unknown"] <- "#999999"
+  node_colours <- unname(c(icb_colours[residence], trust_colours[booking], trust_colours[birth]))
+
+  first <- flow$residence_booking
+  second <- flow$booking_birth
+  from_id <- c(match(first$source, residence) - 1L,
+               length(residence) + match(second$source, booking) - 1L)
+  to_id <- c(length(residence) + match(first$target, booking) - 1L,
+             length(residence) + length(booking) + match(second$target, birth) - 1L)
+  counts <- c(first$n, second$n)
+  node_totals <- c(
+    vapply(residence, function(code) sum(first$n[first$source == code]), numeric(1)),
+    vapply(booking, function(code) sum(second$n[second$source == code]), numeric(1)),
+    vapply(birth, function(code) sum(second$n[second$target == code]), numeric(1)))
+  hover <- paste0(stage[from_id + 1L], ": ", full_labels[from_id + 1L], "<br>",
+    stage[to_id + 1L], ": ", full_labels[to_id + 1L],
+    "<br>Deliveries: ", scales::comma(counts),
+    "<br>", scales::percent(counts / node_totals[from_id + 1L], accuracy = 0.1),
+    " of deliveries from this origin at this stage",
+    "<br>", scales::percent(counts / total, accuracy = 0.1), " of all included deliveries")
+
+  plotly::plot_ly(type = "sankey", height = max(520, 58 * max(length(residence), length(booking), length(birth))),
+    orientation = "h", arrangement = "snap",
+    node = list(label = short_labels, color = node_colours, pad = 22, thickness = 18,
+      line = list(color = "rgba(44,40,37,0.35)", width = 0.5),
+      customdata = paste0(stage, ": ", full_labels, "<br>",
+        scales::percent(node_totals / total, accuracy = 0.1), " of all included deliveries"),
+      hovertemplate = "%{customdata}<br>Deliveries: %{value:,.0f}<extra></extra>"),
+    link = list(source = from_id, target = to_id, value = counts,
+      color = grDevices::adjustcolor(node_colours[from_id + 1L], alpha.f = 0.42),
+      customdata = hover, hovertemplate = "%{customdata}<extra></extra>")) |>
+    plotly::layout(font = list(family = "Arial", size = 11, color = "#2c2825"),
+      margin = list(l = 12, r = 12, t = 42, b = 12),
+      annotations = list(
+        list(x = 0, y = 1.07, xref = "paper", yref = "paper", xanchor = "left",
+             text = "<b>ICB of residence</b>", showarrow = FALSE),
+        list(x = 0.5, y = 1.07, xref = "paper", yref = "paper", xanchor = "center",
+             text = "<b>Booking trust</b>", showarrow = FALSE),
+        list(x = 1, y = 1.07, xref = "paper", yref = "paper", xanchor = "right",
+             text = "<b>Birth trust</b>", showarrow = FALSE)),
+      paper_bgcolor = "white", plot_bgcolor = "white") |>
+    plotly::config(displayModeBar = FALSE, responsive = TRUE)
+}
+
 # Chart objects
 icb_sankey <- make_sankey(
   icb_flow, flow_icb_labels, " (residence)", " (birth)",
@@ -192,6 +273,7 @@ trust_sankey <- make_sankey(
   trust_flow, flow_trust_labels, " (booking)", " (birth)",
   trust_source_order, trust_target_order
 )
+residence_booking_birth_sankey <- make_three_stage_sankey(residence_booking_birth_flow)
 
 # Section 5: patient flows by financial year
 # This bit repeats the two Sankeys for each year and makes their tables.
@@ -272,8 +354,20 @@ classify_booking_delivery_outcome <- function(episodes) {
   cluster_outcome <- classify_pathway_outcome(episodes)
   dplyr::case_when(
     cluster_outcome == "Within cluster" & episodes$birth_code == episodes$booking_code ~
-      "Same organisation",
-    cluster_outcome == "Within cluster" ~ "Different cluster organisation",
+      "Same trust",
+    cluster_outcome == "Within cluster" ~ "Different cluster trust",
+    TRUE ~ cluster_outcome)
+}
+
+# Compare the booking and delivery trusts' ICBs, not the mother's residence ICB.
+# A move between two trusts in one ICB stays in the same-ICB category.
+classify_booking_icb_delivery_outcome <- function(episodes) {
+  cluster_outcome <- classify_pathway_outcome(episodes)
+  booking_icb <- unname(provider_icb[episodes$booking_code])
+  delivery_icb <- unname(provider_icb[episodes$birth_code])
+  dplyr::case_when(
+    cluster_outcome == "Within cluster" & delivery_icb == booking_icb ~ "Same ICB",
+    cluster_outcome == "Within cluster" ~ "Different cluster ICB",
     TRUE ~ cluster_outcome)
 }
 
@@ -534,8 +628,15 @@ relative_share_change <- function(current, reference) {
 }
 # Reuse exactly the same percentages, changes, chart grids and table layout for both sections.
 build_delivery_outcome_trends <- function(starts, trend_outcomes, trend_labels, trend_colours,
-  outcome_short_labels, section_number = 7L, table_title = "Delivery pathway outcomes over time") {
+  outcome_short_labels, section_number = 7L, table_title = "Delivery pathway outcomes over time",
+  group_levels = c("Trust", "ICB", "Cluster"), comparison_note = "") {
   trend_starts <- starts
+  organisations <- organisations[organisations$Level %in% group_levels, , drop = FALSE]
+  booking_group_text <- if ("Trust" %in% group_levels) "booking trust, ICB or combined cluster" else
+    "booking ICB or combined cluster"
+  aggregation_note <- if ("Trust" %in% group_levels)
+    "Trust, ICB and cluster totals are alternative aggregations of the same starts." else
+    "The combined cluster pools the two booking ICBs after comparing each delivery ICB with its booking ICB."
   delivery_over_time <- list()
   summarise_pathway_trend <- function(organisation) {
     keep <- switch(organisation$Level[[1]],
@@ -662,7 +763,8 @@ build_delivery_outcome_trends <- function(starts, trend_outcomes, trend_labels, 
             make_delivery_trend_chart(rows$Key[i], measure = measure, compact = TRUE))
         }))))
   }
-  trend_groups <- c("Trust", "ICB_Cluster")
+  trend_groups <- c(if ("Trust" %in% group_levels) "Trust",
+                    if (any(c("ICB", "Cluster") %in% group_levels)) "ICB_Cluster")
   delivery_over_time$chart_grids <- stats::setNames(
     lapply(trend_groups, make_delivery_trend_grid), trend_groups)
   delivery_over_time$change_chart_grids <- stats::setNames(
@@ -682,11 +784,11 @@ build_delivery_outcome_trends <- function(starts, trend_outcomes, trend_labels, 
     gt::fmt_percent(columns = c("Share", "YoY_change", "Base_change"), decimals = 1) |>
     gt::sub_missing(missing_text = "n.a.") |>
     gt::tab_source_note(source_note = paste0(
-      "Share = outcome episodes / all starts in the same organisation and booking year. ",
+      "Share = outcome episodes / all starts in the same ", booking_group_text, " and booking year. ",
       "Changes are relative changes in that share: (current share / reference share - 1) x 100, ",
       "not percentage-point differences. n.a. = no starts, no prior year, or a zero/unavailable reference share. ",
       "The base-year change is 0% where the 2023/24 share is positive. ",
-      "Trust, ICB and cluster totals are alternative aggregations of the same starts.")) |>
+      aggregation_note, " ", comparison_note)) |>
     gt::tab_options(table.font.names = c("Open Sans", "Arial", "sans-serif"))
 
   # Tables: one row per organisation, with outcomes grouped under each year.
@@ -704,18 +806,19 @@ build_delivery_outcome_trends <- function(starts, trend_outcomes, trend_labels, 
   change_table <- gt::gt(change_wide, groupname_col = "Level", rowname_col = "Organisation") |>
     gt::tab_header(title = "Percentage change in delivery outcome shares",
                    subtitle = "Relative change from booking financial year 2023/24") |>
-    gt::tab_stubhead(label = "Booking organisation") |>
+    gt::tab_stubhead(label = if ("Trust" %in% group_levels) "Booking trust / ICB / cluster" else
+                      "Booking ICB / cluster") |>
     gt::cols_label(.list = stats::setNames(
       as.list(outcome_short_labels[change_column_key$Outcome_index]), change_columns)) |>
     gt::fmt_percent(columns = dplyr::all_of(change_columns), decimals = 1) |>
     gt::sub_missing(missing_text = "n.a.") |>
     gt::tab_source_note(source_note = paste0(
       "Every cell is (the year's outcome share / its 2023/24 share - 1) x 100. ",
-      "Outcome share = outcome episodes / all starts in that booking organisation and year. ",
+      "Outcome share = outcome episodes / all starts in that ", booking_group_text, " and year. ",
       "Positive values indicate a higher share; negative values indicate a lower share. ",
       "2023/24 is 0% where its share is positive; n.a. means no starts or a zero/unavailable baseline share. ",
       "Numerators, denominators, shares and year-on-year changes are in subsection ",
-      section_number, ".1's results table.")) |>
+      section_number, ".1's results table. ", comparison_note)) |>
     gt::tab_options(table.font.names = c("Open Sans", "Arial", "sans-serif"),
                     table.font.size = gt::px(12), table.width = gt::px(1550),
                     container.width = "100%", container.overflow.x = TRUE)
@@ -740,24 +843,41 @@ delivery_over_time <- build_delivery_outcome_trends(trend_starts,
 # Section 8: distinguish delivery at the booking trust from another cluster trust.
 booking_delivery_starts <- trend_starts
 booking_delivery_starts$outcome <- classify_booking_delivery_outcome(booking_delivery_starts)
-booking_delivery_outcomes <- c("Same organisation", "Different cluster organisation",
+booking_delivery_outcomes <- c("Same trust", "Different cluster trust",
   "Outside cluster", "No recorded delivery", "Unknown location")
-booking_delivery_labels <- c("Delivery at same organisation as booking",
-  "Delivery at different organisation within cluster", "Delivery outside cluster or home birth",
+booking_delivery_labels <- c("Delivery at same trust as booking",
+  "Delivery at different trust within cluster", "Delivery outside cluster or home birth",
   "No recorded delivery", "Delivery location unknown")
 booking_delivery_colours <- c("#00856A", "#005EB8", "#D55E00", "#727272", "#8E5EA2")
 booking_delivery_over_time <- build_delivery_outcome_trends(booking_delivery_starts,
   trend_outcomes = booking_delivery_outcomes, trend_labels = booking_delivery_labels,
   trend_colours = booking_delivery_colours,
-  outcome_short_labels = c("Same as booking", "Different cluster trust", "Outside cluster or home",
+  outcome_short_labels = c("Same trust as booking", "Different cluster trust", "Outside cluster or home",
     "No recorded delivery", "Location unknown"), section_number = 8L,
-  table_title = "Booking organisation and delivery destination over time")
+  table_title = "Booking trust and delivery trust over time",
+  comparison_note = "Same/different trust is decided before grouping booking trusts into ICB and cluster totals.")
+
+# An alternative view of the same starts: compare ICBs before aggregating or calculating shares.
+booking_icb_delivery_starts <- trend_starts
+booking_icb_delivery_starts$outcome <- classify_booking_icb_delivery_outcome(booking_icb_delivery_starts)
+booking_icb_delivery_over_time <- build_delivery_outcome_trends(booking_icb_delivery_starts,
+  trend_outcomes = c("Same ICB", "Different cluster ICB", "Outside cluster", "No recorded delivery", "Unknown location"),
+  trend_labels = c("Delivery ICB same as booking ICB", "Delivery ICB different to booking ICB but within cluster",
+    "Delivery outside cluster or home birth", "No recorded delivery", "Delivery location unknown"),
+  trend_colours = booking_delivery_colours,
+  outcome_short_labels = c("Same ICB as booking", "Different cluster ICB", "Outside cluster or home",
+    "No recorded delivery", "Location unknown"), section_number = 8L,
+  table_title = "Booking ICB and delivery ICB over time", group_levels = c("ICB", "Cluster"),
+  comparison_note = "Booking and delivery ICBs come from the trusts, not residence. Transfers between trusts in the same ICB count as same ICB.")
 
 # Save the charts and tables for index.qmd; run R/QA.R separately when needed.
 saveRDS(
   list(icb_sankey = icb_sankey, trust_sankey = trust_sankey, by_year = by_year,
+       residence_booking_birth_flow = residence_booking_birth_flow,
+       residence_booking_birth_sankey = residence_booking_birth_sankey,
        cluster_activity = cluster_activity, delivery_over_time = delivery_over_time,
        booking_delivery_over_time = booking_delivery_over_time,
+       booking_icb_delivery_over_time = booking_icb_delivery_over_time,
        activity_episodes = activity_episodes, icb_flow = icb_flow, trust_flow = trust_flow,
        flow_coverage = flow_coverage, flow_coverage_table = flow_coverage_table),
   ".patient_flows.rds"

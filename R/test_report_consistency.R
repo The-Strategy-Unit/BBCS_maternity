@@ -99,14 +99,58 @@ local({
   unknown <- make_flows("invalid", "invalid", 1, trusts)$links
   stopifnot(unknown$source == "Unknown", unknown$target == "Unknown")
 
+  # Section 4 joins residence, booking and delivery on the same pregnancy rows.
+  # Different residence/birth paths through RBK must not become a Cartesian product.
+  three_stage_input <- prepare_report_cohort(template[rep(1, 6), ])
+  three_stage_input$Resident_ICB <- c("QUA", "QUA", "QHL", "QHL", "Unknown", "Q99")
+  three_stage_input$Booking_Trust <- c(rep("RBK", 4), "Unknown", "R99")
+  three_stage_input$Trust <- c("RL4", "RL4", "RQ3", "RBK", "Unknown provider", "R99")
+  three_stage_test <- make_residence_booking_birth_flow(three_stage_input)
+  expected_paths <- tibble::tibble(
+    residence = c("QUA", "QHL", "QHL", "Unknown", "Other"),
+    booking = c(rep("RBK", 3), "Unknown", "Other"),
+    birth = c("RL4", "RQ3", "RBK", "Unknown", "Other"), n = c(2L, 1L, 1L, 1L, 1L))
+  stopifnot(nrow(three_stage_test$paths) == 5,
+    nrow(dplyr::anti_join(expected_paths, three_stage_test$paths,
+      by = c("residence", "booking", "birth", "n"))) == 0)
+  near(c(sum(three_stage_test$paths$n), sum(three_stage_test$residence_booking$n),
+    sum(three_stage_test$booking_birth$n)), rep(6, 3))
+  middle_counts <- dplyr::full_join(
+    three_stage_test$residence_booking |>
+      dplyr::group_by(Booking = target) |> dplyr::summarise(Incoming = sum(n), .groups = "drop"),
+    three_stage_test$booking_birth |>
+      dplyr::group_by(Booking = source) |> dplyr::summarise(Outgoing = sum(n), .groups = "drop"),
+    by = "Booking")
+  near(middle_counts$Incoming, middle_counts$Outgoing)
+  stopifnot(middle_counts$Incoming[middle_counts$Booking == "RBK"] == 4)
+  three_stage_chart <- plotly::plotly_build(make_three_stage_sankey(three_stage_test))$x$data[[1]]
+  stage_labels <- three_stage_chart$node$customdata
+  first_leg <- seq_len(nrow(three_stage_test$residence_booking))
+  second_leg <- length(first_leg) + seq_len(nrow(three_stage_test$booking_birth))
+  stopifnot(length(stage_labels) == 12L,
+    all(grepl("^ICB of residence:", stage_labels[three_stage_chart$link$source[first_leg] + 1L])),
+    all(grepl("^Booking trust:", stage_labels[three_stage_chart$link$target[first_leg] + 1L])),
+    all(grepl("^Booking trust:", stage_labels[three_stage_chart$link$source[second_leg] + 1L])),
+    all(grepl("^Birth trust:", stage_labels[three_stage_chart$link$target[second_leg] + 1L])),
+    all(three_stage_chart$link$source != three_stage_chart$link$target))
+  # Walsall appears in both trust layers, with separate nodes even when no transfer occurs.
+  stopifnot(sum(grepl("^Booking trust: Walsall", stage_labels)) == 1L,
+    sum(grepl("^Birth trust: Walsall", stage_labels)) == 1L)
+  near(sum(three_stage_chart$link$value), 12) # Each of six deliveries crosses both legs.
+  empty_three_stage <- make_residence_booking_birth_flow(three_stage_input[0, ])
+  stopifnot(nrow(empty_three_stage$paths) == 0,
+    nrow(empty_three_stage$residence_booking) == 0,
+    nrow(empty_three_stage$booking_birth) == 0,
+    inherits(make_three_stage_sankey(empty_three_stage), "shiny.tag"))
+
   # Section 8 compares individual trusts before ICB/cluster aggregation.
   # These separate inputs leave the existing forecast hand calculations unchanged.
-  booking_codes <- c("Same organisation", "Different cluster organisation", "Outside cluster",
+  booking_codes <- c("Same trust", "Different cluster trust", "Outside cluster",
     "No recorded delivery", "Unknown location")
-  booking_labels <- c("Delivery at same organisation as booking",
-    "Delivery at different organisation within cluster", "Delivery outside cluster or home birth",
+  booking_labels <- c("Delivery at same trust as booking",
+    "Delivery at different trust within cluster", "Delivery outside cluster or home birth",
     "No recorded delivery", "Delivery location unknown")
-  booking_short_labels <- c("Same organisation", "Different cluster organisation",
+  booking_short_labels <- c("Same trust", "Different cluster trust",
     "Other trust or home", "No recorded delivery", "Location unknown")
   booking_colours <- c("#00856A", "#005EB8", "#D55E00", "#727272", "#8E5EA2")
   booking_examples <- activity_episodes[rep(1, 9), ]
@@ -185,6 +229,62 @@ local({
     all(booking_empty$data$Numerator == 0), all(booking_empty$data$Denominator == 0),
     all(is.na(booking_empty$data$Share)), all(is.na(booking_empty$data$Base_change)))
 
+  # ICB comparison is a separate classification: RBK -> RL4 stays within its booking ICB.
+  icb_codes <- c("Same ICB", "Different cluster ICB", "Outside cluster",
+    "No recorded delivery", "Unknown location")
+  icb_labels_test <- c("Delivery ICB same as booking ICB",
+    "Delivery ICB different to booking ICB but within cluster",
+    "Delivery outside cluster or home birth", "No recorded delivery", "Delivery location unknown")
+  icb_short_labels <- c("Same ICB", "Different cluster ICB", "Other trust or home",
+    "No recorded delivery", "Location unknown")
+  stopifnot(identical(classify_booking_icb_delivery_outcome(booking_examples),
+    icb_codes[c(1, 1, 2, 3, 3, 4, 5, 5, 1)]),
+    identical(classify_booking_icb_delivery_outcome(booking_examples[0, ]), character()))
+  different_residence <- booking_examples
+  different_residence$residence_code <- c("QHL", "Unknown", rep("Q99", 7))
+  stopifnot(identical(classify_booking_icb_delivery_outcome(different_residence),
+    classify_booking_icb_delivery_outcome(booking_examples)))
+  # Include both booking ICBs with different sizes and changing destination mixes.
+  qhl_starts <- booking_examples[rep(1, 3), ]
+  qhl_starts$booking_code <- "RQ3"
+  qhl_starts$booking_year <- c(2023L, 2024L, 2024L)
+  qhl_starts$birth_code <- c("RBK", "RQ3", "RQ3")
+  icb_inputs <- dplyr::bind_rows(booking_inputs, qhl_starts)
+  icb_inputs$outcome <- classify_booking_icb_delivery_outcome(icb_inputs)
+  icb_test <- build_delivery_outcome_trends(icb_inputs, icb_codes, icb_labels_test,
+    booking_colours, icb_short_labels, section_number = 8L, group_levels = c("ICB", "Cluster"))
+  stopifnot(nrow(icb_test$organisations) == 3L,
+    setequal(icb_test$organisations$Level, c("ICB", "Cluster")),
+    nrow(icb_test$data) == 3 * 3 * 5,
+    nrow(icb_test$change_data) == 3L, ncol(icb_test$change_data) == 17L)
+  qua_base <- icb_test$data |> dplyr::filter(Key == "icb-qua", Year_start == 2023L)
+  qua_next <- icb_test$data |> dplyr::filter(Key == "icb-qua", Year_start == 2024L)
+  near(qua_base$Numerator, c(4, 1, 2, 1, 2))
+  near(qua_base$Denominator, rep(10, 5))
+  near(qua_next$Numerator, c(2, 0, 0, 0, 1))
+  near(qua_next$Share, c(2, 0, 0, 0, 1) / 3)
+  near(qua_next$Base_change, c(2/3, -1, -1, -1, 2/3))
+  icb_cluster_base <- icb_test$data |> dplyr::filter(Key == "cluster", Year_start == 2023L)
+  icb_cluster_next <- icb_test$data |> dplyr::filter(Key == "cluster", Year_start == 2024L)
+  near(icb_cluster_base$Numerator, c(4, 2, 2, 1, 2))
+  near(icb_cluster_base$Denominator, rep(11, 5))
+  near(icb_cluster_next$Numerator, c(4, 0, 0, 0, 1))
+  near(icb_cluster_next$Denominator, rep(5, 5))
+  # Combined-cluster same-ICB change = (4/5)/(4/11)-1 = 120%, not an average of ICB changes.
+  near(icb_cluster_next$Base_change, c(1.2, -1, -1, -1, 0.1))
+  icb_partition <- icb_test$data |> dplyr::group_by(Key, Year_start) |>
+    dplyr::summarise(N = sum(Numerator), Starts = dplyr::first(Denominator), .groups = "drop")
+  near(icb_partition$N, icb_partition$Starts)
+  icb_levels_test <- icb_test$data |> dplyr::group_by(Level, Year_start, Outcome) |>
+    dplyr::summarise(N = sum(Numerator), Starts = sum(Denominator), .groups = "drop") |>
+    tidyr::pivot_wider(names_from = Level, values_from = c(N, Starts))
+  near(icb_levels_test$N_ICB, icb_levels_test$N_Cluster)
+  near(icb_levels_test$Starts_ICB, icb_levels_test$Starts_Cluster)
+  qhl_zero_base <- icb_test$data |>
+    dplyr::filter(Key == "icb-qhl", Outcome == icb_labels_test[1])
+  stopifnot(all(is.na(qhl_zero_base$Base_change)),
+    all(is.na(icb_test$data$Share[icb_test$data$Year_start == 2025L])))
+
   # QA runs on in-memory synthetic outputs, never the user's saved RDS files.
   invisible(capture.output(source("R/QA.R")))
   expected_flags <- c("Every cohort record has mother and pregnancy identifiers",
@@ -238,5 +338,5 @@ local({
     dplyr::mutate(projected_births = ifelse(year == 2026 & age_group == "30", 0, projected_births))
   failure <- tryCatch(build_first_draft_projections(prepare_outputs = FALSE), error = identity)
   stopifnot(inherits(failure, "error"), grepl("Missing/invalid ONS growth", conditionMessage(failure)))
-  cat("PASS: age boundaries; factors; inclusion/outcomes; five booking-to-delivery outcomes; cross-section reconciliation; weighted growth; held counts; invalid growth.\n")
+  cat("PASS: age boundaries; factors; inclusion/outcomes; three-stage patient flows; trust and ICB booking-to-delivery outcomes; cross-section reconciliation; weighted growth; held counts; invalid growth.\n")
 })

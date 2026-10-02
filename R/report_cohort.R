@@ -1,4 +1,4 @@
-# Common counting and field definitions for report sections 4-9.
+# Common counting and field definitions for report sections 4-10.
 # The supplied cohort is already pregnancy-level: one input row contributes one.
 # Do not deduplicate on different subsets of fields or drop rows with missing IDs.
 # R/QA.R checks the supplied row-per-pregnancy assumption without choosing a record.

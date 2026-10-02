@@ -40,8 +40,8 @@ quarto render index.qmd
 ```
 
 Open `_site/index.html`. Rendering recalculates the public ONS methods, but reads
-saved outputs for sections 4–10. It does not rerun the
-Azure preparation. Run the preparation script again after changing those analysis
+saved outputs for sections 4–10. Section 11 is a static worked example in the report.
+Rendering does not rerun Azure preparation. Run the preparation script again after changing those analysis
 scripts or their data, then render again.
 
 To view an individual chart or table in RStudio, run the preparation script first,
@@ -53,13 +53,13 @@ only load saved objects and do not display a chart.
 | File | Purpose |
 |---|---|
 | `index.qmd` | Report text, headings, tabs and calls to display charts and tables. |
-| `R/Run analysis.R` | Runs Sarah's Azure reader, then the report preparation and imaginary example. |
-| `R/report_cohort.R` | Shared pregnancy-row, birth-flag, date, code and age definitions for sections 4–9; performs no further deduplication. |
+| `R/Run analysis.R` | Runs Sarah's Azure reader, then prepares the report's saved charts and tables. |
+| `R/report_cohort.R` | Shared pregnancy-row, birth-flag, date, code and age definitions for sections 4–10; performs no further deduplication. |
 | `R/ons_data.R` | Reads public ONS inputs and prepares the two births-to-maternities methods. |
-| `R/additional_analysis.R` | Prepares sections 4–7: patient flows, cluster activity and delivery outcomes over time. |
-| `R/Deliveries by LA and Age Bands.R` | Prepares section 8: LA-to-destination flows, hospital LA/age contributions and changes over time. |
-| `R/Projections.R` | Prepares section 9: feeder shares, age-specific growth, total projections, percentage changes and the retrospective comparison. |
-| `R/Imaginary Example.R` | Creates the original fictional example in section 10. Section 11's fuller worked explanation is in `index.qmd`. |
+| `R/additional_analysis.R` | Prepares sections 4–8: patient flows, cluster activity and delivery outcomes over time, including same/different booking-trust destinations. |
+| `R/Deliveries by LA and Age Bands.R` | Prepares section 9: LA-to-destination flows, hospital LA/age contributions and changes over time. |
+| `R/Projections.R` | Prepares section 10: feeder shares, age-specific growth, total projections, percentage changes and the retrospective comparison. |
+| `R/Imaginary Example.R` | Optional legacy example, retained for reference; not used by the report or runner. The current worked example is section 11 in `index.qmd`. |
 | `R/QA.R` | Checks the data and counts when you choose to run it; the runner does not source it. |
 | `R/scratch area.R` | Optional column/type and flag checks; the runner does not source it. |
 | `data/lookups/la_names.csv` | Public UK LA codes and names, including older codes used in the comparison years. |
@@ -123,22 +123,23 @@ The reader expects the environment variables `container`, `lake`, `folder` and
 - Trust and ICB labels, provider membership and the service cluster are defined in
   `R/additional_analysis.R`. The current cluster combines Black Country and
   Birmingham and Solihull. These settings are separate from the ONS LA configuration.
-- Sections 8.2, 8.3 and 9.1 keep the configured cluster LAs visible, then show the ten
+- Sections 9.2, 9.3 and 10.1 keep the configured cluster LAs visible, then show the ten
   largest additional feeders and group the rest as "All other feeder LAs".
-  Section 8.1 uses five additional flows, selected separately within each chart.
+  Section 9.1 uses five additional flows, selected separately within each chart.
   Main cluster areas, home births and unknowns stay separate. The grids show the
   main areas, ten largest others overall and an all-other chart. Full tables keep every flow.
 
-Organisation and age-band tabs are written explicitly in `index.qmd`. If you
-change those groups, update the corresponding tab headings and output calls too.
+Section 9 groups compact charts into trust and ICB/cluster grids, with separate
+tabs for each measure and the full tables. The grids are built from the organisation
+list; the public-data age-band tabs remain explicit in `index.qmd`.
 
-Section 8's hospital percentages describe where an organisation's deliveries came
-from. Section 9's feeder percentages describe how much of each resident LA/age
+Section 9's hospital percentages describe where an organisation's deliveries came
+from. Section 10's feeder percentages describe how much of each resident LA/age
 group delivered at that organisation. Home births stay in the LA totals but are
 not counted as hospital-location deliveries.
 
 Projections start from actual 2025/26 counts and apply Method 1 ONS age-specific
-growth afterwards, relative to mid-2026. Section 9's coverage tables show records
+growth afterwards, relative to mid-2026. Section 10's coverage tables show records
 excluded for home/unknown home status, eligible records held constant, and any
 boundary proxies used. Age-growth charts weight each LA by its actual contribution
 to the organisation, so their percentages agree with the incoming-count charts.
@@ -148,8 +149,17 @@ pregnancy row once, including rows with missing identifiers. Delivery-year total
 require `birth_flag = 1` and a valid `birth_yr`; hospital totals additionally require
 `home_birth = 0` and a cluster delivery provider. Booking-year pathway denominators
 retain all recorded cluster starts and follow their supplied outcomes, including
-later deliveries. Section 4 shows inclusion/exclusion counts. Section 8 contains
+later deliveries. Section 4 shows inclusion/exclusion counts. Method 1 contains
 the main-LA code comparison; section 11 illustrates the actual calculation.
+
+Section 6.e shows the two ICBs and the combined cluster together. The cluster
+counts combine the same booking starts shown in the two ICB charts.
+
+Section 8 repeats section 7 with five outcome lines: the within-cluster delivery
+group is split into the same trust as booking and a different cluster trust.
+The comparison always uses booking and delivery trust codes, including in ICB
+and combined-cluster panels. Both sections retain the same all-starts booking-year
+denominators, follow-up rules and relative-percentage-change calculation.
 
 ## Saved outputs and missing sections
 
@@ -157,10 +167,9 @@ The preparation scripts save these files in the project root:
 
 | Output | Used for |
 |---|---|
-| `.patient_flows.rds` | Sections 4–7 |
-| `.delivery_geography.rds` | Section 8 |
-| `.projections.rds` | Section 9, including the retrospective comparison |
-| `.imaginary_example.rds` | Section 10: imaginary worked example |
+| `.patient_flows.rds` | Sections 4–8 |
+| `.delivery_geography.rds` | Section 9 |
+| `.projections.rds` | Section 10, including the retrospective comparison |
 
 The QMD reads these files directly. If one is missing, R reports an error rather
 than skipping its section. Run preparation again to refresh the saved outputs;
@@ -184,8 +193,8 @@ need attention. It is not run by `Run analysis.R` or when rendering the report.
 Run it after changing data, organisation membership or calculations, and before
 using a new version of the results.
 
-The checks now reconcile annual cluster totals across sections 5, 6, 8 and 9,
-organisation/LA/age baseline cells across sections 8 and 9, and growth-chart
+The checks now reconcile annual cluster totals across sections 5, 6, 9 and 10,
+organisation/LA/age baseline cells across sections 9 and 10, and growth-chart
 percentages against incoming counts. These comparisons are available in
 `qa_details`. To see only items needing attention, use
 `subset(qa_results, Result == "Check")`. The QA script does not deduplicate inputs.

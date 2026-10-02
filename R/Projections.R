@@ -1,4 +1,4 @@
-# Section 9: First draft projections.
+# Section 10: First draft projections.
 # Run after additional_analysis.R. The QMD displays the saved charts and tables.
 # Run R/QA.R separately when you want to check the data and totals.
 
@@ -309,7 +309,7 @@ build_first_draft_projections <- function(baseline_fy = projection_baseline,
     maternity_projections = maternity_projections, note = projection_note)
   if (!prepare_outputs) return(result)
 
-  # Make charts and tables for sections 9.1 to 9.4.
+  # Make charts and tables for sections 10.1 to 10.4.
   coverage_table <- make_projection_coverage_table(coverage, baseline_fy)
   coverage_details_table <- coverage_details |>
     dplyr::select(Level, Organisation, LA_name, LA, Age_band, Reason, N) |>
@@ -321,7 +321,7 @@ build_first_draft_projections <- function(baseline_fy = projection_baseline,
     base_table("Feeder codes matched to the ONS geography") |>
     gt::cols_label(LA = "MSDS LA code", LA_name = "Resident LA", Treatment = "ONS treatment",
                    ONS_source_codes = "ONS source area codes")
-  # Section 9.1: compare the share of each LA/age group sent to an organisation.
+  # Section 10.1: compare the share of each LA/age group sent to an organisation.
   # Rank LAs by actual deliveries here; keep cluster LAs and ten additional feeders.
   # The other-feeder share sums counts and denominators, including zero-flow ages.
   mapping_share_max <- max(1, feeder_shares$Share, na.rm = TRUE)
@@ -487,7 +487,7 @@ build_first_draft_projections <- function(baseline_fy = projection_baseline,
     if (nrow(org_flows) && !nrow(ons_age_growth)) {
       growth_chart <- htmltools::div("No matched ONS age-specific series; baseline deliveries are held constant.")
     }
-    # Sections 9.3 and 9.4: total counts and percentage change from the actual baseline.
+    # Sections 10.3 and 10.4: total counts and percentage change from the actual baseline.
     total_chart <- plotly::plot_ly(org_totals, height = projection_chart_height, x = ~Year, y = ~Projected,
       type = "scatter", mode = "lines+markers", line = list(color = "#005EB8", width = 2),
       text = ~paste0(Year_label, "<br>Maternities: ", scales::comma(Projected, accuracy = 1)),
@@ -526,7 +526,7 @@ build_first_draft_projections <- function(baseline_fy = projection_baseline,
     Trust = organisations[organisations$Level == "Trust" &
       organisations$Code %in% setdiff(names(trust_labels), "Other"), , drop = FALSE],
     ICB_Cluster = organisations[organisations$Level %in% c("ICB", "Cluster"), , drop = FALSE])
-  # Section 9.1: put the allocation dot plots together with one age-band legend.
+  # Section 10.1: put the allocation dot plots together with one age-band legend.
   mapping_key <- htmltools::div(
     style = "display: flex; flex-wrap: wrap; gap: 12px 24px; margin-bottom: 20px; font-size: 14px;",
     htmltools::tagList(lapply(seq_along(age_bands), function(i) {
@@ -549,7 +549,7 @@ build_first_draft_projections <- function(baseline_fy = projection_baseline,
       mapping_outputs[[mapping_table_rows$Key[i]]]$table)
   }))
 
-  # Section 9.2: use the same organisation groups for the age-growth charts.
+  # Section 10.2: use the same organisation groups for the age-growth charts.
   age_grid <- function(rows, field) {
     bands <- age_bands
     if (any(age_projections$Key %in% rows$Key &
@@ -595,7 +595,7 @@ build_first_draft_projections <- function(baseline_fy = projection_baseline,
     }))
   }), c("growth_table", "incoming_table"))
 
-  # Section 9.3: trusts share one chart; the two ICBs and whole cluster share another.
+  # Section 10.3: trusts share one chart; the two ICBs and whole cluster share another.
   # Each line uses the existing totals across all feeder LAs and age bands.
   total_charts <- stats::setNames(lapply(c("Trust", "ICB_Cluster"), function(group) {
     rows <- if (group == "Trust") {
@@ -627,7 +627,7 @@ build_first_draft_projections <- function(baseline_fy = projection_baseline,
         margin = list(l = 85, r = 20, t = 130, b = 125))
   }), c("Trust", "ICB_Cluster"))
 
-  # Section 9.4: compare percentage changes from the actual 2025/26 baseline.
+  # Section 10.4: compare percentage changes from the actual 2025/26 baseline.
   # Trusts share one chart; the two ICBs and whole cluster share the other.
   change_charts <- stats::setNames(lapply(c("Trust", "ICB_Cluster"), function(group) {
     rows <- if (group == "Trust") {
@@ -696,7 +696,7 @@ build_first_draft_projections <- function(baseline_fy = projection_baseline,
 }
 
 build_projection_backtest <- function() {
-  # Section 9.5: compare with actual history.
+  # Section 10.5: compare with actual history.
   # Start again from 2023/24, using only that year's actual counts and feeder shares.
   historical <- build_first_draft_projections(baseline_fy = "2023/24",
     ons_reference_year = 2024L, projection_end = 2026L, prepare_outputs = FALSE)
@@ -810,9 +810,9 @@ build_projection_backtest <- function() {
        coverage_table = coverage_table, coverage_details_table = coverage_details_table)
 }
 
-# Prepare section 9 and save it only after both projections and the comparison finish.
+# Prepare section 10 and save it only after both projections and the comparison finish.
 first_draft_projections <- build_first_draft_projections()
 projection_backtest <- build_projection_backtest()
 first_draft_projections$backtest <- projection_backtest
 saveRDS(first_draft_projections, ".projections.rds")
-message("Section 9 prepared: Method 1 projections and the 2023/24 historical comparison.")
+message("Section 10 prepared: Method 1 projections and the 2023/24 historical comparison.")

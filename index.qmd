@@ -1892,23 +1892,41 @@ htmltools::browsable(delivery_geography$chart_grids$age$ICB_Cluster)
 
 ### All results
 
-::: panel-tabset
+:::: panel-tabset
 #### LA contributions
+
+::: panel-tabset
 
 ```{r}
 #| label: delivery-geography-mapping-all-la-tables
+#| results: asis
 
-htmltools::browsable(htmltools::tagList(delivery_geography$mapping_tables$table))
+for (i in seq_len(nrow(delivery_geography$organisations))) {
+  row <- delivery_geography$organisations[i, ]
+  cat("\n\n##### ", row$Organisation, " {#delivery-la-table-", row$Key, "}\n\n", sep = "")
+  cat("```{=html}\n", gt::as_raw_html(delivery_geography$outputs[[row$Key]]$table),
+      "\n```\n\n", sep = "")
+}
 ```
+:::
 
 #### LA by age
 
+::: panel-tabset
+
 ```{r}
 #| label: delivery-geography-mapping-all-age-tables
+#| results: asis
 
-htmltools::browsable(htmltools::tagList(delivery_geography$mapping_tables$age_table))
+for (i in seq_len(nrow(delivery_geography$organisations))) {
+  row <- delivery_geography$organisations[i, ]
+  cat("\n\n##### ", row$Organisation, " {#delivery-la-age-table-", row$Key, "}\n\n", sep = "")
+  cat("```{=html}\n", gt::as_raw_html(delivery_geography$outputs[[row$Key]]$age_table),
+      "\n```\n\n", sep = "")
+}
 ```
 :::
+::::
 
 ## 9.3a Counts and LA contributions, 2023/24 to 2025/26 {#delivery-la-mapping-counts}
 

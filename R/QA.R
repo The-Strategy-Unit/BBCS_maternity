@@ -10,8 +10,9 @@ missing_inputs <- required_inputs[!vapply(required_inputs,
 if (length(missing_inputs)) stop("Load the Azure data first. Missing: ",
                                paste(missing_inputs, collapse = ", "), call. = FALSE)
 source("R/ons_data.R")
+source("R/report_cohort.R")
 qa_years <- c("2023/24", "2024/25", "2025/26")
-qa_age_bands <- c("<20", "20-24", "25-29", "30-34", "35-39", "40+")
+qa_age_bands <- report_age_bands
 qa_results <- data.frame(Check = character(), Result = character(), Details = character())
 qa_details <- list()
 
@@ -26,7 +27,8 @@ numbers_match <- function(actual, expected, tolerance = 1e-8) {
 }
 
 # 2. Check the source pregnancy records and LA totals.
-cohort_records <- dplyr::distinct(final_cohort_2326)
+cohort_records <- final_cohort_2326
+prepared_records <- prepare_report_cohort(cohort_records)
 missing_ids <- is.na(cohort_records$person_id_mother) |
   trimws(as.character(cohort_records$person_id_mother)) == "" |
   is.na(cohort_records$uniq_preg_id) | trimws(as.character(cohort_records$uniq_preg_id)) == ""
@@ -35,9 +37,14 @@ qa_check("Every cohort record has mother and pregnancy identifiers", !any(missin
 identified_records <- cohort_records[!missing_ids, , drop = FALSE]
 repeated_pregnancies <- duplicated(identified_records[c("person_id_mother", "uniq_preg_id")])
 qa_check("One consistent cohort record per mother and pregnancy", !any(repeated_pregnancies),
-         paste(sum(repeated_pregnancies), "additional records have conflicting details"))
-recorded_deliveries <- cohort_records |>
-  dplyr::filter(as.character(birth_flag) == "1", as.character(birth_yr) %in% qa_years)
+         paste(sum(repeated_pregnancies), "additional rows repeat an identified pregnancy; no rows are removed by this check"))
+recorded_deliveries <- cohort_records[prepared_records$Birth_recorded &
+  prepared_records$Year %in% qa_years, , drop = FALSE]
+qa_check("Recorded births have a valid delivery financial year",
+  !any(prepared_records$Birth_recorded & is.na(prepared_records$Year)),
+  paste(sum(prepared_records$Birth_recorded & is.na(prepared_records$Year)), "recorded births cannot be assigned to a delivery year"))
+qa_check("Supplied birth flags are 0 or 1", all(prepared_records$Birth_flag %in% c(0, 1)),
+  paste(sum(!prepared_records$Birth_flag %in% c(0, 1)), "missing/invalid flags; not counted as recorded deliveries"))
 missing_delivery_years <- setdiff(qa_years, as.character(recorded_deliveries$birth_yr))
 qa_check("Recorded deliveries cover all three financial years", !length(missing_delivery_years),
          paste("Missing:", paste(missing_delivery_years, collapse = ", ")))
@@ -112,8 +119,8 @@ qa_check("Historic age-band births add up to published totals",
 if (file.exists(".patient_flows.rds")) {
   patient_flows <- readRDS(".patient_flows.rds")
   counted_episodes <- patient_flows$activity_episodes
-  qa_check("Patient-flow episodes have one row per mother and pregnancy",
-    !anyDuplicated(counted_episodes[c("person_id_mother", "uniq_preg_id")]))
+  qa_check("Sections 4-7 retain every supplied pregnancy row",
+    identical(counted_episodes$Row, prepared_records$Row))
   qa_check("Patient-flow episodes cover all delivery years",
     all(2023:2025 %in% counted_episodes$delivery_year))
   booking_trusts <- patient_flows$delivery_over_time$organisations |>
@@ -121,14 +128,13 @@ if (file.exists(".patient_flows.rds")) {
     dplyr::pull(Code)
   starts <- counted_episodes[counted_episodes$booking_code %in% booking_trusts, , drop = FALSE]
   qa_check("Cluster starts cover all booking years", all(2023:2025 %in% starts$booking_year))
-  home_birth_starts <- starts[starts$home_birth %in% 1L &
-    !(is.na(starts$delivery_year) & is.na(starts$delivery_date)), , drop = FALSE]
+  home_birth_starts <- starts[starts$home_birth %in% 1L & starts$birth_recorded, , drop = FALSE]
   qa_check("Recorded home births count outside cluster trust delivery locations",
     all(classify_pathway_outcome(home_birth_starts) == "Outside cluster"))
   hospital_counts <- vapply(2023:2025, function(year) sum(
-    counted_episodes$delivery_year %in% year & counted_episodes$home_birth %in% 0L &
+    counted_episodes$birth_recorded & counted_episodes$delivery_year %in% year & counted_episodes$home_birth %in% 0L &
       counted_episodes$birth_code %in% cluster_trusts), integer(1))
-  qa_check("Section 6 trust delivery totals exclude home births",
+  qa_check("Section 6 trust delivery totals use recorded non-home births",
     numbers_match(patient_flows$cluster_activity$delivery_trend$Total, hospital_counts))
   for (flow_name in c("icb_flow", "trust_flow")) {
     flow <- patient_flows[[flow_name]]$links
@@ -164,8 +170,9 @@ if (file.exists(".patient_flows.rds")) {
 if (file.exists(".delivery_geography.rds")) {
   delivery_mapping <- readRDS(".delivery_geography.rds")
   delivery_records <- delivery_mapping$episodes
-  qa_check("Section 8 has one episode per mother and pregnancy",
-    !anyDuplicated(delivery_records[c("Person", "Pregnancy")]))
+  qa_check("Section 8 retains every recorded delivery in the three years",
+    identical(delivery_records$Row, prepared_records$Row[prepared_records$Birth_recorded &
+      prepared_records$Year %in% qa_years]))
   qa_check("Section 8 includes all required years", all(qa_years %in% delivery_records$Year))
   destination_total <- nrow(delivery_mapping$matrix_episodes)
   qa_check("Section 8 matrix counts add up to its recorded deliveries",
@@ -197,7 +204,7 @@ if (file.exists(".delivery_geography.rds")) {
       numbers_match(c(sum(links$N), sum(links$N[links$Destination_group == "Home"])),
         c(sum(original$N), sum(original$N[original$Destination == "Home"]))))
     extra_trusts <- setdiff(unique(links$Destination_group),
-      c(main_trust_codes, "Home", "Unknown provider", "All other trusts"))
+      c(main_trust_codes, "Home", "Unknown provider", "Unknown location", "All other trusts"))
     qa_check(paste("Section 8.1 LA chart has up to five other trusts, ranked by volume:", origin),
       length(extra_trusts) <= delivery_mapping$sankey_top_n && all(diff(links$N) <= 0))
   }
@@ -275,6 +282,10 @@ if (file.exists(".projections.rds")) {
     base_label <- base$baseline_fy
     qa_check(paste(base_label, "has recorded cluster-trust deliveries"),
       sum(base$observed_totals$Observed_baseline) > 0)
+    qa_check(paste(base_label, "coverage shows both exclusions and held-constant records"),
+      numbers_match(base$coverage$Recorded_births, base$coverage$Home_births +
+        base$coverage$Unknown_home_flag + base$coverage$Observed_baseline) &&
+      numbers_match(base$coverage$Observed_baseline, base$coverage$ONS_growth + base$coverage$Unmatched))
     occupied_shares <- base$feeder_shares |> dplyr::filter(Numerator > 0)
     valid_denominators <- is.finite(occupied_shares$Denominator) &
       occupied_shares$Denominator > 0 & occupied_shares$Numerator <= occupied_shares$Denominator
@@ -314,6 +325,12 @@ if (file.exists(".projections.rds")) {
       all(is.finite(active_flows$Growth_factor)))
     qa_check(paste(base_label, "incoming flows follow their age-specific ONS growth"),
       numbers_match(active_flows$Projected, active_flows$Numerator * active_flows$Growth_factor))
+    chart_growth <- base$weighted_age_growth |> dplyr::filter(Baseline > 0)
+    qa_check(paste(base_label, "age-growth chart agrees with incoming maternity counts"),
+      numbers_match(chart_growth$Baseline * (1 + chart_growth$Growth_change), chart_growth$Projected))
+    zero_base_growth <- base$weighted_age_growth |> dplyr::filter(Baseline == 0)
+    qa_check(paste(base_label, "zero age-band baselines have no percentage change"),
+      all(is.na(zero_base_growth$Growth_change)))
     held_flows <- base$feeder_projections |> dplyr::filter(Held_constant)
     qa_check(paste(base_label, "unmatched records retain their actual baseline counts"),
       numbers_match(held_flows$Projected, held_flows$Numerator))
@@ -340,6 +357,55 @@ if (file.exists(".projections.rds")) {
     numbers_match(historical_base$Difference, rep(0, nrow(historical_base))))
 } else {
   qa_check("Section 9 has saved outputs available", FALSE, "Run R/Run analysis.R first")
+}
+
+# Reconcile sections that claim to describe the same delivery activity.
+# Booking-year pathway starts deliberately use a different denominator.
+if (all(file.exists(c(".patient_flows.rds", ".delivery_geography.rds", ".projections.rds")))) {
+  section8_totals <- delivery_mapping$hospital_mapping |>
+    dplyr::group_by(Key, Year) |>
+    dplyr::summarise(Section8 = sum(N), .groups = "drop")
+  reconciliation <- projections$backtest$data |>
+    dplyr::transmute(Key, Organisation, Year = Year_label, Section9_observed = Observed) |>
+    dplyr::left_join(section8_totals, by = c("Key", "Year")) |>
+    dplyr::mutate(Section8 = dplyr::coalesce(Section8, 0L))
+  qa_details$delivery_reconciliation <- reconciliation
+  qa_check("Sections 8 and 9 count the same deliveries for every organisation/year",
+    numbers_match(reconciliation$Section8, reconciliation$Section9_observed))
+  cluster_reconciliation <- reconciliation |> dplyr::filter(Key == "cluster") |>
+    dplyr::left_join(patient_flows$cluster_activity$delivery_trend |>
+      dplyr::select(Year, Section6 = Total), by = "Year")
+  qa_details$cluster_reconciliation <- cluster_reconciliation
+  qa_check("Sections 6, 8 and 9 have identical annual cluster delivery totals",
+    numbers_match(cluster_reconciliation$Section6, cluster_reconciliation$Section8))
+  for (year in qa_years) {
+    flows <- patient_flows$by_year[[year]]
+    expected <- sum(prepared_records$Year %in% year & prepared_records$Birth_recorded &
+      prepared_records$Home %in% 0)
+    qa_check(paste("Section 5 uses the same recorded non-home definition:", year),
+      numbers_match(c(sum(flows$trust_flow$links$n), sum(flows$icb_flow$links$n)), rep(expected, 2)))
+    cluster_links <- flows$icb_flow$links
+    cluster_n <- sum(cluster_links$n[cluster_links$target %in% cluster_icbs])
+    qa_check(paste("Sections 5 and 6 agree on deliveries at cluster providers:", year),
+      numbers_match(cluster_n, cluster_reconciliation$Section6[cluster_reconciliation$Year == year]))
+  }
+  qa_check("Sections 4 and 5 use identical latest-year flows",
+    identical(patient_flows$icb_flow, patient_flows$by_year[["2025/26"]]$icb_flow) &&
+    identical(patient_flows$trust_flow, patient_flows$by_year[["2025/26"]]$trust_flow))
+  for (base in list(projections, projections$backtest$baseline)) {
+    historical_cells <- delivery_mapping$hospital_mapping |>
+      dplyr::filter(Year == base$baseline_fy) |>
+      dplyr::select(Key, LA, Age_band, Section8 = N)
+    forecast_cells <- base$feeder_projections |>
+      dplyr::filter(Year == base$ons_reference_year) |>
+      dplyr::select(Key, LA, Age_band, Section9 = Projected)
+    cells <- dplyr::full_join(historical_cells, forecast_cells, by = c("Key", "LA", "Age_band")) |>
+      dplyr::mutate(Section8 = dplyr::coalesce(Section8, 0), Section9 = dplyr::coalesce(Section9, 0))
+    qa_check(paste(base$baseline_fy, "sections 8 and 9 agree within every organisation/LA/age cell"),
+      numbers_match(cells$Section8, cells$Section9))
+    qa_details[[paste0(base$baseline_fy, " age-cell differences")]] <- cells |>
+      dplyr::filter(Section8 != Section9)
+  }
 }
 
 # 7. Check the imaginary example reaches its intended ten-year total.

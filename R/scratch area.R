@@ -18,3 +18,10 @@ table(final_cohort_2326$birth_flag, useNA = "ifany")
 
 head(sort(unique(total_births_by_LA_2326$la_of_mother)), 10)
 sort(unique(total_births_by_LA_2326$birth_yr))
+
+
+
+
+source("R/Run analysis.R")
+source("R/QA.R")
+subset(qa_results, Result == "Check")

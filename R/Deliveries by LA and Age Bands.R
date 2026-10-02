@@ -1,9 +1,10 @@
 # Section 8: Deliveries by LA and Age Bands.
 # Run after additional_analysis.R, or use R/Run analysis.R.
+source("R/report_cohort.R")
 
 # Settings: retain ten additional chart areas; show five additional flows within each 8.1 chart.
 delivery_years <- c("2023/24", "2024/25", "2025/26")
-delivery_age_bands <- c("<20", "20-24", "25-29", "30-34", "35-39", "40+", "Unknown")
+delivery_age_bands <- c(report_age_bands, "Unknown")
 additional_las_to_show <- 10L
 sankey_focus_n <- 10L
 sankey_top_n <- 5L
@@ -24,11 +25,6 @@ absent <- setdiff(columns, names(final_cohort_2326))
 if (length(absent)) stop("final_cohort_2326 is missing: ", paste(absent, collapse = ", "), call. = FALSE)
 
 build_delivery_geography <- function(years = delivery_years, age_bands = delivery_age_bands) {
-  clean_code <- function(value, missing = "Unknown") {
-    value <- toupper(trimws(as.character(value)))
-    value[is.na(value) | value == ""] <- missing
-    value
-  }
   change_from <- function(value, reference) {
     reference <- rep_len(reference, length(value))
     result <- rep(NA_real_, length(value))
@@ -46,21 +42,10 @@ build_delivery_geography <- function(years = delivery_years, age_bands = deliver
   scroll_chart <- function(chart) htmltools::div(style = "max-height: 650px; overflow-y: auto;", chart)
 
   # Step 1: keep recorded deliveries and put LA, age and destination into clear groups.
-  delivery_episodes <- final_cohort_2326 |>
-    dplyr::filter(trimws(as.character(birth_yr)) %in% years, as.character(birth_flag) == "1") |>
-    dplyr::transmute(Person = trimws(as.character(person_id_mother)),
-      Pregnancy = trimws(as.character(uniq_preg_id)), Year = trimws(as.character(birth_yr)),
-      Resident_ICB = clean_code(resident_icb), LA = clean_code(la_of_mother, "Unknown LA"),
-      Age = suppressWarnings(as.numeric(as.character(age_at_birth_mother))),
-      Trust = clean_code(birth_provider, "Unknown provider"),
-      Home = suppressWarnings(as.numeric(as.character(home_birth)))) |>
-    dplyr::distinct()
-  delivery_episodes <- delivery_episodes |>
-    dplyr::mutate(Age_band = dplyr::case_when(
-      is.na(Age) | Age < 10 | Age > 60 ~ "Unknown", Age < 20 ~ "<20", Age < 25 ~ "20-24",
-      Age < 30 ~ "25-29", Age < 35 ~ "30-34", Age < 40 ~ "35-39", TRUE ~ "40+"),
-      Destination = dplyr::case_when(Home == 1 ~ "Home", Home == 0 ~ Trust,
-                                      TRUE ~ "Unknown provider"))
+  delivery_episodes <- prepare_report_cohort(final_cohort_2326) |>
+    dplyr::filter(Year %in% years, Birth_recorded) |>
+    dplyr::mutate(Destination = dplyr::case_when(Home == 1 ~ "Home", Home == 0 ~ Trust,
+                                               TRUE ~ "Unknown location"))
 
   # Step 2: use the local public name lookups. Codes remain the matching keys.
   la_lookup <- readr::read_csv("data/lookups/la_names.csv", show_col_types = FALSE)
@@ -103,12 +88,13 @@ build_delivery_geography <- function(years = delivery_years, age_bands = deliver
     dplyr::mutate(Delivery_destination = dplyr::case_when(
       Destination == "Home" ~ "Home birth",
       Destination == "Unknown provider" ~ "Unknown delivery provider",
+      Destination == "Unknown location" ~ "Home/non-home status unknown",
       !is.na(Trust_name) ~ Trust_name,
       TRUE ~ "Unmatched delivery provider")) |>
     dplyr::arrange(dplyr::desc(Origin_total), Resident_LA, Delivery_destination)
   # Keep major destinations visible, then combine the remaining trusts.
   other_trusts <- destination_matrix |>
-    dplyr::filter(!Destination %in% c(main_trusts, "Home", "Unknown provider")) |>
+    dplyr::filter(!Destination %in% c(main_trusts, "Home", "Unknown provider", "Unknown location")) |>
     dplyr::group_by(Destination) |>
     dplyr::summarise(N = sum(N), .groups = "drop") |>
     dplyr::arrange(dplyr::desc(N), Destination) |>
@@ -116,7 +102,7 @@ build_delivery_geography <- function(years = delivery_years, age_bands = deliver
     dplyr::pull(Destination)
   destination_matrix <- destination_matrix |>
     dplyr::mutate(Destination_group = dplyr::case_when(
-      Destination %in% c(main_trusts, other_trusts, "Home", "Unknown provider") ~ Destination,
+      Destination %in% c(main_trusts, other_trusts, "Home", "Unknown provider", "Unknown location") ~ Destination,
       TRUE ~ "All other trusts"))
   destination_names <- destination_matrix |>
     dplyr::distinct(Destination_group, Delivery_destination) |>
@@ -210,7 +196,7 @@ build_delivery_geography <- function(years = delivery_years, age_bands = deliver
   sankey_by_la_links <- stats::setNames(lapply(origins, function(origin) {
     raw <- raw_sankey_flows[raw_sankey_flows$Origin_focus == origin, , drop = FALSE]
     local_other_trusts <- raw |>
-      dplyr::filter(!Destination %in% c(main_trusts, "Home", "Unknown provider")) |>
+      dplyr::filter(!Destination %in% c(main_trusts, "Home", "Unknown provider", "Unknown location")) |>
       dplyr::group_by(Destination) |>
       dplyr::summarise(N = sum(N), .groups = "drop") |>
       dplyr::arrange(dplyr::desc(N), Destination) |>
@@ -218,7 +204,7 @@ build_delivery_geography <- function(years = delivery_years, age_bands = deliver
       dplyr::pull(Destination)
     raw |>
       dplyr::mutate(Origin = origin, Destination_group = ifelse(
-        Destination %in% c(main_trusts, local_other_trusts, "Home", "Unknown provider"),
+        Destination %in% c(main_trusts, local_other_trusts, "Home", "Unknown provider", "Unknown location"),
         Destination, "All other trusts")) |>
       dplyr::group_by(Origin, Destination_group) |>
       dplyr::summarise(N = sum(N), .groups = "drop") |>

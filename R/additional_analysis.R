@@ -1,5 +1,6 @@
 # Report sections 4-7: patient flows and delivery pathways.
-# Run this after Sarah's two preparation scripts, or use R/Run analysis.R.
+# Run this after the Azure reader, or use R/Run analysis.R.
+source("R/report_cohort.R")
 
 # Settings: years, organisation labels and chart colours
 analysis_years <- 2023:2025
@@ -9,8 +10,8 @@ cluster_label <- "Combined cluster"
 flow_palette <- c("#005EB8", "#D55E00", "#00856A", "#8E5EA2",
                   "#B07300", "#C44E52", "#4477AA", "#727272")
 outcome_columns <- c("Within", "Outside", "No_delivery", "Unknown")
-outcome_labels <- c("Delivery within cluster", "Delivery outside cluster",
-                    "No recorded delivery", "Delivery provider unknown")
+outcome_labels <- c("Delivery at cluster trust", "Other trust or home birth",
+                    "No recorded delivery", "Delivery location unknown")
 outcome_colours <- c("#00856A", "#D55E00", "#727272", "#8E5EA2")
 trend_grid_columns <- c(Trust = 3L, ICB_Cluster = 3L)
 main_chart_colour <- "#005EB8"
@@ -53,54 +54,81 @@ provider_icb <- stats::setNames(
 )
 cluster_trusts <- names(provider_icb)[provider_icb %in% cluster_icbs]
 
+# Unknown origins/destinations are separate from known organisations grouped as Other.
+flow_icb_labels <- c(icb_labels, Unknown = "Unknown ICB")
+flow_trust_labels <- c(trust_labels, Unknown = "Unknown provider")
+icb_source_order <- c(icb_source_order, "Unknown")
+icb_target_order <- c(icb_target_order, "Unknown")
+trust_source_order <- c(trust_source_order, "Unknown")
+trust_target_order <- c(trust_target_order, "Unknown")
+
 # Check the required inputs once; data QA is in R/QA.R.
 unlink(".patient_flows.rds")
-required_objects <- c("icb_matrix_data", "trust_matrix_data", "final_cohort_2326")
+required_objects <- "final_cohort_2326"
 missing_objects <- required_objects[!vapply(required_objects, function(name) exists(name, inherits = TRUE), logical(1))]
 if (length(missing_objects)) stop("Run the preparation scripts first. Missing: ",
                                   paste(missing_objects, collapse = ", "), call. = FALSE)
-required_columns <- list(
-  final_cohort_2326 = c("person_id_mother", "uniq_preg_id", "birth_yr", "birth_date",
-                      "booking_provider", "birth_provider", "resident_icb", "antenatal_app_date", "home_birth"),
-  icb_matrix_data = c("resident_icb_interest", "birth_icb_interest", "n"),
-  trust_matrix_data = c("booking_provider_grouped", "birth_provider_grouped", "n"))
-for (name in names(required_columns)) {
-  missing_columns <- setdiff(required_columns[[name]], names(get(name)))
-  if (length(missing_columns)) stop(name, " is missing: ",
-                                    paste(missing_columns, collapse = ", "), call. = FALSE)
-}
+report_episodes <- prepare_report_cohort(final_cohort_2326)
 
 # Section 4: patient flows in 2025/26
 # This bit makes the residence-to-birth and booking-to-birth Sankeys.
 # Clean the supplied codes and group providers outside the labelled areas as Other.
 # Each call below names its source, destination and count explicitly.
 make_flows <- function(source, target, count, keep_codes) {
-  source_code <- toupper(trimws(as.character(source)))
-  target_code <- toupper(trimws(as.character(target)))
-  count <- as.numeric(as.character(count))
-  valid <- !is.na(source_code) & nzchar(source_code) &
-    !is.na(target_code) & nzchar(target_code) & is.finite(count) & count > 0
+  group_code <- function(x) {
+    code <- report_code(x)
+    code_pattern <- paste0("^", substr(keep_codes[1], 1, 1), "[A-Z0-9]{2}$")
+    ifelse(code %in% keep_codes, code,
+      ifelse(code == "OTHER" | grepl(code_pattern, code), "Other", "Unknown"))
+  }
+  count <- report_number(count)
+  valid <- is.finite(count) & count > 0
   links <- data.frame(
-    source = ifelse(source_code[valid] %in% keep_codes, source_code[valid], "Other"),
-    target = ifelse(target_code[valid] %in% keep_codes, target_code[valid], "Other"),
-    n = count[valid])
+    source = group_code(source)[valid], target = group_code(target)[valid], n = count[valid]) |>
+    dplyr::group_by(source, target) |>
+    dplyr::summarise(n = sum(n), .groups = "drop")
   list(links = links)
 }
 
 
-# Sarah's matrices are already aggregated: use their n column as the count.
-icb_flow <- make_flows(
-  icb_matrix_data$resident_icb_interest,
-  icb_matrix_data$birth_icb_interest,
-  icb_matrix_data$n,
-  names(icb_labels)[names(icb_labels) != "Other"]
-)
-trust_flow <- make_flows(
-  trust_matrix_data$booking_provider_grouped,
-  trust_matrix_data$birth_provider_grouped,
-  trust_matrix_data$n,
-  names(trust_labels)[names(trust_labels) != "Other"]
-)
+# Use the same pregnancy records, flags and delivery-year definition in every year.
+# The separately supplied aggregate matrices have unconfirmed inclusion/period rules.
+make_cohort_year_flows <- function(start_year) {
+  cohort <- report_episodes |>
+    dplyr::filter(Delivery_year == start_year, Birth_recorded, Home == 0)
+  birth_icb <- unname(provider_icb[cohort$Trust])
+  birth_icb[is.na(birth_icb)] <- ifelse(
+    grepl("^R[A-Z0-9]{2}$", cohort$Trust[is.na(birth_icb)]), "Other", "Unknown")
+  list(
+    trust = make_flows(cohort$Booking_Trust, cohort$Trust, rep(1, nrow(cohort)),
+      setdiff(names(trust_labels), "Other")),
+    icb = make_flows(cohort$Resident_ICB, birth_icb, rep(1, nrow(cohort)),
+      setdiff(names(icb_labels), "Other")))
+}
+latest_flows <- make_cohort_year_flows(latest_year)
+icb_flow <- latest_flows$icb
+trust_flow <- latest_flows$trust
+
+# Visible inclusion accounting: these mutually exclusive delivery categories add up.
+flow_coverage <- report_episodes |>
+  dplyr::mutate(Period = dplyr::coalesce(Year, "Missing/invalid delivery year")) |>
+  dplyr::group_by(Period) |>
+  dplyr::summarise(Supplied_rows = dplyr::n(),
+    No_recorded_birth = sum(!Birth_recorded),
+    Home_births = sum(Birth_recorded & Home %in% 1),
+    Unknown_home_flag = sum(Birth_recorded & !Home %in% c(0, 1)),
+    Non_home = sum(Birth_recorded & Home %in% 0),
+    Unknown_birth_provider = sum(Birth_recorded & Home %in% 0 &
+      !grepl("^R[A-Z0-9]{2}$", Trust)), .groups = "drop")
+flow_coverage_table <- gt::gt(flow_coverage) |>
+  gt::tab_header(title = "Which supplied pregnancy records enter the delivery flows?") |>
+  gt::cols_label(Period = "Delivery year", Supplied_rows = "Supplied rows",
+    No_recorded_birth = "Birth flag not 1", Home_births = "Home births",
+    Unknown_home_flag = "Home flag unknown/invalid", Non_home = "Recorded non-home deliveries",
+    Unknown_birth_provider = "Of non-home: provider unknown/invalid") |>
+  gt::fmt_number(columns = -Period, decimals = 0) |>
+  gt::tab_source_note("Only recorded non-home deliveries in 2023/24–2025/26 enter sections 4–5. Unknown providers remain separate. The four inclusion columns sum to supplied rows; the last column is a subset.") |>
+  gt::tab_options(container.width = "100%", container.overflow.x = TRUE)
 
 # Sankey charts
 
@@ -108,9 +136,11 @@ make_sankey <- function(flow, labels, source_suffix, target_suffix,
                         source_order, target_order) {
   links <- flow$links
   codes <- unique(c(source_order, target_order))
-  colours <- setNames(flow_palette[seq_along(codes)], codes)
+  colours <- setNames(rep(flow_palette, length.out = length(codes)), codes)
+  colours["Unknown"] <- "#999999"
   display_label <- function(x) unname(labels[x])
   total <- sum(links$n)
+  if (!nrow(links)) return(htmltools::div("No recorded non-home deliveries in this year."))
 
   source_nodes <- source_order[source_order %in% links$source]
   target_nodes <- target_order[target_order %in% links$target]
@@ -155,74 +185,24 @@ make_sankey <- function(flow, labels, source_suffix, target_suffix,
 
 # Chart objects
 icb_sankey <- make_sankey(
-  icb_flow, icb_labels, " (residence)", " (birth)",
+  icb_flow, flow_icb_labels, " (residence)", " (birth)",
   icb_source_order, icb_target_order
 )
 trust_sankey <- make_sankey(
-  trust_flow, trust_labels, " (booking)", " (birth)",
+  trust_flow, flow_trust_labels, " (booking)", " (birth)",
   trust_source_order, trust_target_order
 )
 
 # Section 5: patient flows by financial year
 # This bit repeats the two Sankeys for each year and makes their tables.
 
-# Dates: preserve Date/POSIX values; ISO or UK text
-parse_activity_date <- function(x) {
-  if (inherits(x, "Date")) return(as.Date(x))
-  if (inherits(x, "POSIXt")) return(as.Date(x))
-  text <- trimws(as.character(x))
-  date <- as.Date(text, format = "%Y-%m-%d")
-  missing <- is.na(date) & !is.na(text)
-  date[missing] <- as.Date(text[missing], format = "%d/%m/%Y")
-  date
-}
-
-# Birth financial year: existing cohort labels, e.g. 2025/26
-birth_year_label <- trimws(as.character(final_cohort_2326$birth_yr))
-financial_year_start <- rep(NA_integer_, length(birth_year_label))
-has_birth_year <- !is.na(birth_year_label) & grepl("^[0-9]{4}/[0-9]{2}$", birth_year_label)
-financial_year_start[has_birth_year] <- as.integer(substr(birth_year_label[has_birth_year], 1, 4))
-birth_date <- parse_activity_date(final_cohort_2326$birth_date)
-
-
-flow_code <- function(x) {
-  x <- toupper(trimws(as.character(x)))
-  x[is.na(x) | !nzchar(x)] <- "Other"
-  x
-}
-
-make_cohort_year_flows <- function(start_year) {
-  cohort <- final_cohort_2326[!is.na(financial_year_start) &
-                                financial_year_start == start_year, ]
-
-  booking_provider <- flow_code(cohort$booking_provider)
-  birth_provider <- flow_code(cohort$birth_provider)
-  birth_icb <- unname(provider_icb[birth_provider])
-  birth_icb[is.na(birth_icb)] <- "Other"
-
-  # The earlier-year cohort has one episode per row, so each contributes one.
-  trust_year <- make_flows(
-    booking_provider, birth_provider, rep(1, nrow(cohort)),
-    names(trust_labels)[names(trust_labels) != "Other"]
-  )
-  icb_year <- make_flows(
-    flow_code(cohort$resident_icb), birth_icb, rep(1, nrow(cohort)),
-    names(icb_labels)[names(icb_labels) != "Other"]
-  )
-  trust_year$links <- stats::aggregate(n ~ source + target, trust_year$links, sum)
-  icb_year$links <- stats::aggregate(n ~ source + target, icb_year$links, sum)
-  list(icb = icb_year, trust = trust_year)
-}
-
-# Existing matrices supply 2025/26; cohort supplies earlier years
-
 make_year_sankeys <- function(start_year) {
   flows <- make_cohort_year_flows(start_year)
   list(
     icb_flow = flows$icb, trust_flow = flows$trust,
-    icb_sankey = make_sankey(flows$icb, icb_labels, " (residence)", " (birth)",
+    icb_sankey = make_sankey(flows$icb, flow_icb_labels, " (residence)", " (birth)",
                              icb_source_order, icb_target_order),
-    trust_sankey = make_sankey(flows$trust, trust_labels, " (booking)", " (birth)",
+    trust_sankey = make_sankey(flows$trust, flow_trust_labels, " (booking)", " (birth)",
                                trust_source_order, trust_target_order)
   )
 }
@@ -237,7 +217,7 @@ by_year <- list(
 # Section 5 tables: use the same counts and order as the Sankeys
 make_flow_table <- function(flow, labels, source_label, target_label,
                             source_order, target_order, year) {
-  flow_counts <- stats::aggregate(n ~ source + target, flow$links, sum)
+  flow_counts <- flow$links
   flow_counts <- flow_counts[order(match(flow_counts$source, source_order),
                                    match(flow_counts$target, target_order)), ]
   flow_counts$origin_share <- flow_counts$n / ave(flow_counts$n, flow_counts$source, FUN = sum)
@@ -255,50 +235,39 @@ make_flow_table <- function(flow, labels, source_label, target_label,
 
 for (year in names(by_year)) {
   by_year[[year]]$icb_table <- make_flow_table(
-    by_year[[year]]$icb_flow, icb_labels, "ICB of residence", "ICB of birth",
+    by_year[[year]]$icb_flow, flow_icb_labels, "ICB of residence", "ICB of birth",
     icb_source_order, icb_target_order, year
   )
   by_year[[year]]$trust_table <- make_flow_table(
-    by_year[[year]]$trust_flow, trust_labels, "Booking trust", "Birth trust",
+    by_year[[year]]$trust_flow, flow_trust_labels, "Booking trust", "Birth trust",
     trust_source_order, trust_target_order, year
   )
 }
 
 # Section 6: delivery activity in the Combined cluster
-# This bit counts each mother/pregnancy pair once and groups delivery locations.
-activity_cohort <- as.data.frame(final_cohort_2326)
-activity_cohort$delivery_date <- birth_date
-activity_cohort$delivery_year <- financial_year_start
-activity_cohort$birth_code <- flow_code(activity_cohort$birth_provider)
-activity_cohort$booking_code <- flow_code(activity_cohort$booking_provider)
-activity_cohort$residence_code <- flow_code(activity_cohort$resident_icb)
-
-# Booking financial year; outcomes may fall in a later year
-activity_cohort$booking_date <- parse_activity_date(activity_cohort$antenatal_app_date)
-activity_cohort$booking_year <- as.integer(format(activity_cohort$booking_date, "%Y")) -
-  as.integer(as.integer(format(activity_cohort$booking_date, "%m")) < 4L)
-
-# Keep identified mother/pregnancy pairs; duplicate and coverage checks are in R/QA.R.
-identified <- !is.na(activity_cohort$person_id_mother) &
-  nzchar(trimws(as.character(activity_cohort$person_id_mother))) &
-  !is.na(activity_cohort$uniq_preg_id) &
-  nzchar(trimws(as.character(activity_cohort$uniq_preg_id)))
-episode_fields <- c("person_id_mother", "uniq_preg_id", "delivery_date",
-                    "delivery_year", "birth_code", "booking_code", "residence_code",
-                    "booking_date", "booking_year", "home_birth")
-activity_episodes <- unique(activity_cohort[identified, episode_fields])
+# Use the same supplied pregnancy rows as sections 4-5, 8 and 9.
+activity_episodes <- report_episodes |>
+  dplyr::transmute(Row, person_id_mother = Person, uniq_preg_id = Pregnancy,
+    delivery_date = Delivery_date, delivery_year = Delivery_year,
+    birth_code = Trust, booking_code = Booking_Trust, residence_code = Resident_ICB,
+    booking_date = Booking_date, booking_year = Booking_year,
+    birth_flag = Birth_flag, birth_recorded = Birth_recorded, home_birth = Home)
 
 # Shared pathway definition for the latest-year and three-year outputs.
 classify_pathway_outcome <- function(episodes) {
-  # Home births remain in all starts, but are outside cluster-trust delivery locations.
-  ifelse(is.na(episodes$delivery_year) & is.na(episodes$delivery_date), "No recorded delivery",
-    ifelse(episodes$home_birth %in% 1L, "Outside cluster",
-      ifelse(episodes$birth_code %in% cluster_trusts, "Within cluster",
-        ifelse(grepl("^R[A-Z0-9]{2}$", episodes$birth_code), "Outside cluster", "Unknown provider"))))
+  # A year/date alone is not a recorded birth. Follow-up may extend beyond booking year.
+  # Home births remain starts but are outside hospital delivery locations.
+  dplyr::case_when(
+    !episodes$birth_recorded ~ "No recorded delivery",
+    episodes$home_birth %in% 1L ~ "Outside cluster",
+    !episodes$home_birth %in% 0L ~ "Unknown location",
+    episodes$birth_code %in% cluster_trusts ~ "Within cluster",
+    grepl("^R[A-Z0-9]{2}$", episodes$birth_code) ~ "Outside cluster",
+    TRUE ~ "Unknown location")
 }
 
 cluster_activity <- list(
-  note = "Combined cluster: Black Country and Birmingham and Solihull. Trust delivery totals exclude flagged home births; pathway starts retain them as outside cluster trust locations. Each mother/pregnancy pair is counted once; delivery year comes from birth_yr."
+  note = "Combined cluster: Black Country and Birmingham and Solihull. Delivery totals require birth_flag = 1, home_birth = 0 and a cluster delivery provider; delivery year comes from birth_yr. One supplied pregnancy row contributes one. Booking-year pathways retain all starts, including home births, unknown locations and records without birth_flag = 1."
 )
 
 safe_share <- function(n, total) ifelse(rep_len(total, length(n)) > 0, n / total, NA_real_)
@@ -314,7 +283,7 @@ activity_episodes$residence_type <- ifelse(
   ifelse(activity_episodes$residence_group == "Unknown", "Unknown residence", "Outside-cluster residents")
 )
 deliveries <- activity_episodes[
-  !is.na(activity_episodes$delivery_year) &
+  activity_episodes$birth_recorded &
     activity_episodes$delivery_year %in% analysis_years &
     activity_episodes$home_birth %in% 0L &
     activity_episodes$birth_code %in% cluster_trusts, ]
@@ -426,19 +395,19 @@ pathway_summary <- function(codes, level) {
       Starts = nrow(org_starts), Within = sum(org_starts$outcome == "Within cluster"),
       Outside = sum(org_starts$outcome == "Outside cluster"),
       No_delivery = sum(org_starts$outcome == "No recorded delivery"),
-      Unknown = sum(org_starts$outcome == "Unknown provider"))
+      Unknown = sum(org_starts$outcome == "Unknown location"))
   }))
 }
 pathways <- rbind(pathway_summary(cluster_icbs, "ICB"), pathway_summary(booking_codes, "Trust"))
 cluster_activity$pathway_table <- gt::gt(pathways, groupname_col = "Level") |>
   gt::tab_header(title = "Recorded outcomes of cluster antenatal starts", subtitle = "Bookings in 2025/26") |>
   gt::cols_label(Organisation = "Booking organisation", Starts = "Starts",
-    Within = "Delivery within cluster", Outside = "Delivery outside cluster",
-    No_delivery = "No recorded delivery", Unknown = "Delivery provider unknown") |>
+    Within = "Delivery at cluster trust", Outside = "Other trust or home birth",
+    No_delivery = "No recorded delivery", Unknown = "Delivery location unknown") |>
   gt::fmt_number(columns = c("Starts", "Within", "Outside", "No_delivery", "Unknown"), decimals = 0)
 cluster_activity$pathway_text <- paste0(
   count_text(nrow(starts)), " antenatal starts recorded at cluster providers in 2025/26; ",
-  count_text(sum(starts$outcome == "Outside cluster")), " had a recorded delivery outside the cluster and ",
+  count_text(sum(starts$outcome == "Outside cluster")), " had a recorded delivery at another trust or at home and ",
   count_text(sum(starts$outcome == "No recorded delivery")), " had no recorded delivery. ",
   "ICB rows group the booking trusts; trust and ICB totals are alternative views.")
 cluster_activity$pathway_needed <- paste0(
@@ -531,7 +500,7 @@ trend_starts <- activity_episodes[
 delivery_over_time <- list()
 
 trend_starts$outcome <- classify_pathway_outcome(trend_starts)
-trend_outcomes <- c("Within cluster", "Outside cluster", "No recorded delivery", "Unknown provider")
+trend_outcomes <- c("Within cluster", "Outside cluster", "No recorded delivery", "Unknown location")
 trend_labels <- outcome_labels
 trend_colours <- outcome_colours
 # Always show the six named trusts; include any additional cluster booking trusts observed.
@@ -719,7 +688,7 @@ change_wide <- pathway_trends |>
                      names_from = Column, values_from = Base_change) |>
   dplyr::arrange(match(Key, organisations$Key)) |>
   dplyr::select(Level, Organisation, dplyr::all_of(change_columns))
-outcome_short_labels <- c("Within cluster", "Outside cluster", "No recorded delivery", "Provider unknown")
+outcome_short_labels <- c("At cluster trust", "Other trust or home", "No recorded delivery", "Location unknown")
 change_table <- gt::gt(change_wide, groupname_col = "Level", rowname_col = "Organisation") |>
   gt::tab_header(title = "Percentage change in delivery outcome shares",
                  subtitle = "Relative change from booking financial year 2023/24") |>
@@ -750,6 +719,7 @@ delivery_over_time$change_table <- change_table
 saveRDS(
   list(icb_sankey = icb_sankey, trust_sankey = trust_sankey, by_year = by_year,
        cluster_activity = cluster_activity, delivery_over_time = delivery_over_time,
-       activity_episodes = activity_episodes, icb_flow = icb_flow, trust_flow = trust_flow),
+       activity_episodes = activity_episodes, icb_flow = icb_flow, trust_flow = trust_flow,
+       flow_coverage = flow_coverage, flow_coverage_table = flow_coverage_table),
   ".patient_flows.rds"
 )

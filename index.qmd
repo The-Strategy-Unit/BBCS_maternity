@@ -10,6 +10,8 @@ format:
 
 # 1. Comparison {#comparison}
 
+**This report has two linked outputs.** [Section 2](#method-1) estimates population-wide maternities by the mother's resident LA, covering NHS and private births. [Section 9](#first-draft-projections) projects deliveries at the selected organisations from their recorded 2025/26 MSDS activity. ONS supplies the LA/age demographic growth for both; the starting populations and allocation denominators differ. [Section 11](#worked-trust-projection) follows the two calculations through a worked example.
+
 Both methods estimate maternities from ONS projected live births using a factor for each maternal age band. **Method 1 calculates a multiplicity modifier from averaged singleton and multiple-maternity shares; Method 2 calculates a pooled count ratio from all maternities divided by live births.** Neither applies a single all-age factor. They use the same source files, projection variant, age grouping, observed 2023–2025 maternity counts and chart layout. Birth rates are identical in both method sections and provide secondary context.
 
 - [Method 1: age-specific multiplicity](#method-1) — the original approach.
@@ -115,6 +117,8 @@ Method 1 estimates babies per maternity from the singleton, twin, triplet and fo
 
 The main purpose is to estimate **the number of maternities over time**, using published historical maternity counts where available and converting ONS projected live births into future maternity counts. A maternity is one pregnancy resulting in one or more live births or stillbirths: twins count as two babies but one maternity. It is not a count of unique women, because a woman can have more than one maternity, and it excludes pregnancies ending without a live birth or registrable stillbirth. ONS defines a stillbirth as a baby born without signs of life after at least 24 completed weeks of pregnancy. See [ONS definitions](#method-1-ref-birth-guide).
 
+**Population-wide resident estimates:** these ONS-based figures cover resident births across NHS and private provision, including home births. They retain their population-wide level after conversion to maternities. They are not scaled to the MSDS total. The separate [trust projection](#first-draft-projections) starts with recorded MSDS deliveries and uses the corresponding ONS growth. A difference between the two sources does not identify private use or missing NHS activity on its own.
+
 ONS compiles observed births and maternities from civil registration, mainly by calendar year of occurrence, with some late registrations carried into the following year. Local figures use the mother's usual residence. For Method 1, we calculate the 2023–2025 mean proportion of singleton, twin, triplet and four-plus maternities in each maternal age band. Those shares give an expected number of babies per maternity; its reciprocal is the **multiplicity modifier**. [In short, we multiply the 2022-based migration-category projection of live-born babies by the age-specific multiplicity modifier, then sum across ages. (LM edit)]{.lm-edit} Because the shares include stillbirths but the projection counts live births, this is an approximate maternity count. See the [conversion method](#method-1-maternity-conversion) and [ONS projection source](#method-1-ref-birth-projections).
 
 [For completeness, we also consider birth rates and how they change over time. We do not apply the displayed rates as an additional step in converting projected live births into maternities; fertility assumptions are already included in the underlying ONS birth projection. (LM edit)]{.lm-edit} Birth rates are a secondary measure of demographic context. The later rate section shows live births per 1,000 women aged 15–44, using the same age range in every year. This rate is calculated separately from the maternity-count projection. The report therefore presents historical maternities, the conversion method and projected maternity counts before birth rates.
@@ -145,6 +149,8 @@ The ONS definitions above follow the [birth statistics user guide](https://www.o
 | **Observed / published count** | An ONS figure derived from registered events that have already happened. |
 | **Projected live births** | [Future baby counts from the [ONS subnational population projection model](#method-1-ref-snpp-method), conditional on its assumptions. (LM edit)]{.lm-edit} |
 | **Estimated / projected maternities** | Counts calculated by this analysis from observed or projected live births using [the multiplicity modifier to adjust for multiple births. This does not separately add stillbirth-only maternities. (LM edit)]{.lm-edit} |
+| **MSDS-recorded resident maternities** | Delivery pregnancies recorded in the resident-LA MSDS extract, including acute and home births. National geographic coverage does not make this a complete population-wide birth count. This is the denominator for the section 9 destination shares. |
+| **Trust delivery projection** | Recorded 2025/26 non-home deliveries at an organisation, grown separately by each contributing resident LA and age band, then summed. It does not automatically include NHS activity missing from the extract. |
 | **Multiplicity modifier** | The reciprocal of expected babies per maternity, calculated from the mean 2023–2025 national multiplicity proportions for each age band. It converts baby counts into approximate maternity counts; it is not a fertility rate. |
 | **General fertility rate (GFR)** | Live births per 1,000 women aged 15–44 in this report. It describes frequency relative to population size, not the number needing care. |
 | **Age-specific fertility rate (ASFR)** | Live births per 1,000 women in the relevant age group. |
@@ -467,6 +473,41 @@ maternity_trajectory_plot(observed_trajectory, projected_trajectory,
         "ONS migration-category births on 2023 geography with age-specific multiplicity modifiers."),
   area_colours)
 ```
+
+### Check the population-wide starting level {#method-1-resident-level-check}
+
+The latest published resident maternity counts provide a check on the projection's starting level. For calendar 2025, the table below approximates the ONS-derived count as **half the estimate for the year ending mid-2025 plus half the estimate for the year ending mid-2026**. This assumes births are evenly distributed within each source year; it is a period approximation, not a published ONS calendar-year projection. Both columns use the same six LAs and all maternal ages. The calculated column still uses national multiplicity modifiers without a separate stillbirth adjustment, whereas published maternities include stillbirth-only maternities.
+
+```{r}
+#| label: method-1-resident-level-check-table
+
+resident_level_check <- observed_trajectory |>
+  filter(year == max(year)) |>
+  rename(Published = maternities) |>
+  left_join(projected_trajectory |> rename(Mid_current = maternities),
+            by = c("area_name", "year")) |>
+  left_join(projected_trajectory |>
+              transmute(area_name, year = year - 1L, Mid_next = maternities),
+            by = c("area_name", "year")) |>
+  mutate(Approx_calendar = (Mid_current + Mid_next) / 2,
+         Difference = Approx_calendar - Published,
+         Percent_difference = Difference / Published)
+
+resident_level_check |>
+  select(area_name, Published, Approx_calendar, Difference, Percent_difference) |>
+  gt(rowname_col = "area_name") |>
+  tab_header(title = "Population-wide resident maternities: 2025 level check") |>
+  cols_label(Published = "Published ONS maternities",
+             Approx_calendar = "Approx. calendar-year projection",
+             Difference = "Projection minus published",
+             Percent_difference = "% difference") |>
+  fmt_number(columns = c(Published, Approx_calendar, Difference), decimals = 0) |>
+  fmt_percent(columns = Percent_difference, decimals = 1) |>
+  tab_source_note(source_note = "Public ONS inputs only. Calendar-year approximation described above; no MSDS scaling or rebasing is applied.") |>
+  ons_table_style()
+```
+
+In this comparison, Sandwell's estimate is **`r scales::percent(abs(resident_level_check$Percent_difference[resident_level_check$area_name == "Sandwell"]), accuracy = 0.1)` below** the published count and Solihull's is **`r scales::percent(resident_level_check$Percent_difference[resident_level_check$area_name == "Solihull"], accuracy = 0.1)` above** it. Review these differences when interpreting resident volumes. The current report retains the original ONS-based trajectory. Any future update to its starting level should use population-wide observed evidence, with its period approximation and any estimated age split documented; the MSDS total is not the population-wide calibration target.
 
 ## Birth rates: secondary demographic context {#method-1-birth-rates-secondary-demographic-context}
 
@@ -1242,11 +1283,24 @@ ons_source_table(sources)
 
 # 4. Patient flows {#method-2-icb-of-residence-to-icb-of-birth}
 
+These are **2025/26 recorded non-home deliveries**, using `final_cohort_2326`: `birth_flag = 1`, `home_birth = 0`, and `birth_yr = 2025/26`. Sarah's preparation has already removed duplicates. Throughout sections 4–9, one supplied pregnancy row contributes one; the report performs no further deduplication and does not discard a row just because an identifier is missing. Codes are trimmed and capitalised, and numeric fields are read from their values (including when stored as factors).
+
+All three years in section 5 use the same cohort and rules. The separately supplied aggregate trust/ICB matrices are retained as source inputs but are not used for these charts: their period and inclusion rules have not been confirmed. Missing origins and destinations remain separate from known organisations grouped as “Other”. The flow denominator is the recorded non-home deliveries in the supplied cohort; it is not a count of all bookings or all births in England.
+
+### Inclusion and exclusions across the three years
+
+```{r}
+#| label: patient-flow-inclusion
+readRDS(".patient_flows.rds")$flow_coverage_table
+```
+
+A year/date or a provider alone does not establish a recorded birth: the delivery analyses require `birth_flag = 1`. Rows with a missing/invalid delivery year cannot enter a delivery-year total. Home births and records with an unknown/invalid home flag are excluded from these non-home flows; section 8.1 shows them as separate destinations. Unknown providers remain in the flows, but cannot be allocated to a named trust's delivery count.
+
 ### ICB of residence to ICB of birth
 
 ```{r}
 #| label: method-2-patient-flow-icb
-#| fig-alt: "Sankey diagram showing supplied record counts from ICB of residence on the left to ICB of birth on the right."
+#| fig-alt: "Sankey diagram showing recorded non-home deliveries from ICB of residence on the left to ICB of birth on the right."
 #| out-width: "100%"
 
 readRDS(".patient_flows.rds")$icb_sankey
@@ -1256,7 +1310,7 @@ readRDS(".patient_flows.rds")$icb_sankey
 
 ```{r}
 #| label: method-2-patient-flow-trust
-#| fig-alt: "Sankey diagram showing supplied record counts from trust at booking appointment on the left to trust responsible for the birth spell on the right."
+#| fig-alt: "Sankey diagram showing recorded non-home deliveries from trust at booking appointment on the left to trust responsible for the birth spell on the right."
 #| out-width: "100%"
 
 readRDS(".patient_flows.rds")$trust_sankey
@@ -1264,7 +1318,7 @@ readRDS(".patient_flows.rds")$trust_sankey
 
 # 5. Patient flows by financial year {#patient-flows-by-year}
 
-2023/24 and 2024/25: birth providers outside the named ICBs grouped as Other ICBs.
+The same recorded non-home delivery definition from section 4 is applied separately to `birth_yr` 2023/24, 2024/25 and 2025/26. Birth providers outside the named ICBs are grouped as Other ICBs; missing or invalid providers are kept unknown. The ICB of birth is the ICB grouping of the recorded delivery provider, not the mother’s residence ICB.
 
 ```{r}
 #| label: patient-flows-by-year-setup
@@ -1509,11 +1563,11 @@ htmltools::browsable(cluster_activity$pathway_trust_sankeys)
 
 # 7. Delivery episodes over time {#delivery-episodes-over-time}
 
-Each chart shows the four recorded pathway outcomes as a percentage of **all starts in the same organisation and booking financial year**, for 2023/24, 2024/25 and 2025/26. One start is one identified mother/pregnancy pair. Trusts refer to the booking provider; ICBs group those booking trusts. The combined cluster combines Black Country and Birmingham and Solihull providers. These are alternative views of the same starts.
+Each chart shows the four recorded pathway outcomes as a percentage of **all starts in the same organisation and booking financial year**, for 2023/24, 2024/25 and 2025/26. One start is one supplied pregnancy row with a cluster booking provider and a booking date in that financial year; no additional deduplication is applied. Trusts refer to the booking provider; ICBs group those booking trusts. The combined cluster combines Black Country and Birmingham and Solihull providers. These are alternative views of the same starts.
 
-Outcomes follow the preceding section: delivery within the cluster, delivery outside the cluster, no recorded delivery, and delivery provider unknown. Deliveries can occur after the booking year. “No recorded delivery” does not confirm that a pregnancy ended without a birth. Recent booking cohorts may have less follow-up; interpretation depends on the extract end date and whether the source includes starts without births.
+Outcomes follow the preceding section: recorded delivery at a cluster trust, delivery at another trust or at home, no recorded delivery (`birth_flag` is not 1), and recorded delivery with unknown location. A recorded birth with an unknown home flag or an unusable provider cannot be assigned to a hospital location. Deliveries can occur after the booking year; the pathway follows the supplied birth flag and location even when the delivery financial year is unavailable. “No recorded delivery” does not confirm that a pregnancy ended without a birth. Recent booking cohorts may have less follow-up; interpretation depends on the extract end date and whether the source includes starts without births.
 
-Within/outside refers to cluster trust delivery locations; home births count as outside and remain in all starts.
+These are delivery-location outcomes. Home births remain in all starts and may still involve NHS care. Booking-year denominators are deliberately different from the delivery-year totals in sections 4–5, 6’s delivery tables, 8 and 9.
 
 The final table gives every outcome's numerator, denominator and percentage. **Year-on-year and base-year changes are relative changes in the percentage**, calculated as (current percentage / reference percentage − 1) × 100. For example, a share rising from 20% to 25% is a 25% relative increase. The base year is 2023/24. Changes from a zero or unavailable reference share are unavailable; a year with no recorded starts has no percentage.
 
@@ -1593,9 +1647,28 @@ delivery_over_time$change_table
 delivery_geography <- readRDS(".delivery_geography.rds")
 ```
 
+The delivery-year analyses use the same supplied pregnancy rows and `birth_flag = 1` rule as sections 4–6 and 9. Ages are classified consistently from their numeric values: whole-year ages 10–60 enter the six current bands; missing, non-finite, fractional or out-of-range ages are labelled Unknown. Unknown ages remain in the totals.
+
+### Geography check: do the main resident LAs need a boundary conversion? {#main-la-geography-check}
+
+**No code conversion is needed for the six main cluster LAs.** England's LAs were not all redrawn. The 2021 restructuring concerned Northamptonshire; the 2023 restructuring concerned Cumbria, North Yorkshire and Somerset. The six metropolitan districts below retained their codes. The projection used here is **2022-based, supplied on 2023 LA geography**, rather than a 2021-based projection. See [ONS's restructuring history](https://www.ons.gov.uk/methodology/geography/ukgeographies/administrativegeography/ourchanginggeography/localgovernmentrestructuring).
+
+| Main resident LA | 2021 code | ONS 2023 geography code | 2025/26 code | Consequence for this model |
+|---|---|---|---|---|
+| Birmingham | E08000025 | E08000025 | E08000025 | Unchanged; match directly |
+| Dudley | E08000027 | E08000027 | E08000027 | Unchanged; match directly |
+| Sandwell | E08000028 | E08000028 | E08000028 | Unchanged; match directly |
+| Solihull | E08000029 | E08000029 | E08000029 | Unchanged; match directly |
+| Walsall | E08000030 | E08000030 | E08000030 | Unchanged; match directly |
+| Wolverhampton | E08000031 | E08000031 | E08000031 | Unchanged; match directly |
+
+Sources: ONS [April 2021 LA lookup](https://www.data.gov.uk/dataset/aecae840-afd9-4bf4-89e5-12615cb09d41/local-planning-authority-to-local-authority-district-april-2021-lookup-in-the-uk), [April 2023 names and codes](https://www.data.gov.uk/dataset/fb6edb97-5fff-4bce-a74c-3aa4f167d307/local-authority-districts-april-2023-names-and-codes-in-the-uk), and [April 2025 names and codes](https://www.data.gov.uk/dataset/b2c91962-58e7-40f1-ad56-7aa2473a93fd/local-authority-districts-april-2025-names-and-codes-in-the-uk-v21). These are published geography codes, not a claim that the secure MSDS extract has been checked for every residence-coding error. Ward boundary changes are a different level of geography from the LA totals used here.
+
+The 2021/2023 restructuring therefore does **not** require a boundary adjustment to these six LA series. It can affect more distant feeders. A later, confirmed example is the **2025 boundary change between Barnsley and Sheffield**: [Barnsley](https://www.ons.gov.uk/explore-local-statistics/areas/E08000038-barnsley) changed from E08000016 to E08000038, and [Sheffield](https://www.ons.gov.uk/explore-local-statistics/areas/E08000039-sheffield) from E08000019 to E08000039. If these new codes occur among a trust's feeders, section 9 uses their former-area growth as an explicitly labelled proxy. Other unmatched codes remain visible and their eligible baseline deliveries are held constant. The effect on this cluster depends on the recorded volume from those feeders; it is not an adjustment applied to every LA.
+
 ## 8.1 Resident LA to delivery destination, 2025/26 {#delivery-la-destinations}
 
-Recorded deliveries to cluster residents, plus deliveries associated with cluster providers from elsewhere. Grids retain the main cluster areas, ten largest additional areas overall and an all-other chart. Within each LA chart, destinations are the main trusts, home births, that LA's five largest other trusts and all other trusts. Within each destination chart, feeders are cluster LAs, that destination's five largest other LAs and all other feeder LAs. Unknowns stay separate; all flows, including home births, are ranked by volume. The matrix retains its overall destination groups; All flows keeps every LA and trust. Hover gives counts and percentages of the chart's recorded deliveries.
+Recorded deliveries to cluster residents, plus deliveries associated with cluster providers from elsewhere. Grids retain the main cluster areas, ten largest additional areas overall and an all-other chart. Within each LA chart, destinations are the main trusts, home births, that LA's five largest other trusts and all other trusts. Within each destination chart, feeders are cluster LAs, that destination's five largest other LAs and all other feeder LAs. Unknown residence, unknown delivery provider, and unknown home/non-home status stay separate; all flows, including home births, are ranked by volume. The matrix retains its overall destination groups; All flows keeps every LA and trust. Hover gives counts and percentages of the chart's recorded deliveries.
 
 ::: panel-tabset
 
@@ -1634,7 +1707,7 @@ delivery_geography$matrix_values_table
 
 ## 8.2 Hospital deliveries by resident LA and age, 2025/26 {#delivery-la-age-mapping}
 
-LA contributions divide by all hospital deliveries at the receiving organisation. Age mix divides each age band by that LA's deliveries here. Charts keep cluster LAs and the ten largest additional 2025/26 feeder LAs, combining the rest; tables retain every LA. Home births are excluded and unknown LA or age remains labelled. Scroll horizontally for wider grids.
+LA contributions divide by all hospital deliveries at the receiving organisation. Age mix divides each age band by that LA's deliveries here. Charts keep cluster LAs and the ten largest additional 2025/26 feeder LAs, combining the rest; tables retain every LA. Only `home_birth = 0` and a cluster delivery provider enter these hospital totals; home births and unknown home flags are excluded. Unknown LA or age remains labelled and counted. These are the same 2025/26 trust counts used as section 9’s baseline. Scroll horizontally for wider grids.
 
 ::::: panel-tabset
 
@@ -2258,6 +2331,18 @@ delivery_geography$all_changes_table
 
 # 9. First draft: projections {#first-draft-projections}
 
+**Trust deliveries and resident maternities are separate outputs.** The population-wide resident projections are shown in [Method 1](#method-1-projected-maternities-total), with a [published-count comparison](#method-1-resident-level-check). This section starts with the organisations' recorded 2025/26 MSDS non-home deliveries. It applies ONS demographic growth without automatically allocating the difference between ONS and MSDS to NHS organisations.
+
+**Fixed 2025/26 destination shares.** Within each resident LA and maternal age band, the proportion of **MSDS-recorded maternities** delivering at each organisation stays at its observed 2025/26 value. Grow that LA/age group's recorded activity by its matching ONS growth factor, then allocate the same proportion to each organisation. The MSDS denominator includes acute and home births; the trust projections cover non-home deliveries. This assumes a stable relationship between population-wide demographic change and recorded activity, as well as unchanged destination shares within an LA/age group.
+
+**Counting and geography:** this section uses the same recorded non-home deliveries and age definitions as section 8, including the same rules in the retrospective comparison. The [main-LA geography check](#main-la-geography-check) shows which codes need no conversion. The coverage tables distinguish excluded home/unknown-location records from eligible unmatched records held constant.
+
+For example, suppose a single LA/age group has **980 population-wide estimated maternities**, **900 MSDS-recorded maternities**, and **540 deliveries at organisation A**. With 10% demographic growth, these become **1,078**, **990** and **594**, respectively. A's share is **540/900 = 60% of MSDS-recorded activity**. Applying 60% directly to the population-wide 1,078 would give 646.8 and incorrectly assume that the same MSDS allocation share applies to the activity not represented by that denominator.
+
+ONS registration covers private establishments and home births. MSDS excludes non-NHS-funded maternity services provided by independent organisations. The difference can also reflect recording completeness, periods, projection error and definitions; it is not a measured private-care percentage. The illustrative **900/980** ratio is a combined source-alignment ratio. Where reliable local totals establish missing NHS activity, investigate the baseline against those totals. Otherwise use the three-year history to assess plausibility and report any completeness sensitivity separately, without a blanket uplift. See [ONS coverage](https://www.ons.gov.uk/peoplepopulationandcommunity/birthsdeathsandmarriages/livebirths/methodologies/userguidetobirthstatistics) and [MSDS coverage](https://digital.nhs.uk/data-and-information/publications/statistical/maternity-services-monthly-statistics/final-march-2026-provisional-april-2026-official-statistics/data-quality-statement).
+
+**The fixed shares are age-specific.** An LA's overall percentage sent to an organisation can change if its age groups grow differently and have different destination shares. Likewise, the percentage of a trust's total coming from each LA can change. The current model does not additionally constrain either of these all-age percentages. It currently uses six age bands; the requested nine planning bands have not yet been implemented.
+
 ```{r}
 #| label: first-draft-projections-setup
 #| include: false
@@ -2276,7 +2361,7 @@ if (nzchar(first_draft_projections$note)) {
 
 ## 9.1 Feeder LA and age-band shares, 2025/26 {#projection-feeder-mapping}
 
-Each coloured dot shows the percentage of an LA's pregnancies in that age band delivered here. LAs are ordered by delivery volume, keeping cluster LAs and the ten largest additional feeders; All other feeder LAs combines the remaining contributing LAs. Home births remain in LA denominators. Tables retain every LA and include unknown residence or age.
+Each coloured dot shows the percentage of an LA's MSDS-recorded delivery maternities in that age band delivered here in 2025/26: **recorded deliveries at this organisation / MSDS-recorded resident maternities in the same LA and age band**. These are the destination shares held fixed in the trust forecast; they are not shares of the population-wide ONS total. LAs are ordered by delivery volume, keeping cluster LAs and the ten largest additional feeders; All other feeder LAs combines the remaining contributing LAs. Recorded home births remain in MSDS LA denominators. Tables retain every LA and include unknown residence or age.
 
 ::: panel-tabset
 
@@ -2312,7 +2397,9 @@ htmltools::browsable(htmltools::tagList(first_draft_projections$mapping_tables))
 first_draft_projections$accounting_table
 ```
 
-### Projection coverage
+### Delivery inclusion and projection coverage
+
+The first columns show all recorded births associated with the provider, the home births and unknown home flags excluded from its hospital-location projection, and the eligible non-home baseline. The last columns split that baseline into matched ONS growth and counts held constant. These alternatives sum exactly; trust, ICB and cluster rows are separate views and must not be added together. Records lacking a usable delivery year or `birth_flag = 1` are accounted for in section 4, before this table.
 
 ```{r}
 #| label: first-draft-projection-coverage
@@ -2323,9 +2410,13 @@ first_draft_projections$geography_table
 ```
 :::
 
-## 9.2 Age-specific ONS change and incoming flows {#projection-age-specific-flows}
+## 9.2 Age-specific growth applied to incoming deliveries {#projection-age-specific-flows}
 
-Method 1 ONS maternity growth is applied within each feeder LA and age band, using 2023 LA geography. Actual 2025/26 flows are unchanged; growth uses ONS mid-2026 as its reference. Unmatched flows stay at baseline counts; see projection coverage.
+Method 1 ONS maternity growth is applied within each feeder LA and age band, using 2023 LA geography and ONS mid-2026 as the reference. For a matched LA/age group, let **D** be MSDS-recorded resident maternities in 2025/26, **N** those delivered at this organisation, and **G** the future ONS count divided by its reference-year count. Its destination share stays **N/D**, so the future contribution is **(D × G) × (N/D) = N × G**. Here **D × G** means projected MSDS-covered activity, not total resident maternities. The code uses the equivalent final expression; it grows actual organisational flows without changing the underlying LA/age allocation share.
+
+The growth chart now uses **this organisation's actual contributions as weights** within each age band: `(sum of baseline contribution × growth factor / sum of baseline contributions) − 1`. Counts held constant contribute a factor of 1. This is the percentage change in the adjacent incoming-maternity chart, so an LA supplying very few deliveries cannot dominate merely because it has a large resident population. A zero baseline has no calculable percentage change. The detailed growth tables retain the individual LA/age ONS changes; held-constant rows have no matched ONS rate and show n.a.
+
+This applies ONS **growth** to the recorded MSDS starting level; it does not replace that level with an unadjusted ONS count. Baseline counts remain the actual 2025/26 values. Contributions without a usable residence/age or supported ONS match are held constant as an explicit exception; see projection coverage. Where a resident denominator is missing or zero, an allocation share cannot be interpreted even if the code can calculate a projection from the recorded flow.
 
 ::::: panel-tabset
 
@@ -2333,7 +2424,7 @@ Method 1 ONS maternity growth is applied within each feeder LA and age band, usi
 
 ::: panel-tabset
 
-#### ONS growth
+#### Growth applied to this organisation
 
 ```{r}
 #| label: projection-age-trusts-growth-grid
@@ -2355,7 +2446,7 @@ htmltools::browsable(htmltools::tagList(first_draft_projections$age_grids$Trust$
 
 ::: panel-tabset
 
-#### ONS growth
+#### Growth applied to this organisation
 
 ```{r}
 #| label: projection-age-icbs-cluster-growth-grid
@@ -2373,7 +2464,7 @@ htmltools::browsable(htmltools::tagList(first_draft_projections$age_grids$ICB_Cl
 
 :::
 
-### ONS growth — tables
+### ONS growth by individual LA/age — tables
 
 ```{r}
 #| label: projection-age-all-growth-tables
@@ -2393,7 +2484,7 @@ htmltools::browsable(first_draft_projections$age_tables$incoming_table)
 
 ## 9.3 Total maternity projections {#projection-total-maternities}
 
-Incoming flows summed across all feeder LAs and ages. Baseline: actual 2025/26; later years: ONS mid-year growth, with the 2025/26 mapping held fixed. Each line represents one organisation.
+Incoming flows summed across all feeder LAs and ages. Baseline: actual 2025/26; later years: ONS mid-year growth, with each LA/age group's 2025/26 destination shares held fixed. Different demographic growth across those groups changes the organisation's total and incoming mix. Each line represents one organisation.
 
 ::: panel-tabset
 
@@ -2457,7 +2548,7 @@ first_draft_projections$all_changes_table
 
 ## 9.5 Retrospective check: observed versus modelled, 2023/24–2025/26 {#projection-retrospective-check}
 
-Actual 2023/24 flows and LA/age shares are held fixed to model 2024/25 and 2025/26 using Method 1 ONS growth. This retrospective check uses the current ONS edition; mid-2024 is the growth reference. Positive differences mean overprediction.
+Actual 2023/24 flows and LA/age shares are held fixed to model 2024/25 and 2025/26 using Method 1 ONS growth. All observed comparison counts use the shared delivery definition and age handling from sections 6 and 8; they are not separately deduplicated. This retrospective check uses the current ONS edition; mid-2024 is the growth reference. Positive differences mean overprediction.
 
 ```{r}
 #| label: first-draft-backtest-notes
@@ -2536,7 +2627,7 @@ imaginary_example$destinations_table
 
 ## Step 2: split each LA by age
 
-Each share divides **deliveries at Trust A by all maternities in that LA and age band**.
+Each share divides **MSDS-recorded deliveries at Trust A by MSDS-recorded maternities in that LA and age band**. Hold this 2025/26 share fixed: first grow the recorded LA/age activity using ONS growth, then allocate the same percentage to Trust A. This is equivalent to growing Trust A's observed contribution by that growth factor. The fixed share applies within each age band, rather than imposing an additional fixed all-age share.
 
 ```{r}
 #| label: imaginary-mapping-table
@@ -2566,7 +2657,7 @@ imaginary_example$modifiers_table
 
 **Babies rose 10%; maternities also rose 10%.** Halving both counts leaves the same growth: **110 ÷ 100 = 55 ÷ 50 = 1.10**. The conversion changes counts; its fixed multiplier leaves growth unchanged.
 
-Same result here: **55 projected LA maternities × 80% sent to Trust A = 44**.
+Same result here: **55 projected MSDS-covered LA maternities × 80% sent to Trust A = 44**. This original example happens to make the converted ONS and MSDS starting counts equal. [Section 11](#worked-trust-projection) separates the population-wide and recorded-activity levels when they differ.
 
 The observed 2025/26 count stays **110**.
 
@@ -2603,3 +2694,193 @@ imaginary_example$projection_table
 imaginary_example$ons_table
 ```
 :::
+
+# 11. From resident births to Trust A's future deliveries: a worked example {#worked-trust-projection}
+
+**Keep two answers visible: how many maternities are projected among all residents, and how many deliveries are projected at Trust A. ONS supplies demographic change; MSDS supplies Trust A's starting activity and recorded destination shares.**
+
+All trusts, LA letters, counts and growth factors in this example are **fictional**. The six age bands, source roles and calculation follow the current section 9; the requested nine planning bands have not yet been implemented. The example forecasts **deliveries at trust locations**: home births remain separate. A maternity counts one pregnancy reaching a live birth or stillbirth, including one maternity for twins. It does not count every pregnancy or every antenatal contact.
+
+**Assumption: each LA/age group's 2025/26 destination proportions within MSDS-recorded activity remain fixed through 2047.** This preserves its allocation to Trust A while allowing different LA/age groups to grow differently. A trust's overall incoming LA mix, or an LA's all-age percentage sent to that trust, can therefore change as the age composition changes. The forecast also assumes the baseline relationship between the population-wide ONS series and MSDS-recorded activity persists.
+
+## 11.1 What each source contributes
+
+| Source | What it tells us | What we use it for |
+|---|---|---|
+| MSDS cohort, 2023/24–2025/26 | Recorded deliveries, maternal age, residence and provider | Check the three-year history. Use **2025/26** to set the forecast's starting level and LA/age contributions. |
+| MSDS resident-LA totals | Recorded delivery pregnancies, including acute and home births, by maternal residence and age across England | Supply the recorded-activity denominator for fixed 2025/26 destination shares. They do not replace the population-wide ONS resident total. |
+| ONS registration Table 7, 2023–2025 | National singleton and multiple-maternity counts by age | Convert projected live-born babies into approximate maternities using Method 1. |
+| ONS 2022-based birth projections on 2023 LA geography | Population-wide projected live births by resident LA, model age and year ending mid-year, through 2047 | Supply the resident maternity estimate after conversion, and each LA/age group's **future change** for the trust forecast. Fertility and population change are already included. |
+
+```{mermaid}
+flowchart TB
+    O["ONS resident live births<br/>by LA, age and year"] --> M["Convert using the age-specific modifier"]
+    M --> R["OUTPUT 1: population-wide<br/>resident maternities, NHS and private"]
+    M --> G["Demographic growth<br/>future divided by reference-year estimate"]
+    N["MSDS: actual 2025/26 Trust A deliveries<br/>by resident LA and age"] --> T["OUTPUT 2: Trust A deliveries<br/>grow each actual contribution, then add"]
+    G --> T
+```
+
+The trust calculation preserves each LA/age group's share of **MSDS-recorded activity**. The population-wide output stays separate. The tables below unpack the equivalent calculation of growing recorded resident activity and allocating its fixed share.
+
+### Which records enter Trust A's starting count?
+
+Sarah's input is already one row per pregnancy. Suppose **500 supplied rows** have Trust A as their recorded birth provider and a 2025/26 delivery-year label:
+
+| Apply the same rules as sections 6, 8 and 9 | Rows | What happens |
+|---|---:|---|
+| Birth flag is not 1 | 20 | Excluded from delivery totals; a date/provider alone is insufficient |
+| Recorded home birth (`birth_flag = 1`, `home_birth = 1`) | 20 | Kept separate from trust-location deliveries |
+| Recorded birth, home flag missing or invalid | 10 | Location is uncertain; excluded from the trust-location baseline and shown in coverage |
+| Recorded non-home birth (`birth_flag = 1`, `home_birth = 0`) | **450** | **Trust A's starting delivery count** |
+| **All supplied rows in this illustration** | **500** | **20 + 20 + 10 + 450** |
+
+The report does no further deduplication. A missing identifier alone does not remove a supplied pregnancy row. For the following worked tables, assume all 450 eligible deliveries have usable LA/age matches. In real data, an eligible delivery with an unknown age or an unsupported LA remains in the baseline and is held constant; an unknown home flag is excluded earlier. These two treatments appear separately in section 9's coverage table.
+
+**The three MSDS years have different roles.** Suppose Trust A recorded 420, 440 and 450 deliveries. The current method starts at **450 in 2025/26**. It does not average the three totals or extrapolate their increase. The earlier years help assess data quality, changing flows and the retrospective comparison.
+
+## 11.2 Residence does not determine delivery destination
+
+Trust A receives women from its main feeder area **B**, another area in the cluster **C**, and a more distant area **D**. “Main feeder” describes an observed pattern; it is not a rule that residents must use that trust.
+
+This fictional 2025/26 accounting table covers **all ages within the MSDS-recorded activity** and assumes complete, mutually exclusive destination counts within that extract. It does not claim to count every resident maternity in the population:
+
+| Mother lives in | At Trust A | At other cluster trusts | At trusts outside the cluster | At home | MSDS-recorded resident maternities |
+|---|---:|---:|---:|---:|---:|
+| B: Trust A's main feeder LA | 300 | 230 | 150 | 30 | 710 |
+| C: another cluster LA | 100 | 330 | 110 | 20 | 560 |
+| D: an outside LA | 50 | 30 | 580 | 10 | 670 |
+| **Total** | **450** | **590** | **840** | **60** | **1,940** |
+
+**Trust A's baseline is 300 + 100 + 50 = 450.** Its share of B's MSDS-recorded maternities is 300/710, whereas B's contribution to Trust A is 300/450. Neither fraction uses the population-wide ONS total. Sections 8.2 and 9.1 use these different recorded-activity denominators deliberately.
+
+To see one age group within B, follow its **200 MSDS-recorded resident maternities aged 30–34**:
+
+```{mermaid}
+flowchart LR
+    B["LA B residents aged 30–34<br/>200 MSDS-recorded maternities"] -->|"100: 50%"| A["At Trust A"]
+    B -->|"60: 30%"| C["At other cluster trusts"]
+    B -->|"30: 15%"| D["At trusts outside the cluster"]
+    B -->|"10: 5%"| H["At home"]
+```
+
+The home births have already been excluded from Trust A's 100. **Do not subtract a home-birth percentage again.** The current forecast preserves the observed LA/age contribution; it does not separately forecast a changing home-birth rate. A home birth can still involve an NHS trust's staff, so it would need a separate volume for planning that work.
+
+In the real section 9 accounting table, “Other / unrepresented destinations” is a **remainder**, not a verified count of private care or a complete description of every other provider.
+
+## 11.3 Put maternal ages into comparable groups
+
+Use **age at birth**, rather than age at booking, for this calculation. For example, someone booked at 19 who gives birth at 20 belongs in 20–24.
+
+| Forecast band | MSDS ages used by the current code | ONS projected birth rows | Registration counts used for the modifier |
+|---|---|---|---|
+| Under 20 | 10–19 | Model ages 15–19; age 15 includes births below 15 | Under 20 |
+| 20–24 | 20–24 | 20–24 | 20–24 |
+| 25–29 | 25–29 | 25–29 | 25–29 |
+| 30–34 | 30–34 | 30–34 | 30–34 |
+| 35–39 | 35–39 | 35–39 | 35–39 |
+| 40+ | 40–60 | Model ages 40–44; age 44 includes births above 44 | Combine 40–44 and 45+ counts **within each year**, then calculate the modifier |
+
+ONS's boundary rows already include outlying ages: **adding extra births for under-15s or over-44s would double count them**. The projection cannot separately recover 45–49 and 50+. In the registration data, 2025's 45–49 and 50+ counts are combined to match earlier years' 45+ category. [ONS explains the boundary-age treatment here](https://www.ons.gov.uk/peoplepopulationandcommunity/populationandmigration/populationprojections/methodologies/methodologyusedtoproducethe2022basedsubnationalpopulationsprojectionsforengland).
+
+The current MSDS code reads ages from their values, including when stored as factors. It treats missing/non-finite ages, fractional ages, ages below 10 and ages above 60 as unknown and holds their eligible baseline deliveries constant. These are processing limits that need checking against the extract. **The separate female-population charts for ages 13–55 do not restrict the delivery forecast to ages 13–55.**
+
+**Agreed age work still to implement:** the required planning bands are 13–15, 16–19, 20–24, 25–29, 30–34, 35–39, 40–44, 45–50 and 51–55. Retain actual older-age information where available; where it is absent, use the age-44 birth rate as the agreed cautious fallback for ages 45+. The supplied registration Table 5 contains separate national counts for ages 44–49 and a combined 50+ category. Applying the fallback requires separating the older-age component already embedded in ONS model age 44. It also requires making its effect explicit in the two outputs: calibration to an actual MSDS baseline can cancel a fixed increase in the proxy's level. This example and the current calculations do not yet implement that fallback or resolve how its planning allowance is retained in the trust projection.
+
+## 11.4 Match the mother's LA before calculating growth
+
+Match residence **codes** to the selected ONS geography. Do not substitute the trust's address or assume that an ICB and an LA are interchangeable. The [six-LA comparison table](#main-la-geography-check) shows that the main cluster codes are unchanged: they need a direct match, not a boundary conversion.
+
+| Situation | Treatment in the current forecast |
+|---|---|
+| The residence code exists in the ONS file | Use that LA's age-specific series. This applies directly to the six main LAs. |
+| New Barnsley or Sheffield code | Use the supported former-boundary series as a **growth proxy**, applied to the actual MSDS baseline. This is not an exact boundary conversion. |
+| No supported ONS match, or residence/age unusable | Retain the observed contribution at a constant value and identify it in coverage reporting. |
+
+The main LA codes are Birmingham E08000025, Dudley E08000027, Sandwell E08000028, Solihull E08000029, Walsall E08000030 and Wolverhampton E08000031. The supported later-code proxies are Barnsley E08000038 → E08000016 and Sheffield E08000039 → E08000019. A name lookup alone does not harmonise boundaries. Other historical codes need explicit review before treating their growth as matched.
+
+## 11.5 Follow one contribution from 100 to 120 deliveries
+
+Return to **B, age 30–34**. The MSDS baseline has 200 recorded resident maternities, of which 100 deliver at Trust A: a **50% share of MSDS-recorded activity**.
+
+**Keep that 50% fixed.** If matching ONS growth is 20%, grow the 200 recorded maternities to **240**, then allocate **240 × 50% = 120** to Trust A. The same calculation in the code is **100 × 1.20 = 120**. The population-wide resident projection has its own starting level and remains a separate output.
+
+For easy arithmetic, suppose the fictional national mix is 98 singleton maternities and two twin maternities per 100 maternities. This gives **102 babies / 100 maternities**, so the modifier is **100/102**. The actual method calculates each year's proportions first and averages them across 2023–2025. Applied to live births, Method 1 remains approximate because it does not separately adjust for stillbirths.
+
+| Step | Reference: year ending mid-2026 | Future: year ending mid-2047 |
+|---|---:|---:|
+| Fictional ONS live-born babies: B, age 30–34 | 255 | 306 |
+| **Output 1: population-wide resident maternities**, using modifier 100/102 | **250** | **300** |
+| Calculate ONS growth relative to the reference | 250/250 = 1.00 | **300/250 = 1.20** |
+| MSDS-covered resident activity, grown at the same rate | 200 | 200 × 1.20 = **240** |
+| Trust A's fixed share of MSDS-covered activity | 50% | 50% |
+| **Output 2: Trust A deliveries** | **100** | **240 × 50% = 120** |
+
+**Why not simply take 50% of the future ONS 300?** The 50% was calculated within MSDS-recorded activity, so applying it to all 300 would also allocate part of the population not represented by that denominator to Trust A. It would give 150 in the future and 125 at the reference point, when MSDS recorded 100. The population-wide estimate remains **300**; **240** is the projected MSDS-covered activity used for the trust calculation.
+
+The same calculation can be unpacked into two understandable adjustments:
+
+| Adjustment | Calculation | Result |
+|---|---|---:|
+| Express the MSDS-recorded starting level relative to ONS | 200 MSDS / 250 ONS | **0.80** |
+| Estimate future MSDS-covered activity for allocation | 300 × 0.80 | **240** |
+| Allocate the fixed share to Trust A | 240 × 50% | **120** |
+
+This 0.80 is an **alignment between sources**, not evidence that precisely 20% used private care or were missing. It also includes differences in periods, projection levels, definitions and recording. Section 9 computes the equivalent shorter expression directly; it does not estimate a separate private-care adjustment or uplift for missing NHS activity. Replacing the population-wide 300 with 240 would mislabel the result.
+
+For this same LA/age group, the fixed-share illustration would allocate the other 120 MSDS-covered maternities to other cluster trusts (72), outside trusts (36) and home (12). These sum with Trust A's 120 to **240 MSDS-covered maternities**, not the population-wide 300. The difference of 60 is not assigned a destination or assumed to be private care. Section 9 currently produces the cluster providers' hospital projections; these additional destination figures explain the accounting rather than being extra outputs it calculates.
+
+::: callout-note
+## Why the fixed modifier cancels from growth
+
+Here, **300/250 = 306/255 = 1.20**. Applying the same modifier to both years changes the maternity levels but leaves that LA/age group's growth unchanged. The final trust forecast already starts with MSDS maternity counts. Age still matters: different LA/age groups can grow at very different rates.
+:::
+
+## 11.6 Repeat for every LA and age, then add the contributions
+
+These fictional **2047 growth factors relative to mid-2026** deliberately differ by age and area:
+
+| Age band | B factor | C factor | D factor |
+|---|---:|---:|---:|
+| Under 20 | 0.50 | 0.60 | 0.70 |
+| 20–24 | 0.80 | 0.90 | 0.85 |
+| 25–29 | 0.90 | 1.00 | 0.95 |
+| 30–34 | 1.20 | 1.10 | 1.15 |
+| 35–39 | 1.30 | 1.40 | 1.20 |
+| 40+ | 1.80 | 2.00 | 1.60 |
+
+Multiply **each baseline contribution by its own factor**. In the next table, the first three numeric columns are observed Trust A contributions; the last is their projected sum.
+
+| Age band | From B in 2025/26 | From C in 2025/26 | From D in 2025/26 | Trust A in 2047 |
+|---|---:|---:|---:|---:|
+| Under 20 | 10 | 5 | 0 | 8.00 |
+| 20–24 | 30 | 10 | 5 | 37.25 |
+| 25–29 | 80 | 20 | 10 | 101.50 |
+| 30–34 | 100 | 40 | 20 | **187.00** |
+| 35–39 | 60 | 20 | 10 | 118.00 |
+| 40+ | 20 | 5 | 5 | 54.00 |
+| **Total** | **300** | **100** | **50** | **505.75** |
+
+For example, the 30–34 row is **100 × 1.20 + 40 × 1.10 + 20 × 1.15 = 187**.
+
+**The matching growth chart shows 187/160 − 1 = 16.9%.** Its weights are Trust A’s 100, 40 and 20 baseline deliveries from these LAs. It does not weight by each LA’s entire resident population. The growth and incoming-count charts therefore describe exactly the same calculation.
+
+Trust A rises from **450 to about 506 deliveries**, an increase of **12.4%**. Some younger groups fall while older groups rise. We retain decimals during calculation and round the final displayed total. A different trust receiving a different mix of these residents would have a different overall change.
+
+## 11.7 Carry the calculation through to 2047
+
+For each year ending mid-2027, mid-2028, and so on through **mid-2047**, repeat:
+
+$$
+\text{Trust total}_t
+=\sum_{\text{matched LA, age}}
+\left(\text{actual Trust deliveries}_{2025/26}
+\times\frac{\text{ONS births}_t}{\text{ONS births}_{2026}}\right)
++\text{unmatched baseline deliveries}.
+$$
+
+Each term uses the **same LA and age band** in the numerator and denominator. For every matched contribution with a positive starting count, the code requires a positive ONS reference and usable growth in every projected year; an incomplete series stops calculation rather than producing incomplete totals. Use every year's published ONS value; do not assume straight-line growth or apply one all-age percentage to every contribution. An observed zero contribution stays zero in this fixed-flow model. Separately, the resident output sums the converted ONS maternity counts across ages for each LA, without the MSDS alignment factor.
+
+The displayed baseline is the actual financial year **April 2025–March 2026**. ONS's reference birth period ends in **June 2026**. The current model uses these as approximately corresponding periods; it does not perform a quarterly alignment. Future labels therefore describe the ONS mid-year periods, not exact NHS financial-year forecasts.
+
+**What is held fixed:** the baseline relationship between each resident LA/age group and Trust A, the source alignment implicit in rebasing, and the broad age-specific maternity modifiers. **What changes:** the ONS projected births within each LA/age group and therefore their contribution to the trust's future total. Changes in referral patterns, home-birth provision, private use, recording completeness or service configuration require an explicit alternative assumption.

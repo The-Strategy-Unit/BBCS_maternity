@@ -5,7 +5,6 @@
 local({
   scripts <- c(
     "R/Read parquet files from azure.R",
-    "R/matrix of booking appts and births.R",
     "R/additional_analysis.R",
     "R/Deliveries by LA and Age Bands.R",
     "R/Projections.R",

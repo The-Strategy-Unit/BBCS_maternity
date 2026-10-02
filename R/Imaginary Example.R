@@ -123,11 +123,11 @@ make_imaginary_example <- function() {
     observed_table = observed_deliveries |> table_style(),
     destinations_table = example_destinations |>
       table_style() |>
-      gt::cols_label(LA = "Mother lives in", Resident_maternities = "All resident maternities",
+      gt::cols_label(LA = "Mother lives in", Resident_maternities = "MSDS-recorded resident maternities",
                      Trust_A = "At Trust A", Home = "Home births", Other_trusts = "At other trusts"),
     mapping_table = feeder_shares[, c("LA", "Age", "All_LA_maternities", "At_Trust_A", "Share")] |>
       table_style() |>
-      gt::cols_label(LA = "Resident LA", Age = "Age band", All_LA_maternities = "All LA/age maternities",
+      gt::cols_label(LA = "Resident LA", Age = "Age band", All_LA_maternities = "MSDS LA/age maternities",
                      At_Trust_A = "At Trust A", Share = "Share sent to Trust A") |>
       gt::fmt_percent(columns = "Share", decimals = 0),
     modifiers_table = example_modifiers |>

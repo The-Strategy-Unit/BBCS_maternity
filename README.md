@@ -53,12 +53,13 @@ only load saved objects and do not display a chart.
 | File | Purpose |
 |---|---|
 | `index.qmd` | Report text, headings, tabs and calls to display charts and tables. |
-| `R/Run analysis.R` | Runs Sarah's reader and matrix scripts, then the report preparation and imaginary example. |
+| `R/Run analysis.R` | Runs Sarah's Azure reader, then the report preparation and imaginary example. |
+| `R/report_cohort.R` | Shared pregnancy-row, birth-flag, date, code and age definitions for sections 4–9; performs no further deduplication. |
 | `R/ons_data.R` | Reads public ONS inputs and prepares the two births-to-maternities methods. |
 | `R/additional_analysis.R` | Prepares sections 4–7: patient flows, cluster activity and delivery outcomes over time. |
 | `R/Deliveries by LA and Age Bands.R` | Prepares section 8: LA-to-destination flows, hospital LA/age contributions and changes over time. |
 | `R/Projections.R` | Prepares section 9: feeder shares, age-specific growth, total projections, percentage changes and the retrospective comparison. |
-| `R/Imaginary Example.R` | Creates the fictional worked example in section 10. |
+| `R/Imaginary Example.R` | Creates the original fictional example in section 10. Section 11's fuller worked explanation is in `index.qmd`. |
 | `R/QA.R` | Checks the data and counts when you choose to run it; the runner does not source it. |
 | `R/scratch area.R` | Optional column/type and flag checks; the runner does not source it. |
 | `data/lookups/la_names.csv` | Public UK LA codes and names, including older codes used in the comparison years. |
@@ -66,7 +67,9 @@ only load saved objects and do not display a chart.
 
 Keep new calculations, charts and tables in the R scripts; use the QMD to label
 and organise their outputs. The runner first calls Sarah's
-`R/Read parquet files from azure.R` and `R/matrix of booking appts and births.R`.
+`R/Read parquet files from azure.R`. The separate matrix-formatting script is
+retained but is no longer needed for the report: sections 4–5 now use the same
+pregnancy records and delivery inclusion rules for all three years.
 
 ## Inputs needed
 
@@ -136,7 +139,17 @@ not counted as hospital-location deliveries.
 
 Projections start from actual 2025/26 counts and apply Method 1 ONS age-specific
 growth afterwards, relative to mid-2026. Section 9's coverage tables show records
-held constant and any boundary proxies used.
+excluded for home/unknown home status, eligible records held constant, and any
+boundary proxies used. Age-growth charts weight each LA by its actual contribution
+to the organisation, so their percentages agree with the incoming-count charts.
+
+Sarah's supplied cohort is already deduplicated. The report counts each supplied
+pregnancy row once, including rows with missing identifiers. Delivery-year totals
+require `birth_flag = 1` and a valid `birth_yr`; hospital totals additionally require
+`home_birth = 0` and a cluster delivery provider. Booking-year pathway denominators
+retain all recorded cluster starts and follow their supplied outcomes, including
+later deliveries. Section 4 shows inclusion/exclusion counts. Section 8 contains
+the main-LA code comparison; section 11 illustrates the actual calculation.
 
 ## Saved outputs and missing sections
 
@@ -170,6 +183,16 @@ The QA script reports plain-language results and lists any records or totals tha
 need attention. It is not run by `Run analysis.R` or when rendering the report.
 Run it after changing data, organisation membership or calculations, and before
 using a new version of the results.
+
+The checks now reconcile annual cluster totals across sections 5, 6, 8 and 9,
+organisation/LA/age baseline cells across sections 8 and 9, and growth-chart
+percentages against incoming counts. These comparisons are available in
+`qa_details`. To see only items needing attention, use
+`subset(qa_results, Result == "Check")`. The QA script does not deduplicate inputs.
+
+For a local check without MSDS or Azure, run `Rscript R/test_report_consistency.R`.
+It uses invented pregnancy records and public ONS files, keeps its outputs in
+memory, and does not read or overwrite the secure report's saved RDS files.
 
 ## Terminology key
 

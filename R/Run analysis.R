@@ -1,7 +1,7 @@
 # RUN THE ANALYSIS ======================================================
 # Run from the project root in RStudio, with the usual secure Azure access.
 # Each run reads the parquet files afresh in this R session.
-# Order: read parquet files -> analyse -> check -> render -> show results.
+# Order: read parquet files -> analyse -> check -> render -> open report.
 # Run with: source("R/Run analysis.R")
 
 run_maternity_project <- function() {
@@ -102,6 +102,14 @@ run_maternity_project <- function() {
   qa_details <<- checks$details
   completed <- TRUE
   message("Report ready: _site/index.html")
+
+  # 6. OPEN THE FINISHED REPORT ------------------------------------------
+  # Use the current RStudio / default browser setting (for example, Edge).
+  report_file <- normalizePath("_site/index.html", winslash = "/", mustWork = TRUE)
+  tryCatch(
+    utils::browseURL(report_file),
+    error = function(e) message("Report saved; browser could not open. Open _site/index.html.")
+  )
   invisible(NULL)
 }
 

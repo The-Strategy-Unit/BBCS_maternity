@@ -15,7 +15,8 @@ source("R/Run analysis.R")
 ```
 
 The command reads Sarah's prepared parquet inputs, prepares the analysis, runs
-QA and renders `_site/index.html`. Reading and analysis run in the current
+QA, renders `_site/index.html` and opens the finished report in the configured
+browser. Reading and analysis run in the current
 RStudio session, keeping its existing Azure setup. The command replaces the
 previous outputs. If preparation or rendering fails, partial outputs are removed.
 Rendering uses a temporary folder to avoid clashes with an editor render.

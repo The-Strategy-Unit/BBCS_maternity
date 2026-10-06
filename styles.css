@@ -50,32 +50,6 @@ h1, h2, h3, h4, h5, h6 {
   border-left-color: var(--su-blue);
 }
 
-.card-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 1rem;
-  margin: 1.25rem 0 2rem;
-}
-
-.metric-card {
-  background: white;
-  border-top: 6px solid var(--su-yellow);
-  box-shadow: 0 2px 10px rgba(44, 40, 37, 0.10);
-  padding: 1rem 1.1rem;
-}
-
-.metric-card .value {
-  display: block;
-  font-family: "Roboto Slab", Georgia, serif;
-  font-size: 2rem;
-  font-weight: 700;
-}
-
-.metric-card .label {
-  color: #5f5b58;
-  font-size: 0.9rem;
-}
-
 table {
   background: white;
 }
@@ -98,17 +72,6 @@ a { color: var(--su-blue); }
   background: #fff;
   font-style: italic;
 }
-
-/* Indented, readable word equations; allow scrolling on narrow screens. */
-.word-formulas {
-  margin: 1.2rem 0 1.5rem 1.5rem;
-  padding: 0.6rem 1rem;
-  border-left: 3px solid #5881c1;
-  background: #fff;
-  overflow-x: auto;
-  font-size: 0.92em;
-}
-.word-formulas mjx-container[display="true"] { text-align: left !important; }
 
 /* Keep the worked example's steps and small tables together. */
 .projection-example-grid {
@@ -154,4 +117,27 @@ a { color: var(--su-blue); }
 
 @media (max-width: 800px) {
   .projection-example-grid { grid-template-columns: 1fr; }
+}
+
+/* Modifier example: match section 11's cards, with caveats at the relevant step. */
+.whole-trust-example-grid .example-step h3,
+.modifier-example-grid .example-step h3,
+.boundary-example .example-step h3 {
+  margin: 0 0 0.5rem;
+  padding: 0;
+  border: 0;
+  font-size: 1.1rem;
+}
+
+.boundary-example > .example-step { margin: 0.8rem 0; }
+.boundary-age-table { overflow-x: auto; }
+.boundary-age-table table { min-width: 680px; }
+
+.modifier-caveat {
+  margin-top: 0.7rem;
+  padding: 0.55rem 0.65rem;
+  background: #fff8e7;
+  border-left: 3px solid #b07300;
+  font-size: 0.85rem;
+  line-height: 1.45;
 }

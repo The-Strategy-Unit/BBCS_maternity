@@ -1,10 +1,9 @@
 # Run the counting checks when you want to QA a new dataset or changed analysis.
-# Run after Run analysis.R, in the same secure R session.
+# Run automatically by Run analysis.R after preparation.
 # This script does not make charts, change inputs or overwrite report outputs.
 
 # 1. Get the inputs and start a readable list of results.
-required_inputs <- c("final_cohort_2326", "total_births_by_LA_2326",
-                     "icb_matrix_data", "trust_matrix_data")
+required_inputs <- c("final_cohort_2326", "total_births_by_LA_2326")
 missing_inputs <- required_inputs[!vapply(required_inputs,
   function(name) exists(name, inherits = TRUE), logical(1))]
 if (length(missing_inputs)) stop("Load the Azure data first. Missing: ",
@@ -12,7 +11,6 @@ if (length(missing_inputs)) stop("Load the Azure data first. Missing: ",
 source("R/ons_data.R")
 source("R/report_cohort.R")
 qa_years <- c("2023/24", "2024/25", "2025/26")
-qa_age_bands <- report_age_bands
 qa_results <- data.frame(Check = character(), Result = character(), Details = character())
 qa_details <- list()
 
@@ -60,13 +58,6 @@ repeated_resident_cells <- duplicated(total_births_by_LA_2326[
   c("birth_yr", "la_of_mother", "age_at_birth_mother")])
 qa_check("Resident totals have one row per LA, age and year", !any(repeated_resident_cells),
          paste(sum(repeated_resident_cells), "repeated LA/age/year rows"))
-for (matrix_name in c("icb_matrix_data", "trust_matrix_data")) {
-  matrix_data <- get(matrix_name)
-  matrix_counts <- suppressWarnings(as.numeric(as.character(matrix_data$n)))
-  qa_check(paste(matrix_name, "has valid counts"),
-    nrow(matrix_data) > 0 && length(matrix_counts) == nrow(matrix_data) &&
-      all(is.finite(matrix_counts) & matrix_counts >= 0), "Uses the n column")
-}
 
 # 3. Check the public ONS data covers the selected areas and years.
 area_settings <- read_area_config()
@@ -402,107 +393,120 @@ if (file.exists(".delivery_geography.rds")) {
   qa_check("Section 9 has saved outputs available", FALSE, "Run R/Run analysis.R first")
 }
 
-# 6. Check section 10's shares, growth and totals, including the historical comparison.
+# 6. Check the master and both independent destination allocations.
 if (file.exists(".projections.rds")) {
   projections <- readRDS(".projections.rds")
-  catchment_codes <- readr::read_csv("config/local_authorities.csv", show_col_types = FALSE)$area_code
-  for (key in names(projections$mapping_outputs)) {
-    mapping <- projections$mapping_outputs[[key]]
-    if (is.null(mapping$flow)) next
-    baseline_count <- projections$observed_totals$Observed_baseline[projections$observed_totals$Key == key]
-    qa_check(paste("Section 10.1 grouped feeder counts retain the actual baseline:", key),
-      numbers_match(sum(mapping$flow$N), baseline_count))
-    qa_check(paste("Section 10.1 shows no more than ten additional feeder LAs:", key),
-      length(setdiff(mapping$visible_las, catchment_codes)) <= 10L)
-  }
-  projection_trusts <- projections$organisations |>
-    dplyr::filter(Level == "Trust") |>
-    dplyr::pull(Code)
-  cluster_hospital_records <- recorded_deliveries |>
-    dplyr::filter(toupper(trimws(as.character(birth_provider))) %in% projection_trusts,
-                  as.character(home_birth) == "0")
-  qa_check("Cluster-trust hospital deliveries cover all three comparison years",
-    all(qa_years %in% as.character(cluster_hospital_records$birth_yr)))
-  # Check both the 2025/26 projection base and the separate 2023/24 comparison base.
+  qa_check("Projection outputs use separate booking and delivery volumes",
+    identical(projections$calculation_version, "ons-shared-age-calculations-v8"))
   for (base in list(projections, projections$backtest$baseline)) {
-    base_label <- base$baseline_fy
-    qa_check(paste(base_label, "has recorded cluster-trust deliveries"),
-      sum(base$observed_totals$Observed_baseline) > 0)
-    qa_check(paste(base_label, "coverage shows both exclusions and held-constant records"),
-      numbers_match(base$coverage$Recorded_births, base$coverage$Home_births +
-        base$coverage$Unknown_home_flag + base$coverage$Observed_baseline) &&
-      numbers_match(base$coverage$Observed_baseline, base$coverage$ONS_growth + base$coverage$Unmatched))
-    occupied_shares <- base$feeder_shares |> dplyr::filter(Numerator > 0)
-    valid_denominators <- is.finite(occupied_shares$Denominator) &
-      occupied_shares$Denominator > 0 & occupied_shares$Numerator <= occupied_shares$Denominator
-    qa_details[[paste0(base_label, " invalid denominators")]] <- occupied_shares[!valid_denominators, ]
-    qa_check(paste(base_label, "feeder counts fit within resident LA totals"),
-      all(valid_denominators), paste(sum(!valid_denominators), "invalid LA/age denominators"))
-    qa_check(paste(base_label, "feeder shares are between 0% and 100%"),
-      all(is.finite(occupied_shares$Share) & occupied_shares$Share >= 0 & occupied_shares$Share <= 1))
-    feeder_levels <- base$feeder_shares |>
-      dplyr::group_by(Level) |>
-      dplyr::summarise(N = sum(Numerator), .groups = "drop") |>
-      tidyr::pivot_wider(names_from = Level, values_from = N)
-    qa_check(paste(base_label, "trust and ICB feeder counts add up to the combined cluster"),
-      numbers_match(feeder_levels$Trust, feeder_levels$Cluster) &&
-        numbers_match(feeder_levels$ICB, feeder_levels$Cluster))
-    qa_check(paste(base_label, "other destinations have nonnegative counts"),
-      all(base$destination_accounting$Other_or_unrepresented >= 0))
-    expected_ons <- tidyr::expand_grid(LA = unique(base$ons_maternity_projections$LA),
-      Age_band = base$age_bands, Year = base$projection_years)
-    missing_ons <- dplyr::anti_join(expected_ons, base$ons_maternity_projections,
-                                   by = c("LA", "Age_band", "Year"))
-    qa_details[[paste0(base_label, " missing ONS cells")]] <- missing_ons
-    qa_check(paste(base_label, "ONS covers every feeder LA, age band and year"),
-      !nrow(missing_ons) &&
-        !anyDuplicated(base$ons_maternity_projections[c("LA", "Age_band", "Year")]) &&
-        all(is.finite(base$ons_maternity_projections$ONS_maternities) &
-              base$ons_maternity_projections$ONS_maternities >= 0),
-      paste(nrow(missing_ons), "missing cells"))
-    english_las_without_ons <- setdiff(
-      unique(occupied_shares$LA[startsWith(occupied_shares$LA, "E")]),
-      unique(base$ons_maternity_projections$LA))
-    qa_check(paste(base_label, "English feeder LA codes match ONS"),
-      !length(english_las_without_ons), paste(english_las_without_ons, collapse = ", "))
-    active_flows <- base$feeder_projections |>
-      dplyr::filter(!Held_constant, Numerator > 0)
-    qa_check(paste(base_label, "occupied feeder cells have usable ONS growth"),
-      all(is.finite(active_flows$Growth_factor)))
-    qa_check(paste(base_label, "incoming flows follow their age-specific ONS growth"),
-      numbers_match(active_flows$Projected, active_flows$Numerator * active_flows$Growth_factor))
-    chart_growth <- base$weighted_age_growth |> dplyr::filter(Baseline > 0)
-    qa_check(paste(base_label, "age-growth chart agrees with incoming maternity counts"),
-      numbers_match(chart_growth$Baseline * (1 + chart_growth$Growth_change), chart_growth$Projected))
-    zero_base_growth <- base$weighted_age_growth |> dplyr::filter(Baseline == 0)
-    qa_check(paste(base_label, "zero age-band baselines have no percentage change"),
-      all(is.na(zero_base_growth$Growth_change)))
-    held_flows <- base$feeder_projections |> dplyr::filter(Held_constant)
-    qa_check(paste(base_label, "unmatched records retain their actual baseline counts"),
-      numbers_match(held_flows$Projected, held_flows$Numerator))
-    baseline_counts <- base$maternity_projections |>
-      dplyr::filter(Year == base$ons_reference_year)
-    qa_check(paste(base_label, "projected starting counts equal observed counts"),
-      numbers_match(baseline_counts$Projected, baseline_counts$Observed_baseline))
-    projection_levels <- base$maternity_projections |>
-      dplyr::group_by(Level, Year) |>
+    m <- base$master
+    label <- paste("Reference", base$baseline_fy)
+    qa_check(paste(label, "separate starting volumes: no booking uplift applied"),
+      numbers_match(m$Delivery_projection_base, m$Adjusted_maternities) &&
+      numbers_match(m$Booking_projection_base, m$Adjusted_maternities))
+    qa_check(paste(label, "unique LA/Age (1)/source-age/year master rows"),
+      !anyDuplicated(m[c("LA", "ONS_age", "Age", "Year")]))
+    qa_check(paste(label, "stillbirth adjustment increases or preserves births (L)"),
+      all(m$Adjusted_births_ls >= m$Exact_age_live_births) &&
+      numbers_match(m$Adjusted_births_ls, m$Exact_age_live_births * (1 + m$Stillbirth_ratio)))
+    qa_check(paste(label, "multiplicity converts births (L+S) to maternities"),
+      numbers_match(m$Adjusted_maternities, m$Adjusted_births_ls * m$Multiplicity_factor))
+    split_check <- m |> dplyr::group_by(Source_cell_id) |>
+      dplyr::summarise(Source = dplyr::first(ONS_live_births), Split = sum(Exact_age_live_births), .groups = "drop")
+    qa_check(paste(label, "age split preserves each ONS births (L) total"),
+      numbers_match(split_check$Source, split_check$Split, 1e-7))
+    for (type in c("Delivery", "Booking")) {
+      volume <- m[[paste0(type, "_projection_base")]]
+      proportions <- grep(paste0("^", type, "_proportion_"), names(m), value = TRUE)
+      counts <- sub("_proportion_", "_count_", proportions, fixed = TRUE)
+      qa_check(paste(label, type, "proportions are valid and sum to one"),
+        all(as.matrix(m[proportions]) >= 0 & as.matrix(m[proportions]) <= 1) &&
+        numbers_match(rowSums(m[proportions]), rep(1, nrow(m))))
+      calculated <- as.matrix(m[proportions]) * volume
+      qa_check(paste(label, type, "counts follow their own proportions"),
+        numbers_match(as.matrix(m[counts]), calculated))
+      qa_check(paste(label, type, "counts conserve their starting volume"),
+        numbers_match(rowSums(m[counts]), volume, 1e-7))
+      qa_check(paste(label, type, "proportions stay fixed over future years"),
+        nrow(unique(m[c("LA", "Age", proportions)])) == nrow(unique(m[c("LA", "Age")])))
+    }
+    qa_check(paste(label, "modelled counts are finite and nonnegative"),
+      all(is.finite(m$Adjusted_maternities) & m$Adjusted_maternities >= 0))
+    master_totals <- base$delivery_rows |>
+      dplyr::filter(Delivery_destination %in% cluster_trusts) |>
+      dplyr::group_by(Year) |> dplyr::summarise(N = sum(Projected_maternities), .groups = "drop")
+    presented <- base$maternity_projections |> dplyr::filter(Level == "Cluster") |> dplyr::arrange(Year)
+    qa_check(paste(label, "delivery report totals come from the master"),
+      numbers_match(presented$Projected, master_totals$N))
+    totals <- base$maternity_projections |> dplyr::group_by(Level, Year) |>
       dplyr::summarise(N = sum(Projected), .groups = "drop") |>
       tidyr::pivot_wider(names_from = Level, values_from = N)
-    qa_details[[paste0(base_label, " projected totals")]] <- projection_levels
-    qa_check(paste(base_label, "trust and ICB projections add up to the combined cluster"),
-      numbers_match(projection_levels$Trust, projection_levels$Cluster, 1e-7) &&
-        numbers_match(projection_levels$ICB, projection_levels$Cluster, 1e-7))
+    qa_check(paste(label, "delivery trust and ICB totals reconcile to cluster"),
+      numbers_match(totals$Trust, totals$Cluster, 1e-7) && numbers_match(totals$ICB, totals$Cluster, 1e-7))
+    booking_sums <- lapply(base$booking_totals, function(x) x |>
+      dplyr::group_by(Year) |> dplyr::summarise(N = sum(Projected), .groups = "drop"))
+    qa_check(paste(label, "booking trust and ICB totals reconcile to cluster"),
+      numbers_match(booking_sums$Trust$N, booking_sums$Cluster$N, 1e-7) &&
+      numbers_match(booking_sums$ICB$N, booking_sums$Cluster$N, 1e-7))
+    booking_display <- base$booking_total_projections |> dplyr::group_by(Level, Year) |>
+      dplyr::summarise(N = sum(Projected), .groups = "drop") |>
+      tidyr::pivot_wider(names_from = Level, values_from = N)
+    qa_check(paste(label, "displayed booking trust rows reconcile to ICB and cluster"),
+      numbers_match(booking_display$Trust, booking_display$Cluster, 1e-7) &&
+      numbers_match(booking_display$ICB, booking_display$Cluster, 1e-7))
+    booking_master <- base$booking_rows |>
+      dplyr::filter(Booking_destination %in% cluster_trusts) |>
+      dplyr::group_by(Year) |> dplyr::summarise(N = sum(Projected_bookings), .groups = "drop")
+    booking_report <- base$booking_total_projections |> dplyr::filter(Level == "Cluster") |> dplyr::arrange(Year)
+    booking_bands <- base$booking_age_projections |> dplyr::filter(Key == "cluster") |>
+      dplyr::group_by(Year) |> dplyr::summarise(N = sum(Projected), .groups = "drop")
+    qa_check(paste(label, "booking chart totals and age bands come from the master"),
+      numbers_match(booking_master$N, booking_report$Projected) && numbers_match(booking_master$N, booking_bands$N))
+    # Check each ICB separately: a correct grand total can conceal switched ICB rows.
+    for (type in c("Delivery", "Booking")) {
+      displayed <- if (type == "Delivery") base$maternity_projections else base$booking_total_projections
+      trust_to_icb <- displayed |> dplyr::filter(Level == "Trust") |>
+        dplyr::left_join(base$organisations |> dplyr::select(Key, Code), by = "Key", suffix = c("", "_lookup")) |>
+        dplyr::mutate(ICB_key = paste0("icb-", tolower(unname(provider_icb[Code])))) |>
+        dplyr::group_by(ICB_key, Year) |>
+        dplyr::summarise(Trust_sum = sum(Projected), .groups = "drop")
+      icb_check <- displayed |> dplyr::filter(Level == "ICB") |>
+        dplyr::left_join(trust_to_icb, by = c("Key" = "ICB_key", "Year"))
+      qa_check(paste(label, type, "each ICB equals its own trusts"),
+        numbers_match(icb_check$Projected, icb_check$Trust_sum, 1e-7))
+    }
+    # Descriptive source totals must not depend on successful ONS matching.
+    pooled_cluster <- base$allocation_tables$delivery |>
+      dplyr::filter(Destination %in% cluster_trusts) |>
+      dplyr::group_by(LA, Age) |> dplyr::summarise(Expected = sum(Count), .groups = "drop")
+    feeder_check <- pooled_cluster |> dplyr::left_join(
+      base$feeder_shares |> dplyr::filter(Level == "Cluster"), by = c("LA", "Age"))
+    qa_check(paste(label, "descriptive feeder numerators retain pooled MSDS counts"),
+      numbers_match(feeder_check$Expected, feeder_check$Numerator))
+    # Resident estimates in section 2 must be the same master values before allocation.
+    resident_view <- readRDS(".ons_exploration.rds")
+    resident_comparison <- m |>
+      dplyr::filter(LA %in% read_area_config()$area_code) |>
+      dplyr::group_by(LA, Year) |>
+      dplyr::summarise(Expected = sum(Adjusted_maternities), .groups = "drop") |>
+      dplyr::left_join(resident_view$total_maternity_projections,
+        by = c("LA" = "area_code", "Year" = "year"))
+    qa_check(paste(label, "resident chart totals equal the shared master before allocation"),
+      numbers_match(resident_comparison$Expected, resident_comparison$projected_maternities))
+    resident_bands <- resident_view$age_band_projections |>
+      dplyr::group_by(area_code, year) |>
+      dplyr::summarise(Bands = sum(projected_maternities), .groups = "drop") |>
+      dplyr::left_join(resident_view$total_maternity_projections, by = c("area_code", "year"))
+    qa_check(paste(label, "resident age bands including unsplit counts conserve totals"),
+      numbers_match(resident_bands$Bands, resident_bands$projected_maternities))
+    qa_check(paste(label, "resident display retains 2023-2047"),
+      all(2023:2047 %in% resident_view$total_maternity_projections$year))
+    qa_details[[paste(label, "unmatched LA codes")]] <- attr(m, "unmatched_las")
+    qa_details[[paste(label, "unallocated contributions")]] <- base$delivery_rows |>
+      dplyr::filter(!Allocation_available, Projected_maternities > 0)
   }
-  historical_comparison <- projections$backtest$data
-  qa_check("Historical comparison has observed counts for each organisation and year",
-    !anyNA(historical_comparison$Observed) &&
-      all(qa_years %in% historical_comparison$Year_label))
-  historical_base <- historical_comparison |>
-    dplyr::filter(Year_label == "2023/24")
-  qa_check("Historical model starts exactly at actual 2023/24 counts",
-    numbers_match(historical_base$Difference, rep(0, nrow(historical_base))))
 } else {
-  qa_check("Section 10 has saved outputs available", FALSE, "Run R/Run analysis.R first")
+  qa_check("Section 10 has saved outputs available", FALSE, "Run Run analysis.R first")
 }
 
 # Reconcile sections that claim to describe the same delivery activity.
@@ -538,36 +542,14 @@ if (all(file.exists(c(".patient_flows.rds", ".delivery_geography.rds", ".project
   qa_check("Sections 4 and 5 use identical latest-year flows",
     identical(patient_flows$icb_flow, patient_flows$by_year[["2025/26"]]$icb_flow) &&
     identical(patient_flows$trust_flow, patient_flows$by_year[["2025/26"]]$trust_flow))
-  for (base in list(projections, projections$backtest$baseline)) {
-    historical_cells <- delivery_mapping$hospital_mapping |>
-      dplyr::filter(Year == base$baseline_fy) |>
-      dplyr::select(Key, LA, Age_band, Section9 = N)
-    forecast_cells <- base$feeder_projections |>
-      dplyr::filter(Year == base$ons_reference_year) |>
-      dplyr::select(Key, LA, Age_band, Section10 = Projected)
-    cells <- dplyr::full_join(historical_cells, forecast_cells, by = c("Key", "LA", "Age_band")) |>
-      dplyr::mutate(Section9 = dplyr::coalesce(Section9, 0), Section10 = dplyr::coalesce(Section10, 0))
-    qa_check(paste(base$baseline_fy, "sections 9 and 10 agree within every organisation/LA/age cell"),
-      numbers_match(cells$Section9, cells$Section10))
-    qa_details[[paste0(base$baseline_fy, " age-cell differences")]] <- cells |>
-      dplyr::filter(Section9 != Section10)
-  }
+
 }
 
-# 7. Check the imaginary example reaches its intended ten-year total.
-if (exists("imaginary_example")) {
-  example_totals <- imaginary_example$totals$Total
-  qa_check("Imaginary example starts at 110 and follows the rounded ONS change",
-    length(example_totals) > 0 && numbers_match(example_totals[1], 110) &&
-      numbers_match(tail(example_totals, 1), 110 * (1 + imaginary_example$ten_year_change)))
-  qa_check("Imaginary example uses two valid public ONS reference totals",
-    nrow(imaginary_example$public_totals) == 2 &&
-      all(imaginary_example$public_totals$year ==
-            c(example_reference_year, example_reference_year + example_horizon)) &&
-      all(is.finite(imaginary_example$public_totals$Maternities) &
-            imaginary_example$public_totals$Maternities > 0))
+# 7. Show only items needing attention; keep the complete results for inspection.
+qa_issues <- qa_results[qa_results$Result == "Check", , drop = FALSE]
+message("QA: ", sum(qa_results$Result == "OK"), " passed",
+  if (nrow(qa_issues)) paste0("; ", nrow(qa_issues), " to review") else "", ".")
+for (i in seq_len(nrow(qa_issues))) {
+  message("- ", qa_issues$Check[i],
+    if (nzchar(qa_issues$Details[i])) paste0(": ", qa_issues$Details[i]) else "")
 }
-
-# 8. Print the results. Detailed count tables remain in qa_details for inspection.
-print(qa_results, row.names = FALSE)
-message(sum(qa_results$Result == "Check"), " checks need attention. See qa_results and qa_details.")

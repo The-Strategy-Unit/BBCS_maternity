@@ -1,75 +1,69 @@
 # BBCS maternity analysis
 
-`index.qmd` is the report. It compares two ways of converting ONS projected live
-births into maternities, describes recorded patient flows and delivery activity,
+`index.qmd` is the report. It converts ONS projected live births into maternities
+using individual-age stillbirth/multiplicity conversions, describes recorded patient flows and delivery activity,
 and makes first-draft projections for trusts, ICBs and the combined cluster.
-Method 1 is used for the service projections; Method 2 remains for comparison.
+Method 1 is used throughout; section 3 explains the ONS boundary-age conversion and local age weights.
 
 ## Run the report
 
-Run the full report in UDAL since it needs to be able to access Azure data. 
-
-Install R and Quarto, and work from the project folder containing `index.qmd`, `R/` and `data/`.
-Open `BBCS_maternity.Rproj` in RStudio if it is available; keep the R working
-directory at the project root.
-
-These packages are used by the current scripts and report. Install them once in R:
-
-```r
-install.packages(c(
-  "arrow", "AzureKeyVault", "AzureStor", "cli", "dplyr", "flextable",
-  "ggplot2", "glue", "gt", "htmltools", "janitor", "knitr", "plotly",
-  "purrr", "readr", "readxl", "rmarkdown", "scales", "stringr", "tibble", "tidyr"
-))
-```
-
-First, run this in the secure R session:
+Open the project in RStudio, with the project root as the working directory.
+Run this command in the secure environment:
 
 ```r
 source("R/Run analysis.R")
 ```
 
-This reads the Azure inputs and runs the analysis scripts in the required order.
-An error stops preparation at the problem. Old saved outputs are cleared before
-preparation starts, so a failed run cannot leave old charts looking current.
+The command reads Sarah's prepared parquet inputs, prepares the analysis, runs
+QA and renders `_site/index.html`. It uses a fresh R process and replaces the
+previous outputs. If preparation or rendering fails, partial outputs are removed.
+Rendering uses a temporary folder to avoid clashes with an editor render.
+A preview opened during preparation waits for that run to finish.
+The console shows a short QA summary, details of items requiring review, and
+the finished report path; no separate QA script is needed.
 
-Then run this in the terminal, from the same project folder:
+The completed `projection_master`, `projection_master_backtest`, `ons_modifications`,
+`delivery_proportions`, `booking_proportions`, column dictionary,
+`qa_results` and `qa_details` are returned to the RStudio session for inspection.
+Check `subset(qa_results, Result == "Check")` before using real results.
+The runner requires the existing Azure access and packages in the secure
+environment. The project requires R and Quarto on the PATH. Main analysis packages:
 
-```sh
-quarto render index.qmd
+```r
+install.packages(c("dplyr", "tidyr", "readr", "readxl", "janitor", "purrr",
+  "ggplot2", "gt", "plotly", "scales", "htmltools", "knitr", "rmarkdown"))
+# The parquet reader additionally uses arrow, AzureKeyVault, AzureStor, cli and glue.
 ```
 
-Open `_site/index.html`. Rendering recalculates the public ONS methods, but reads
-saved outputs for sections 4–10. Section 11 is a static worked example in the report.
-Rendering does not rerun Azure preparation. Run the preparation script again after changing those analysis
-scripts or their data, then render again.
-
-To view an individual chart or table in RStudio, run the preparation script first,
-then use the green Run button on that chart or table's chunk. Section setup chunks
-only load saved objects and do not display a chart.
-
-## Which files do what?
+## Where to edit
 
 | File | Purpose |
 |---|---|
-| `index.qmd` | Report text, headings, tabs and calls to display charts and tables. |
-| `R/Run analysis.R` | Runs Sarah's Azure reader, then prepares the report's saved charts and tables. |
-| `R/report_cohort.R` | Shared pregnancy-row, birth-flag, date, code and age definitions for sections 4–10; performs no further deduplication. |
-| `R/ons_data.R` | Reads public ONS inputs and prepares the two births-to-maternities methods. |
-| `R/additional_analysis.R` | Prepares sections 4–8: patient flows, cluster activity and delivery outcomes over time, including same/different booking-trust destinations. |
-| `R/Deliveries by LA and Age Bands.R` | Prepares section 9: LA-to-destination flows, hospital LA/age contributions and changes over time. |
-| `R/Projections.R` | Prepares section 10: feeder shares, age-specific growth, total projections, percentage changes and the retrospective comparison. |
-| `R/Imaginary Example.R` | Optional legacy example, retained for reference; not used by the report or runner. The current worked example is section 11 in `index.qmd`. |
-| `R/QA.R` | Checks the data and counts when you choose to run it; the runner does not source it. |
-| `R/scratch area.R` | Optional column/type and flag checks; the runner does not source it. |
-| `data/lookups/la_names.csv` | Public UK LA codes and names, including older codes used in the comparison years. |
-| `data/lookups/trust_names.csv` | Public NHS trust codes and names, including closed trusts. |
+| `R/Maternity analysis.R` | Main editing file: general settings/labels, ONS exploration, MSDS exploration, projection model, charts and tables. |
+| `R/Run analysis.R` | Entry script: read secure data, analyse, check and render. |
+| `R/Analysis runner.R` | Support functions for the fresh R process, output replacement, QA and rendering. Called automatically by the entry script. |
+| `R/Read parquet files from azure.R` | Sarah's Azure reader; includes a correction to the empty-token error label. |
+| `R/ons_data.R` | Shared public-source readers and ONS chart/table functions. |
+| `R/report_cohort.R` | Shared pregnancy-counting and field definitions. |
+| `R/age_boundary_review.R` | Shared descriptive age-review functions. |
+| `R/QA.R` | Existing count/reconciliation checks, run automatically by the launcher. |
+| `index.qmd` | Existing report text, tabs and display chunks. Reads prepared ONS/MSDS outputs. |
 
-Keep new calculations, charts and tables in the R scripts; use the QMD to label
-and organise their outputs. The runner first calls Sarah's
-`R/Read parquet files from azure.R`. The separate matrix-formatting script is
-retained but is no longer needed for the report: sections 4–5 now use the same
-pregnancy records and delivery inclusion rules for all three years.
+The former activity, delivery-geography, projection-master and projection-chart
+scripts are consolidated in `R/Maternity analysis.R`. The report's existing views
+and saved-object names are retained.
+
+The terminology key is at the top of the main script. Search `MODEL_INPUT:` for
+data taken forward and `CONTEXT_ONLY` for exploration. `Age (1)` means individual
+age and `Age (B)` a reporting band. ONS <=15 and 44+ remain explicit combined
+source boundaries. `LA(R)` means residence. Booking/delivery provider codes are
+`Trust(B/D)`; they are not booking/delivery LA codes. `LA(C)` denotes the set of
+resident LAs contributing to a stated catchment, not a new administrative LA.
+
+Model factors and allocation shares apply at LA(R) and the most detailed available
+age before any chart bands. Final delivery and booking counts sum separately to
+their provider trusts, then provider ICBs, then the cluster. Home, unknown and
+unallocated contributions remain in the master.
 
 ## Inputs needed
 
@@ -81,10 +75,7 @@ The active public ONS files must be in `data/`:
 - `ons_live_births_la_2013_2025.csv`
 
 Birth and population projections use the 2022-based migration-category variant
-on 2023 LA geography. The older
-`ons_2022_based_births_migration_category.csv` and
-`ons_2022_based_female_population_projections.csv` are retained but are not selected
-by the current readers. Sources and methods are in the report and
+on 2023 LA geography. Sources and methods are in the report and
 `ONS-analysis-notes.md`.
 
 The two small files in `data/lookups/` supply chart and table labels. Keep them
@@ -105,13 +96,9 @@ Sarah's reader loads these Azure parquet datasets into R:
 |---|---|
 | `final_cohort_2326.parquet` | `final_cohort_2326` |
 | `total_births_by_LA_2326.parquet` | `total_births_by_LA_2326` |
-| `trust_matrix.parquet` | `trust_matrix_data` |
-| `icb_matrix.parquet` | `icb_matrix_data` |
 
 The reader expects the environment variables `container`, `lake`, `folder` and
 `azure_key_vault`, and access to the configured Azure storage and Key Vault secret.
-
-### Azure access and connection setup
 
 ## Change areas and settings
 
@@ -119,9 +106,9 @@ The reader expects the environment variables `container`, `lake`, `folder` and
   public ONS sections. Adding an LA also requires its data in the historic births
   and female-population extracts.
 - `config/analysis_parameters.csv` sets the female-population age range, currently
-  13–55. This does not change the service projection age bands.
+  13–55. This does not restrict the ages in the service projection.
 - Trust and ICB labels, provider membership and the service cluster are defined in
-  `R/additional_analysis.R`. The current cluster combines Black Country and
+  `R/Maternity analysis.R`. The current cluster combines Black Country and
   Birmingham and Solihull. These settings are separate from the ONS LA configuration.
 - Sections 9.2, 9.3 and 10.1 keep the configured cluster LAs visible, then show the ten
   largest additional feeders and group the rest as "All other feeder LAs".
@@ -138,11 +125,42 @@ from. Section 10's feeder percentages describe how much of each resident LA/age
 group delivered at that organisation. Home births stay in the LA totals but are
 not counted as hospital-location deliveries.
 
-Projections start from actual 2025/26 counts and apply Method 1 ONS age-specific
-growth afterwards, relative to mid-2026. Section 10's coverage tables show records
-excluded for home/unknown home status, eligible records held constant, and any
-boundary proxies used. Age-growth charts weight each LA by its actual contribution
-to the organisation, so their percentages agree with the incoming-count charts.
+Projections start with ONS births (L). The runner returns `projection_master`,
+`ons_modifications`, `delivery_proportions` and `booking_proportions` to RStudio.
+Use `View()` to inspect them. The master has one LA(R)/Age (1)/year row and separate
+destination proportion/count columns. An unsplit boundary remains an explicit
+source-group row where local age information is unavailable.
+
+Calculation steps:
+
+1. Pool 2023/24–2025/26 resident counts. Split combined ONS ages using each LA's maternity age mix; preserve each ONS births (L) total.
+2. Join `ons_modifications`: at each published age, mean annual stillbirths/live births gives the ratio; multiply births (L) by **1 + that ratio** to obtain births (L+S).
+3. Multiply by mean annual maternities/births (L+S), using Table 5 for 2023–2025. Ages below 14 share the under-14 factor; ages 50+ share its published factor. Other ages use their own factors.
+4. Delivery proportions = pooled destination deliveries / resident maternities. Booking proportions = pooled destination bookings / all bookings, including those without a recorded delivery. Both use LA(R)/Age (1) and remain fixed over future years.
+5. Multiply each starting-volume column by its own destination proportions. Aggregate completed delivery and booking counts separately into age bands, trusts, ICBs and cluster.
+
+The master starts with LA, Age, Year and three review columns:
+`Exact_age_live_births` (births (L), age split only), `Delivery_projection_base`
+and `Booking_projection_base` (separate adjusted allocation volumes).
+The two allocation volumes currently equal adjusted maternities. No early-loss uplift is applied.
+Any future booking uplift belongs before booking allocation and must not alter deliveries.
+Section 10.6 shows booking totals, age bands and change from the modelled reference year.
+Home, unknown, unrepresented and unallocated destinations remain explicit.
+ONS source counts repeat across split ages; `Exact_age_live_births` is additive.
+
+`projection_master_backtest` applies the same pooled proportions to historical
+ONS counts. It is an in-sample retrospective comparison, not independent validation.
+No modelled reference is forced to match observations. Section 10.4 retains the
+observed 2025/26 comparator. Resident charts use the same adjusted master values
+before destination allocation, retaining 2023–2047. All final reporting uses
+Under 20, 20–24, 25–29, 30–34, 35–39, 40–44 and 45+; grouping follows calculation.
+Historical banded births (L) and published maternities are displayed directly,
+without a second estimated-maternity conversion.
+
+The report requires calculation version `ons-shared-age-calculations-v8`.
+The three ONS registration workbooks were checked against the public downloads
+on 6 October 2026 and matched exactly. Table 5 supplies both modifiers; Table 7
+remains descriptive evidence about multiplicity.
 
 Sarah's supplied cohort is already deduplicated. The report counts each supplied
 pregnancy row once, including rows with missing identifiers. Delivery-year totals
@@ -170,9 +188,12 @@ The preparation scripts save these files in the project root:
 
 | Output | Used for |
 |---|---|
+| `.ons_exploration.rds` | ONS source exploration, shared resident projections and age-review objects |
 | `.patient_flows.rds` | Sections 4–8 |
 | `.delivery_geography.rds` | Section 9 |
-| `.projections.rds` | Section 10, including the retrospective comparison |
+| `.projections.rds` | Section 10, master and retrospective comparison |
+| `.qa.rds` | QA results and detailed checks |
+| `.analysis_run.rds` | Completion status and run identity for all current outputs |
 
 The QMD reads these files directly. If one is missing, R reports an error rather
 than skipping its section. Run preparation again to refresh the saved outputs;
@@ -182,22 +203,21 @@ Generated RDS files and HTML stay local and are ignored by Git. Prepare the RDS
 files on the data computer; they are not transferred with code changes. Current
 and future R scripts under `R/` are allowed by `.gitignore`.
 
-## Run the QA checks separately
+## Review the QA results
 
-After preparing the analysis, run this in the same secure R session when you want
-to check the inputs, counts and projections:
+The entry script runs the QA and returns the results. To inspect items needing review:
 
 ```r
-source("R/QA.R")
+subset(qa_results, Result == "Check")
 ```
 
 The QA script reports plain-language results and lists any records or totals that
-need attention. It is not run by `Run analysis.R` or when rendering the report.
-Run it after changing data, organisation membership or calculations, and before
+need attention. It runs automatically before the runner renders the report.
+Run `R/Run analysis.R` after changing inputs or calculations, and review QA before
 using a new version of the results.
 
 The checks now reconcile annual cluster totals across sections 5, 6, 9 and 10,
-organisation/LA/age baseline cells across sections 9 and 10, and growth-chart
+recorded activity across sections 9 and 10, master-table source conservation, and chart
 percentages against incoming counts. These comparisons are available in
 `qa_details`. To see only items needing attention, use
 `subset(qa_results, Result == "Check")`. The QA script does not deduplicate inputs.
@@ -231,15 +251,15 @@ The ONS definitions above follow the [birth statistics user guide](https://www.o
 |---|---|
 | **Observed / published count** | An ONS figure derived from registered events that have already happened. |
 | **Projected live births** | Future baby counts from the ONS demographic model, conditional on its assumptions. |
-| **Estimated / projected maternities** | Counts calculated by this analysis from observed or projected live births using a maternity modifier. |
-| **Maternity modifier** | Method 1: reciprocal of expected babies per maternity from age-specific multiplicity proportions. Method 2: pooled maternities divided by live births in each age band. Both multiply projected births to estimate maternities. |
+| **Estimated / projected maternities** | Counts calculated from projected births (L), after the local age split and age-specific stillbirth/multiplicity adjustments. |
+| **Maternity modifier** | [1 + mean annual S/L] × mean annual M/(L+S), from Table 5 at each published age. Multiplies projected live births to estimate maternities. |
 | **General fertility rate (GFR)** | Live births per 1,000 women aged 15–44 in this report. It describes frequency relative to population size, not the number needing care. |
 | **Age-specific fertility rate (ASFR)** | Live births per 1,000 women in the relevant age group. |
 | **Total fertility rate (TFR)** | Children per woman if the year's age-specific fertility rates applied throughout childbearing life. Not an annual maternity count. |
 
-**The conversion in one line:** projected live-born babies × maternity modifier = estimated maternities. Calculate this within each maternal age group, then add the results. Birth rates are a separate contextual measure and are not used instead of this conversion.
+**The conversion in one line:** projected live-born babies × maternity modifier = estimated maternities. Split combined ONS ages first, apply each published-age factor, then add completed results. Birth rates are a separate contextual measure and are not used instead of this conversion.
 
-For illustration only, a modifier of **0.99** means an estimated **99 maternities for every 100 live-born babies**. A projection of 10,000 live births would therefore become 9,900 maternities if that modifier applied throughout. The actual analysis uses different age-specific modifiers. Method 1 adjusts for multiplicity without a separate stillbirth adjustment. Method 2 includes all maternities, including stillbirth-only maternities, in its numerator.
+For illustration only, a modifier of **0.99** means an estimated **99 maternities for every 100 live-born babies**. A projection of 10,000 live births would therefore become 9,900 maternities if that modifier applied throughout. The actual analysis uses different age-specific modifiers. Method 1 includes both stillbirths and multiplicity. Its factors change the absolute ONS counts allocated to trusts. MSDS already includes live-birth and stillbirth maternities and supplies allocation rates without an uplift. Each factor is the mean of its annual ratios; their product is applied to births (L).
 
 ### Using these figures for pathway demand and capacity
 

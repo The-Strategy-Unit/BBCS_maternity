@@ -3,9 +3,21 @@
 # Do not deduplicate on different subsets of fields or drop rows with missing IDs.
 # R/QA.R checks the supplied row-per-pregnancy assumption without choosing a record.
 
-report_age_bands <- c("<20", "20-24", "25-29", "30-34", "35-39", "40+")
+# Final reporting bands; apply after the individual-age model calculations.
+report_age_bands <- c("Under 20", "20-24", "25-29", "30-34", "35-39", "40-44", "45+")
 
 report_number <- function(x) suppressWarnings(as.numeric(trimws(as.character(x))))
+
+# Exact maternal age for calculations; invalid ages share one explicit missing cell.
+report_age <- function(x) {
+  age <- report_number(x)
+  age[!is.finite(age) | age < 10 | age > 60 | age != floor(age)] <- NA_real_
+  age
+}
+
+# ONS publishes combined boundary rows, not separate births below 15 or above 44.
+# Retain MSDS Age and use this separate key only to select an ONS source boundary.
+report_ons_age <- function(x) pmin(44, pmax(15, report_age(x)))
 
 report_code <- function(x, missing = "Unknown") {
   code <- toupper(trimws(as.character(x)))
@@ -17,8 +29,8 @@ report_age_band <- function(x) {
   age <- report_number(x)
   dplyr::case_when(
     !is.finite(age) | age < 10 | age > 60 | age != floor(age) ~ "Unknown",
-    age < 20 ~ "<20", age < 25 ~ "20-24", age < 30 ~ "25-29",
-    age < 35 ~ "30-34", age < 40 ~ "35-39", TRUE ~ "40+")
+    age < 20 ~ "Under 20", age < 25 ~ "20-24", age < 30 ~ "25-29",
+    age < 35 ~ "30-34", age < 40 ~ "35-39", age < 45 ~ "40-44", TRUE ~ "45+")
 }
 
 report_date <- function(x) {
@@ -55,7 +67,7 @@ prepare_report_cohort <- function(cohort) {
     Birth_flag = report_number(cohort$birth_flag),
     Birth_recorded = Birth_flag %in% 1,
     LA = report_code(cohort$la_of_mother, "Unknown LA"),
-    Age = report_number(cohort$age_at_birth_mother),
+    Age = report_age(cohort$age_at_birth_mother),
     Age_band = report_age_band(cohort$age_at_birth_mother),
     Trust = report_code(cohort$birth_provider, "Unknown provider"),
     Home = report_number(cohort$home_birth),

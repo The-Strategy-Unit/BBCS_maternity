@@ -11,7 +11,7 @@ library(tidyr)
 ## 1. Files and report settings ----------------------------------------------
 ons_data_dir <- function() "data"
 
-# Check the inputs together before either ONS method starts reading them.
+# Check the inputs together before preparing the ONS report.
 check_ons_input_files <- function(data_dir = ons_data_dir()) {
   paths <- c(ons_source_files(data_dir)$path,
              "config/local_authorities.csv", "config/analysis_parameters.csv")
@@ -84,10 +84,10 @@ ons_source_files <- function(data_dir = ons_data_dir()) {
     ~source_id, ~file_name, ~source_name, ~source_type, ~period, ~current_use,
     "snpp_2022", "2022 SNPP Births persons.csv", "ONS 2022-based subnational population projections: births by age of mother", "Projection", "2023–2047", "Existing supplied migration-category variant on 2023 geography; projected rates and estimated maternities.",
     "snpp_female_population_2022", "ons_2022_based_female_population_projections_2023_geography.csv", "ONS 2022-based subnational population projections: female population by single year of age", "Projection", "2023–2047", "Direct ONS migration-category population on matching 2023 geography: denominator for the projected ratio and female-population context.",
-    "historic_live_births", "ons_live_births_la_2013_2025.csv", "ONS live births in England and Wales down to local authority area, via Nomis", "Observed", "2013–2025", "Show registered live-birth trends and prepare age-adjusted maternity estimates.",
-    "registrations_2023", "2023birthregistrations.xlsx", "ONS Births in England and Wales: birth registrations", "Observed", "2023", "Table 1: published GFR; Table 3: maternities; Table 7: national conversion counts.",
-    "registrations_2024", "2024birthregistrations.xlsx", "ONS Births in England and Wales: birth registrations", "Observed", "2024", "Table 1: published GFR; Table 3: maternities; Table 7: national conversion counts.",
-    "registrations_2025", "2025birthregistrations.xlsx", "ONS Births in England and Wales: birth registrations", "Observed", "2025", "Table 1: published GFR; Table 3: maternities; Table 7: national conversion counts."
+    "historic_live_births", "ons_live_births_la_2013_2025.csv", "ONS live births in England and Wales down to local authority area, via Nomis", "Observed", "2013–2025", "Show registered births (L) directly; no conversion of historical age-band counts.",
+    "registrations_2023", "2023birthregistrations.xlsx", "ONS Births in England and Wales: birth registrations", "Observed", "2023", "Table 1: published GFR; Table 3: maternities; Table 5: individual-age conversion counts; Table 7: multiplicity context.",
+    "registrations_2024", "2024birthregistrations.xlsx", "ONS Births in England and Wales: birth registrations", "Observed", "2024", "Table 1: published GFR; Table 3: maternities; Table 5: individual-age conversion counts; Table 7: multiplicity context.",
+    "registrations_2025", "2025birthregistrations.xlsx", "ONS Births in England and Wales: birth registrations", "Observed", "2025", "Table 1: published GFR; Table 3: maternities; Table 5: individual-age conversion counts; Table 7: multiplicity context."
   ) |>
     mutate(path = file.path(data_dir, file_name), available = file.exists(path))
 }
@@ -151,15 +151,6 @@ read_snpp_births <- function(path = file.path(ons_data_dir(), "2022 SNPP Births 
 read_registration_table <- function(path, sheet = "Table_1") {
   read_excel(path, sheet = sheet, skip = 5, na = c("", "[x]", "[z]")) |>
     clean_names()
-}
-
-read_registration_births <- function(data_dir = ons_data_dir()) {
-  ons_source_files(data_dir) |>
-    filter(grepl("^registrations_", source_id), available) |>
-    transmute(year = as.integer(period), path) |>
-    mutate(data = map(path, read_registration_table)) |>
-    select(year, data) |>
-    unnest(data, names_repair = "unique")
 }
 
 read_local_authority_maternities <- function(
@@ -230,7 +221,7 @@ read_local_authority_birth_rates <- function(
 }
 
 read_national_multiplicity <- function(data_dir = ons_data_dir()) {
-  age_levels <- c("<20", "20-24", "25-29", "30-34", "35-39", "40-44", "45+")
+  age_levels <- c("Under 20", "20-24", "25-29", "30-34", "35-39", "40-44", "45+")
   multiplicity_levels <- c("1", "2", "3", "4+")
 
   source_files <- ons_source_files(data_dir) |>
@@ -271,7 +262,7 @@ read_national_multiplicity <- function(data_dir = ons_data_dir()) {
         )) |>
         mutate(age_band = recode(
           age_source,
-          "Under 20" = "<20", "20 to 24" = "20-24",
+          "Under 20" = "Under 20", "20 to 24" = "20-24",
           "25 to 29" = "25-29", "30 to 34" = "30-34",
           "35 to 39" = "35-39", "40 to 44" = "40-44",
           "45 and over" = "45+", "45 to 49" = "45+", "50 and over" = "45+"
@@ -301,7 +292,96 @@ read_national_multiplicity <- function(data_dir = ons_data_dir()) {
     arrange(year, age_band, multiplicity)
 }
 
-## 4. Calculate the two age-specific maternity modifiers ----------------------
+# National registration counts at the finest published maternal-age resolution.
+# Table 5 contains overlapping father/registration breakdowns: select totals once.
+read_national_age_counts <- function(data_dir = ons_data_dir()) {
+  files <- ons_source_files(data_dir) |>
+    filter(grepl("^registrations_", source_id), available)
+  result <- map2_dfr(files$path, as.integer(files$period), function(path, source_year) {
+    raw <- read_registration_table(path, "Table_5")
+    maternity_column <- intersect(c("maternities", "number_of_maternities"), names(raw))
+    live_columns <- grep("^(number_of_)?live_births_(male|female)$", names(raw), value = TRUE)
+    still_column <- intersect(c("stillbirths", "number_of_stillbirths"), names(raw))
+    if (length(maternity_column) != 1 || length(live_columns) != 2 || length(still_column) != 1) {
+      stop("Missing or ambiguous Table 5 birth/maternity columns in ", basename(path))
+    }
+    raw |>
+      filter(registration_type == "All registration types", age_of_father_at_birth_years == "All ages",
+             age_of_mother_at_birth_years != "All ages") |>
+      transmute(year = source_year,
+        age = recode(age_of_mother_at_birth_years, "Under 14" = "<14",
+                     "50 and over" = "50+", "Not stated" = "Unknown"),
+        maternities = as.numeric(.data[[maternity_column]]),
+        live_births = as.numeric(.data[[live_columns[1]]]) + as.numeric(.data[[live_columns[2]]]),
+        stillbirths = as.numeric(.data[[still_column]]))
+  })
+  expected <- tidyr::expand_grid(year = 2023:2025, age = c("<14", as.character(14:49), "50+", "Unknown"))
+  if (nrow(anti_join(expected, result, by = c("year", "age"))) ||
+      nrow(anti_join(result, expected, by = c("year", "age"))) || anyDuplicated(result[c("year", "age")])) {
+    stop("Table 5 must contain each expected maternal age once in each calibration year.")
+  }
+  if (any(!is.finite(as.matrix(result[c("maternities", "live_births", "stillbirths")])) |
+          as.matrix(result[c("maternities", "live_births", "stillbirths")]) < 0)) {
+    stop("Table 5 counts must be complete, finite and nonnegative; do not treat suppression as zero.")
+  }
+  result |> mutate(total_births = live_births + stillbirths)
+}
+
+# Separate age-specific factors for the projection master and method tables.
+# MODEL_INPUT: ONS_STILLBIRTH_RATIO and ONS_MULTIPLICITY
+prepare_projection_age_factors <- function(counts = read_national_age_counts(), ages = NULL) {
+  annual <- counts[counts$age != "Unknown", ]
+  annual$Stillbirth_ratio <- annual$stillbirths / annual$live_births
+  annual$Stillbirth_factor <- 1 + annual$Stillbirth_ratio
+  annual$Multiplicity_factor <- annual$maternities / annual$total_births
+  factors <- annual |>
+    dplyr::group_by(age) |>
+    dplyr::summarise(Stillbirth_ratio = mean(Stillbirth_ratio),
+      Stillbirth_factor = mean(Stillbirth_factor),
+      Multiplicity_factor = mean(Multiplicity_factor), .groups = "drop")
+  factors$Maternity_modifier <- factors$Stillbirth_factor * factors$Multiplicity_factor
+  parameters <- read_analysis_parameters()
+  if (is.null(ages)) ages <- seq(parameters[["minimum_maternal_age"]], parameters[["maximum_maternal_age"]])
+  modifications <- data.frame(Age = sort(unique(ages)))
+  modifications$Registration_age <- ifelse(modifications$Age < 14, "<14",
+    ifelse(modifications$Age >= 50, "50+", as.character(modifications$Age)))
+  modifications$ONS_source_age <- pmin(44L, pmax(15L, modifications$Age))
+  modifications <- dplyr::left_join(modifications, factors, by = c("Registration_age" = "age"))
+  modifications$Aggregation_level <- "National: England and Wales"
+  modifications$Time_period <- paste(range(annual$year), collapse = "--")
+  modifications$Averaging <- "Mean of each annual age-specific ratio"
+  modifications$Age_application <- ifelse(modifications$Registration_age %in% c("<14", "50+"),
+    "Same published group factor for each individual age", "Own individual-age factor")
+  modifications <- modifications[c("Aggregation_level", "Time_period", "ONS_source_age",
+    "Registration_age", "Age", "Age_application", "Stillbirth_ratio", "Stillbirth_factor",
+    "Multiplicity_factor", "Maternity_modifier", "Averaging")]
+  # Explicit fallback rows for a combined ONS age with no local age split.
+  grouped <- counts |> filter(age != "Unknown") |>
+    mutate(numeric_age = suppressWarnings(as.integer(age)),
+      ONS_age = case_when(age == "<14" | numeric_age <= 15 ~ 15L,
+        age == "50+" | numeric_age >= 44 ~ 44L, TRUE ~ NA_integer_)) |>
+    filter(!is.na(ONS_age)) |> group_by(year, ONS_age) |>
+    summarise(L = sum(live_births), S = sum(stillbirths), M = sum(maternities), .groups = "drop") |>
+    group_by(ONS_age) |>
+    summarise(mean_stillbirth_allowance = mean((L + S) / L),
+      mean_multiplicity_conversion = mean(M / (L + S)), .groups = "drop")
+  grouped$maternity_modifier <- grouped$mean_stillbirth_allowance * grouped$mean_multiplicity_conversion
+  fallback <- data.frame(Aggregation_level = "National: England and Wales",
+    Time_period = paste(range(annual$year), collapse = "--"),
+    ONS_source_age = grouped$ONS_age,
+    Registration_age = c("<=15 combined", "44+ combined"), Age = NA_integer_,
+    Age_application = "Unsplit fallback only: no local MSDS age distribution",
+    Stillbirth_ratio = grouped$mean_stillbirth_allowance - 1,
+    Stillbirth_factor = grouped$mean_stillbirth_allowance,
+    Multiplicity_factor = grouped$mean_multiplicity_conversion,
+    Maternity_modifier = grouped$maternity_modifier,
+    Averaging = "Mean of each annual age-specific ratio")
+  modifications <- dplyr::bind_rows(modifications, fallback)
+  modifications$Source <- "ONS birth registrations, Table 5"
+  list(annual = annual, factors = factors, modifications = modifications)
+}
+
+# 4. Table 7 multiplicity proportions: descriptive context only ----------
 average_multiplicity_rates <- function(multiplicity_data) {
   multiplicity_data |>
     filter(multiplicity != "All") |>
@@ -309,66 +389,13 @@ average_multiplicity_rates <- function(multiplicity_data) {
     summarise(average_proportion = mean(proportion), .groups = "drop")
 }
 
-births_to_maternities_modifiers <- function(multiplicity_data) {
-  # Recalculate annual shares after any age grouping (including 40+).
-  annual <- multiplicity_data |>
-    group_by(year, age_band, multiplicity) |>
-    summarise(maternities = sum(maternities), .groups = "drop")
-  totals <- annual |>
-    filter(multiplicity == "All") |>
-    select(year, age_band, all_maternities = maternities)
-  annual |>
-    filter(multiplicity != "All") |>
-    left_join(totals, by = c("year", "age_band")) |>
-    mutate(proportion = maternities / all_maternities) |>
-    group_by(age_band, multiplicity) |>
-    summarise(average_proportion = mean(proportion), .groups = "drop") |>
-    mutate(babies_per_maternity = recode(
-      as.character(multiplicity), "1" = 1, "2" = 2, "3" = 3, "4+" = 4
-    )) |>
-    group_by(age_band) |>
-    summarise(
-      expected_babies_per_maternity = sum(average_proportion * babies_per_maternity),
-      maternity_modifier = 1 / expected_babies_per_maternity,
-      .groups = "drop"
-    )
-}
-
-pooled_births_to_maternities_modifier <- function(multiplicity_data) {
-  multiplicity_data |>
-    filter(multiplicity != "All") |>
-    mutate(babies_per_maternity = recode(
-      as.character(multiplicity), "1" = 1, "2" = 2, "3" = 3, "4+" = 4
-    )) |>
-    summarise(maternity_modifier = sum(maternities) / sum(maternities * babies_per_maternity)) |>
-    pull(maternity_modifier)
-}
-
-count_ratio_maternity_modifiers <- function(multiplicity_data) {
-  multiplicity_data |>
-    filter(multiplicity == "All") |>
-    group_by(age_band) |>
-    summarise(
-      live_births_per_maternity = sum(live_births) / sum(maternities),
-      maternity_modifier = sum(maternities) / sum(live_births),
-      .groups = "drop"
-    )
-}
-
-pooled_count_ratio_modifier <- function(multiplicity_data) {
-  multiplicity_data |>
-    filter(multiplicity == "All") |>
-    summarise(modifier = sum(maternities) / sum(live_births)) |>
-    pull(modifier)
-}
-
-## 5. Apply modifiers to historic and projected live births --------------------
+# 5. Historical births (L): source counts only ---------------------------
 read_historic_live_births <- function(
     path = file.path(ons_data_dir(), "ons_live_births_la_2013_2025.csv"),
     area_config = read_area_config()) {
   age_lookup <- c(
     "Total" = "Total",
-    "Mother aged under 20" = "<20",
+    "Mother aged under 20" = "Under 20",
     "Mother aged 20-24" = "20-24",
     "Mother aged 25-29" = "25-29",
     "Mother aged 30-34" = "30-34",
@@ -398,138 +425,34 @@ read_historic_live_births <- function(
       local_authority = factor(local_authority, levels = area_config$area_name),
       age_band = factor(
         age_band,
-        levels = c("Total", "<20", "20-24", "25-29", "30-34", "35-39", "40-44", "45+", "Unknown")
+        levels = c("Total", "Under 20", "20-24", "25-29", "30-34", "35-39", "40-44", "45+", "Unknown")
       )
     ) |>
     arrange(local_authority, year, age_band)
 }
 
-estimate_historic_maternities <- function(
-    historic_live_births,
-    age_specific_modifiers,
-    multiplicity_data,
-    unknown_age_modifier = pooled_births_to_maternities_modifier(multiplicity_data)) {
-  pooled_modifier <- unknown_age_modifier
-
-  adjusted <- historic_live_births |>
-    filter(age_band != "Total") |>
-    mutate(modifier_age_band = as.character(age_band)) |>
-    left_join(
-      age_specific_modifiers |>
-        transmute(modifier_age_band = as.character(age_band), maternity_modifier),
-      by = "modifier_age_band"
-    ) |>
-    mutate(
-      maternity_modifier = if_else(
-        modifier_age_band == "Unknown",
-        pooled_modifier,
-        maternity_modifier
-      )
-    )
-
-  if (anyNA(adjusted$maternity_modifier)) {
-    stop("A births-to-maternities modifier is missing for a historic maternal age band.")
-  }
-
-  totals <- historic_live_births |>
-    filter(age_band == "Total") |>
-    select(year, area_code, local_authority, live_births)
-
-  adjusted |>
-    mutate(estimated_maternity_component = live_births * maternity_modifier) |>
-    group_by(year, area_code, local_authority) |>
-    summarise(estimated_maternities = sum(estimated_maternity_component), .groups = "drop") |>
-    left_join(totals, by = c("year", "area_code", "local_authority")) |>
-    select(year, area_code, local_authority, live_births, estimated_maternities) |>
-    arrange(local_authority, year)
-}
-
-project_maternities <- function(
-    snpp_births,
-    modifiers,
-    local_authorities) {
-  projected <- snpp_births |>
-    filter(area_name %in% local_authorities, age_group != "All ages") |>
-    mutate(
-      age = as.integer(age_group),
-      age_band = case_when(
-        age < 20 ~ "<20",
-        age <= 24 ~ "20-24",
-        age <= 29 ~ "25-29",
-        age <= 34 ~ "30-34",
-        age <= 39 ~ "35-39",
-        age <= 44 ~ "40+",
-        TRUE ~ "45+"
-      ),
-      modifier_age_band = case_when(
-        age < 20 ~ "<20",
-        age <= 24 ~ "20-24",
-        age <= 29 ~ "25-29",
-        age <= 34 ~ "30-34",
-        age <= 39 ~ "35-39",
-        age <= 44 ~ "40+",
-        TRUE ~ "45+"
-      )
-    ) |>
-    left_join(
-      modifiers |>
-        transmute(
-          modifier_age_band = as.character(age_band),
-          maternity_modifier
-        ),
-      by = "modifier_age_band"
-    )
-
-  if (anyNA(projected$maternity_modifier)) {
-    stop("A births-to-maternities modifier is missing for an SNPP maternal age band.")
-  }
-
-  projected |>
-    mutate(
-      projected_maternity_component = projected_births * maternity_modifier
-    ) |>
-    group_by(area_code, area_name, year, age_band) |>
-    summarise(
-      projected_births = sum(projected_births),
-      projected_maternities = sum(projected_maternity_component),
-      .groups = "drop"
-    ) |>
-    mutate(
-      area_name = factor(area_name, levels = local_authorities),
-      age_band = factor(
-        age_band,
-        levels = c("<20", "20-24", "25-29", "30-34", "35-39", "40+")
-      )
-    ) |>
+# 6. Resident projection summaries: completed master values only ---------
+# No second conversion; Age (B) and LA totals only add finished Age (1) rows.
+summarise_resident_projections <- function(master, area_config = read_area_config()) {
+  exact <- master |>
+    filter(LA %in% area_config$area_code) |>
+    transmute(area_code = LA,
+      area_name = factor(LA_name, levels = area_config$area_name),
+      year = Year, age = Age, ONS_age, age_band = report_age_band(Age),
+      projected_births = Exact_age_live_births, projected_maternities = Adjusted_maternities)
+  exact$age_band[is.na(exact$age)] <- "Unsplit ages"
+  bands <- exact |> group_by(area_code, area_name, year, age_band) |>
+    summarise(projected_births = sum(projected_births),
+      projected_maternities = sum(projected_maternities), .groups = "drop") |>
+    mutate(age_band = factor(age_band, levels = c(report_age_bands, "Unsplit ages"))) |>
     arrange(age_band, area_name, year)
-}
-
-
-
-total_projected_maternities <- function(age_band_projections) {
-  age_band_projections |>
-    group_by(area_code, area_name, year) |>
-    summarise(
-      projected_births = sum(projected_births),
-      projected_maternities = sum(projected_maternities),
-      .groups = "drop"
-    ) |>
+  totals <- exact |> group_by(area_code, area_name, year) |>
+    summarise(projected_births = sum(projected_births),
+      projected_maternities = sum(projected_maternities), .groups = "drop") |>
     arrange(area_name, year)
-}
-
-workbook_catalogue <- function(path) {
-  sheets <- excel_sheets(path)
-  tibble(
-    sheet = sheets,
-    role = case_when(
-      sheet == "Cover_sheet" ~ "Publication information",
-      sheet == "Contents" ~ "Workbook contents",
-      sheet == "Notes" ~ "Definitions and caveats",
-      sheet == "Table_lookup" ~ "Dataset change log",
-      grepl("^Table_", sheet) ~ "ONS data table",
-      TRUE ~ "Other"
-    )
-  )
+  list(single_age_maternity_projections = exact, age_band_projections = bands,
+    total_maternity_projections = totals,
+    projected_trajectory = totals |> transmute(area_name, year, maternities = projected_maternities))
 }
 
 build_source_summary <- function(data_dir = ons_data_dir()) {
@@ -540,7 +463,7 @@ build_source_summary <- function(data_dir = ons_data_dir()) {
 ## 6. Shared chart and table formatting --------------------------------------
 # Colours are passed in from local_authorities.csv, not taken from another plot.
 ons_plot_theme <- function(plot_margin = ggplot2::margin(8, 12, 8, 8)) {
-  ggplot2::theme_minimal(base_family = "Arial") +
+  ggplot2::theme_minimal(base_family = "sans") +
     ggplot2::theme(
       plot.background = ggplot2::element_rect(fill = "white", colour = NA),
       panel.background = ggplot2::element_rect(fill = "white", colour = NA),
@@ -642,7 +565,7 @@ birth_rate_plot <- function(observed, projected, colours) {
     ons_plot_theme()
 }
 
-## 7. Tables called by the two ONS method sections ----------------------------
+## 7. Tables called by the ONS exploration section ----------------------------
 ons_year_table <- function(data, value, source_note) {
   data |>
     select(local_authority, year, {{ value }}) |>
@@ -683,25 +606,15 @@ multiplicity_table <- function(data, year = NULL) {
     ons_table_style()
 }
 
-maternity_modifier_table <- function(maternity_modifiers, projection_modifiers,
-                                     method = c("multiplicity", "count_ratio")) {
-  method <- match.arg(method)
-  data <- bind_rows(maternity_modifiers |> mutate(age_band = as.character(age_band)),
-                    projection_modifiers |> filter(age_band == "40+"))
-  if (method == "multiplicity") {
-    display <- data |> transmute(`Age band` = age_band,
-      `Expected babies per maternity` = expected_babies_per_maternity,
-      `Multiplicity modifier` = maternity_modifier)
-    note <- paste("Mean 2023-2025 age-specific multiplicity proportions.",
-      "Modifier = 1 / (p1 + 2*p2 + 3*p3 + 4*p4+); four-plus is treated as four.")
-  } else {
-    display <- data |> transmute(`Age band` = age_band,
-      `Live births per maternity` = live_births_per_maternity, `Pooled count ratio` = maternity_modifier)
-    note <- "Pooled 2023-2025 Table 7 counts: modifier = maternities / live births within each age band."
-  }
-  display |> gt::gt() |>
-    gt::fmt_number(columns = where(is.numeric), decimals = 5) |>
-    gt::tab_source_note(source_note = gt::md(note)) |>
+# Show the exact factors that the master joins, including explicit fallback rows.
+maternity_modifier_table <- function(modifications) {
+  modifications |>
+    select(`ONS source age` = ONS_source_age, `Registration age` = Registration_age,
+      `Applied Age (1)` = Age, `Age treatment` = Age_application,
+      `Stillbirth factor` = Stillbirth_factor, `Multiplicity factor` = Multiplicity_factor,
+      `Combined modifier` = Maternity_modifier) |>
+    gt::gt() |> gt::fmt_number(columns = c("Stillbirth factor", "Multiplicity factor", "Combined modifier"), decimals = 5) |>
+    gt::tab_source_note("ONS Table 5, 2023-2025. Each factor is the mean of its annual ratios. Applied after the local age split in every projection. Unsplit fallback rows are used only where local age evidence is absent; they remain unallocated.") |>
     ons_table_style()
 }
 

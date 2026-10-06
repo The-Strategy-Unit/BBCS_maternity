@@ -10,7 +10,6 @@
 !/assets/
 !/config/
 !/.gitignore
-!/CODEOWNERS
 !/LICENSE
 !/README.md
 !/ONS-analysis-notes.md
@@ -23,12 +22,11 @@
 !/assets/logo_black_favicon.png
 !/assets/logo_black_medium.png
 !/assets/logo_yellow_medium.png
+!/assets/projection_process_current.svg
 !/data/2023birthregistrations.xlsx
 !/data/2024birthregistrations.xlsx
 !/data/2025birthregistrations.xlsx
-!/data/ons_2022_based_births_migration_category.csv
 !/data/2022 SNPP Births persons.csv
-!/data/ons_2022_based_female_population_projections.csv
 !/data/ons_2022_based_female_population_projections_2023_geography.csv
 !/data/ons_live_births_la_2013_2025.csv
 !/data/lookups/

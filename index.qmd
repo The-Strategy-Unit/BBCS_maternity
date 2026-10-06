@@ -28,7 +28,29 @@ library(plotly)
 library(scales)
 
 # Only complete outputs from a single successful preparation may be rendered.
-source("R/Analysis runner.R")
+# This check reads saved results; it does not rerun the analysis or Azure reader.
+read_completed_analysis <- function() {
+  status_file <- ".analysis_run.rds"
+  if (!file.exists(status_file))
+    stop("No prepared analysis is available. Run Run analysis.R in the secure environment; it creates the report automatically.", call. = FALSE)
+  report_run <- readRDS(status_file)
+  if (identical(report_run$status, "running")) {
+    message("Analysis is running; waiting for the completed report data...")
+    expected_run <- report_run$run_id
+    for (second in seq_len(1800L)) {
+      Sys.sleep(1)
+      if (!file.exists(status_file))
+        stop("The analysis stopped before completion. See the error in the analysis console.", call. = FALSE)
+      report_run <- tryCatch(readRDS(status_file), error = function(e) NULL)
+      if (!is.null(report_run) && !identical(report_run$run_id, expected_run))
+        stop("A different analysis run has started. Wait for its finished report.", call. = FALSE)
+      if (identical(report_run$status, "prepared")) break
+    }
+  }
+  if (!identical(report_run$status, "prepared"))
+    stop("Analysis has not finished. Its runner will create the report automatically.", call. = FALSE)
+  report_run
+}
 report_run <- read_completed_analysis()
 for (output_file in report_run$output_files) {
   output <- readRDS(output_file)

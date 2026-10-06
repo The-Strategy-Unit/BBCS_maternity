@@ -1,20 +1,18 @@
 # ANALYSIS RUNNER ========================================================
 # Use Run analysis.R with the secure parquet inputs.
-# A clean child R process handles inputs, analysis, QA and rendering.
+# Read and analyse in the current RStudio session, preserving its Azure setup.
 
-run_maternity_project <- function() {
+run_maternity_project <- function(scripts) {
   if (!file.exists("R/Maternity analysis.R") || !file.exists("index.qmd"))
     stop("Open BBCS_maternity and run from the project root.")
 
-  # Remove previous inspection objects; the analysis itself runs in a clean process.
+  # Clear previous inspection objects before preparing this run's results.
   inspection_names <- c("projection_master", "projection_master_backtest",
     "projection_master_dictionary", "delivery_proportions", "booking_proportions", "ons_modifications", "qa_results", "qa_details")
   present <- intersect(inspection_names, ls(envir = .GlobalEnv))
   if (length(present)) rm(list = present, envir = .GlobalEnv)
-  rscript <- file.path(R.home("bin"), if (.Platform$OS.type == "windows") "Rscript.exe" else "Rscript")
-  status <- system2(rscript, c("--vanilla", shQuote("R/Analysis runner.R")))
-  if (status != 0L)
-    stop("Analysis failed. No current report is available. See the error above.", call. = FALSE)
+  # Keep Sarah's reader in this session, as in the original run script.
+  prepare_and_render(scripts)
 
   # Return the completed master and QA results for View() in RStudio.
   projections <- readRDS(".projections.rds")
@@ -31,9 +29,10 @@ run_maternity_project <- function() {
   invisible(NULL)
 }
 
-prepare_and_render <- function() {
+prepare_and_render <- function(scripts) {
   # Print warnings when they happen, keeping any file error visible in the console.
-  options(warn = 1)
+  previous_options <- options(warn = 1)
+  on.exit(options(previous_options), add = TRUE)
   project_root <- normalizePath(".", winslash = "/", mustWork = TRUE)
   if (!file.exists("R/Maternity analysis.R") || !file.exists("index.qmd"))
     stop("Run from the BBCS_maternity project root.")
@@ -63,14 +62,13 @@ prepare_and_render <- function() {
   saveRDS(run_info, ".analysis_run.rds")
   message("Preparing data and analysis...")
 
-  # 1. Read Sarah's prepared parquet inputs from the secure environment.
-  source("R/Read parquet files from azure.R", local = .GlobalEnv)
+  # Run the scripts listed in Run analysis.R, in order and in this session.
+  # Sarah's parquet reader runs first; an error stops the subsequent steps.
+  for (script in scripts) {
+    suppressPackageStartupMessages(source(script, local = .GlobalEnv))
+  }
 
-  # 2. Prepare exploration and projection results.
-  suppressPackageStartupMessages(source("R/Maternity analysis.R", local = .GlobalEnv))
-
-  # 3. Existing QA: review flags remain visible; calculation errors stop.
-  suppressPackageStartupMessages(source("R/QA.R", local = .GlobalEnv))
+  # Save the checks and identify every output as belonging to this run.
   saveRDS(list(results = qa_results, details = qa_details), ".qa.rds")
   for (output_file in output_files) {
     output <- readRDS(output_file)
@@ -134,9 +132,4 @@ read_completed_analysis <- function() {
   if (!identical(report_run$status, "prepared"))
     stop("Analysis has not finished. Its runner will create the report automatically.", call. = FALSE)
   report_run
-}
-
-# Executed only by Rscript, not when a launcher sources this file.
-if (sys.nframe() == 0L) {
-  prepare_and_render()
 }

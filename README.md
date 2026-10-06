@@ -15,7 +15,8 @@ source("R/Run analysis.R")
 ```
 
 The command reads Sarah's prepared parquet inputs, prepares the analysis, runs
-QA and renders `_site/index.html`. It uses a fresh R process and replaces the
+QA and renders `_site/index.html`. Reading and analysis run in the current
+RStudio session, keeping its existing Azure setup. The command replaces the
 previous outputs. If preparation or rendering fails, partial outputs are removed.
 Rendering uses a temporary folder to avoid clashes with an editor render.
 A preview opened during preparation waits for that run to finish.
@@ -41,8 +42,9 @@ install.packages(c("dplyr", "tidyr", "readr", "readxl", "janitor", "purrr",
 |---|---|
 | `R/Maternity analysis.R` | Main editing file: general settings/labels, ONS exploration, MSDS exploration, projection model, charts and tables. |
 | `R/Run analysis.R` | Entry script: read secure data, analyse, check and render. |
-| `R/Analysis runner.R` | Support functions for the fresh R process, output replacement, QA and rendering. Called automatically by the entry script. |
-| `R/Read parquet files from azure.R` | Sarah's Azure reader; includes a correction to the empty-token error label. |
+| `R/Analysis runner.R` | Support functions for reading and analysis in the current session, output replacement, QA and rendering. Called automatically by the entry script. |
+| `R/Read parquet files from azure.R` | Sarah's unchanged Azure reader, run first on every analysis run. |
+| `R/matrix of booking appts and births.R` | Sarah's original standalone matrix tables. Retained for separate use; the report builds its tables in the main analysis. |
 | `R/ons_data.R` | Shared public-source readers and ONS chart/table functions. |
 | `R/report_cohort.R` | Shared pregnancy-counting and field definitions. |
 | `R/age_boundary_review.R` | Shared descriptive age-review functions. |
@@ -96,6 +98,8 @@ Sarah's reader loads these Azure parquet datasets into R:
 |---|---|
 | `final_cohort_2326.parquet` | `final_cohort_2326` |
 | `total_births_by_LA_2326.parquet` | `total_births_by_LA_2326` |
+| `trust_matrix.parquet` | `trust_matrix_data` (Sarah's standalone tables) |
+| `icb_matrix.parquet` | `icb_matrix_data` (Sarah's standalone tables) |
 
 The reader expects the environment variables `container`, `lake`, `folder` and
 `azure_key_vault`, and access to the configured Azure storage and Key Vault secret.

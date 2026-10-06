@@ -34,7 +34,7 @@ az_sas <- tryCatch(
 
 if (is.null(az_sas$value) || nchar(az_sas$value) == 0) {
   cli::cli_abort(
-    "SAS token {.val {sas_nm}} is empty.
+    "SAS token {.val {sas_name}} is empty.
       Please check the Key Vault secret configuration."
   )
 }
@@ -167,4 +167,17 @@ total_births_by_LA_2326<- get_su_lakemart_parquet_file(
   az_files,
   az_container
 )|>    janitor::clean_names()
+
+trust_matrix_data<- get_su_lakemart_parquet_file(
+  "trust_matrix.parquet/part",
+  az_files,
+  az_container
+)|>    janitor::clean_names()
+
+icb_matrix_data<- get_su_lakemart_parquet_file(
+  "icb_matrix.parquet/part",
+  az_files,
+  az_container
+)|>    janitor::clean_names()
+
 

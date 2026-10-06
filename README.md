@@ -41,8 +41,7 @@ install.packages(c("dplyr", "tidyr", "readr", "readxl", "janitor", "purrr",
 | File | Purpose |
 |---|---|
 | `R/Maternity analysis.R` | Main editing file: general settings/labels, ONS exploration, MSDS exploration, projection model, charts and tables. |
-| `R/Run analysis.R` | Entry script: read secure data, analyse, check and render. |
-| `R/Analysis runner.R` | Support functions for reading and analysis in the current session, output replacement, QA and rendering. Called automatically by the entry script. |
+| `R/Run analysis.R` | Single run script: replace previous outputs, read secure data, analyse, check, render and return the completed objects to RStudio. |
 | `R/Read parquet files from azure.R` | Sarah's unchanged Azure reader, run first on every analysis run. |
 | `R/matrix of booking appts and births.R` | Sarah's original standalone matrix tables. Retained for separate use; the report builds its tables in the main analysis. |
 | `R/ons_data.R` | Shared public-source readers and ONS chart/table functions. |

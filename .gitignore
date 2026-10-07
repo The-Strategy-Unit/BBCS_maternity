@@ -5,6 +5,7 @@
 !/R/
 !/assets/
 !/config/
+!/databricks notebooks/
 !/.gitignore
 !/CODEOWNERS
 !/LICENSE
@@ -43,3 +44,4 @@
 /*_cache/
 /sankey data/
 /.patient_flows.rds
+

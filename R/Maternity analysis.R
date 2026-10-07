@@ -779,7 +779,7 @@ trend_starts <- activity_episodes[
   !is.na(activity_episodes$booking_year) &
     activity_episodes$booking_year %in% pathway_years &
     activity_episodes$booking_code %in% cluster_trusts, , drop = FALSE]
-# Always show the six named trusts; include any additional cluster booking trusts observed.
+# Show the six named trusts; include any additional cluster booking trusts observed.
 trend_trusts <- unique(c(names(trust_labels)[names(trust_labels) != "Other"],
                          sort(unique(trend_starts$booking_code))))
 trend_trust_names <- unname(trust_labels[trend_trusts])
@@ -1750,6 +1750,7 @@ build_projection_master <- function(cohort, resident_totals, ons_births, registr
 
   # 3.4 Stillbirth uplift, then multiplicity conversion -------------------
   # MODEL_INPUT: ONS_STILLBIRTH_RATIO, ONS_MULTIPLICITY
+  # Pool Table 5 counts across 2023--2025 at each published age, then divide.
   # Source age <14 applies equally below 14; source 50+ equally to ages 50+.
   ons_modifications <- prepare_projection_age_factors(registration_counts, model_ages)$modifications
   master <- dplyr::left_join(master, ons_modifications,
@@ -1873,6 +1874,7 @@ projection_column_dictionary <- function(master) {
       Column == "Stillbirth_ratio" ~ "Pooled Table 5 stillbirths / pooled live births, 2023--2025.",
       Column == "Stillbirth_factor" ~ "1 + Stillbirth_ratio; births (L) to births (L+S).",
       Column == "Multiplicity_factor" ~ "Pooled Table 5 maternities / pooled births (L+S), 2023--2025.",
+      Column == "Maternity_modifier" ~ "Stillbirth_factor * Multiplicity_factor; equals pooled Table 5 maternities / pooled live births at the matching age.",
       Column == "Adjusted_births_ls" ~ "Exact_age_live_births * Stillbirth_factor.",
       Column == "Adjusted_maternities" ~ "Adjusted_births_ls * Multiplicity_factor; counted once per LA/age/year.",
       Column == "Delivery_projection_base" ~ "Adjusted maternities available for delivery allocation.",

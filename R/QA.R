@@ -211,7 +211,7 @@ if (file.exists(".patient_flows.rds")) {
         all(booking_counts$Categories == 5L & booking_counts$Denominators == 1L) &&
         numbers_match(booking_counts$Outcomes, booking_counts$Starts))
 
-    # Collapsing the two within-cluster destinations must reproduce section 2.2.6 exactly.
+    # The two within-cluster destinations sum to the section 2.2.6 count.
     collapsed <- booking_outcomes$data |>
       dplyr::mutate(Outcome = dplyr::case_when(
         Outcome %in% expected_outcomes[1:2] ~ "Delivery at cluster trust",
@@ -416,6 +416,11 @@ if (file.exists(".projections.rds")) {
       numbers_match(m$Booking_projection_base, m$Adjusted_maternities))
     qa_check(paste(label, "unique LA/Age (1)/source-age/year master rows"),
       !anyDuplicated(m[c("LA", "ONS_age", "Age", "Year")]))
+    national <- base$ons_modifications
+    qa_check(paste(label, "ONS factors use pooled counts before division"),
+      numbers_match(national$Stillbirth_ratio, national$Pooled_stillbirths / national$Pooled_live_births) &&
+      numbers_match(national$Multiplicity_factor, national$Pooled_maternities / national$Pooled_total_births) &&
+      numbers_match(national$Maternity_modifier, national$Pooled_maternities / national$Pooled_live_births))
     qa_check(paste(label, "stillbirth adjustment increases or preserves births (L)"),
       all(m$Adjusted_births_ls >= m$Exact_age_live_births) &&
       numbers_match(m$Adjusted_births_ls, m$Exact_age_live_births * (1 + m$Stillbirth_ratio)))
@@ -485,7 +490,7 @@ if (file.exists(".projections.rds")) {
       qa_check(paste(label, type, "each ICB equals its own trusts"),
         numbers_match(icb_check$Projected, icb_check$Trust_sum, 1e-7))
     }
-    # Descriptive source totals must not depend on successful ONS matching.
+    # Descriptive source totals include records without an ONS match.
     pooled_cluster <- base$allocation_tables$delivery |>
       dplyr::filter(Destination %in% cluster_trusts) |>
       dplyr::group_by(LA, Age) |> dplyr::summarise(Expected = sum(Count), .groups = "drop")
@@ -493,7 +498,7 @@ if (file.exists(".projections.rds")) {
       base$feeder_shares |> dplyr::filter(Level == "Cluster"), by = c("LA", "Age"))
     qa_check(paste(label, "descriptive feeder numerators retain pooled MSDS counts"),
       numbers_match(feeder_check$Expected, feeder_check$Numerator))
-    # Resident estimates in section 2 must be the same master values before allocation.
+    # Resident estimates in section 2 use the master values before allocation.
     resident_view <- readRDS(".ons_exploration.rds")
     resident_comparison <- m |>
       dplyr::filter(LA %in% read_area_config()$area_code) |>

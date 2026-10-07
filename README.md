@@ -69,7 +69,7 @@ unallocated contributions remain in the master.
 
 ## Inputs needed
 
-The active public ONS files must be in `data/`:
+The analysis reads the following public ONS files from `data/`:
 
 - `2023birthregistrations.xlsx`, `2024birthregistrations.xlsx` and `2025birthregistrations.xlsx`
 - `2022 SNPP Births persons.csv`
@@ -114,18 +114,18 @@ The reader expects the environment variables `container`, `lake`, `folder` and
 - Trust and ICB labels, provider membership and the service cluster are defined in
   `R/Maternity analysis.R`. The current cluster combines Black Country and
   Birmingham and Solihull. These settings are separate from the ONS LA configuration.
-- Sections 9.2, 9.3 and 10.1 keep the configured cluster LAs visible, then show the ten
+- The hospital-delivery and pooled-allocation charts keep the configured cluster LAs visible, then show the ten
   largest additional feeders and group the rest as "All other feeder LAs".
-  Section 9.1 uses five additional flows, selected separately within each chart.
+  The resident-LA destination charts use five additional flows, selected separately within each chart.
   Main cluster areas, home births and unknowns stay separate. The grids show the
   main areas, ten largest others overall and an all-other chart. Full tables keep every flow.
 
-Section 9 groups compact charts into trust and ICB/cluster grids, with separate
+The delivery-geography section groups compact charts into trust and ICB/cluster grids, with separate
 tabs for each measure and the full tables. The grids are built from the organisation
 list; the public-data age-band tabs remain explicit in `index.qmd`.
 
-Section 9's hospital percentages describe where an organisation's deliveries came
-from. Section 10's feeder percentages describe how much of each resident LA/age
+The hospital-delivery percentages describe where an organisation's deliveries came
+from. The pooled-allocation percentages describe how much of each resident LA/age
 group delivered at that organisation. Home births stay in the LA totals but are
 not counted as hospital-location deliveries.
 
@@ -147,14 +147,14 @@ The master starts with LA, Age, Year and three review columns:
 `Exact_age_live_births` (births (L), age split only), `Delivery_projection_base`
 and `Booking_projection_base` (separate adjusted allocation volumes).
 The two allocation volumes currently equal adjusted maternities. No early-loss uplift is applied.
-Any future booking uplift belongs before booking allocation and must not alter deliveries.
-Section 10.6 shows booking totals, age bands and change from the modelled reference year.
+A future agreed uplift would apply to the booking base before allocation; the delivery base would stay unchanged.
+The booking-projection section shows booking totals, age bands and change from the modelled reference year.
 Home, unknown, unrepresented and unallocated destinations remain explicit.
 ONS source counts repeat across split ages; `Exact_age_live_births` is additive.
 
 `projection_master_backtest` applies the same pooled proportions to historical
 ONS counts. It is an in-sample retrospective comparison, not independent validation.
-No modelled reference is forced to match observations. Section 10.4 retains the
+No modelled reference is forced to match observations. The delivery-change section retains the
 observed 2025/26 comparator. Resident charts use the same adjusted master values
 before destination allocation, retaining 2023–2047. All final reporting uses
 Under 20, 20–24, 25–29, 30–34, 35–39, 40–44 and 45+; grouping follows calculation.
@@ -171,16 +171,17 @@ pregnancy row once, including rows with missing identifiers. Delivery-year total
 require `birth_flag = 1` and a valid `birth_yr`; hospital totals additionally require
 `home_birth = 0` and a cluster delivery provider. Booking-year pathway denominators
 retain all recorded cluster starts and follow their supplied outcomes, including
-later deliveries. Section 4 shows inclusion/exclusion counts. Method 1 contains
-the main-LA code comparison; section 11 illustrates the actual calculation.
+later deliveries. The MSDS input section shows inclusion/exclusion counts. ONS
+exploration contains the main-LA code comparison; the projection method section
+illustrates the calculations.
 
-Section 6.e shows the two ICBs and the combined cluster together. The cluster
+The booking-ICB flow charts show the two ICBs and the combined cluster together. The cluster
 counts combine the same booking starts shown in the two ICB charts.
 
-Section 8 repeats section 7 with five outcome lines: the within-cluster delivery
+The booking-organisation charts use five outcome lines: the within-cluster delivery
 group is split into the same trust as booking and a different cluster trust.
 The trust-comparison panels retain this split when grouped into ICB and cluster totals.
-Separate ICB-comparison tabs in 8.1 and 8.2 compare the booking trust's ICB with
+Separate ICB-comparison tabs compare the booking trust's ICB with
 the delivery trust's ICB: a transfer between trusts in the same ICB stays in the
 same-ICB group. The combined cluster pools these comparisons across both ICBs.
 Both views retain the same all-starts booking-year denominators, follow-up rules
@@ -193,9 +194,9 @@ The preparation scripts save these files in the project root:
 | Output | Used for |
 |---|---|
 | `.ons_exploration.rds` | ONS source exploration, shared resident projections and age-review objects |
-| `.patient_flows.rds` | Sections 4–8 |
-| `.delivery_geography.rds` | Section 9 |
-| `.projections.rds` | Section 10, master and retrospective comparison |
+| `.patient_flows.rds` | MSDS activity and patient-flow exploration |
+| `.delivery_geography.rds` | Deliveries by LA(R) and age |
+| `.projections.rds` | Projections, master and retrospective comparison |
 | `.qa.rds` | QA results and detailed checks |
 | `.analysis_run.rds` | Completion status and run identity for all current outputs |
 
@@ -220,9 +221,9 @@ need attention. It runs automatically before the runner renders the report.
 Run `R/Run analysis.R` after changing inputs or calculations, and review QA before
 using a new version of the results.
 
-The checks now reconcile annual cluster totals across sections 5, 6, 9 and 10,
-recorded activity across sections 9 and 10, master-table source conservation, and chart
-percentages against incoming counts. These comparisons are available in
+The checks reconcile annual cluster totals across activity and patient-flow views,
+recorded delivery comparators, master-table source conservation, pooled ONS
+modifiers, and chart percentages against incoming counts. These comparisons are available in
 `qa_details`. To see only items needing attention, use
 `subset(qa_results, Result == "Check")`. The QA script does not deduplicate inputs.
 
@@ -232,7 +233,7 @@ memory, and does not read or overwrite the secure report's saved RDS files.
 
 ## Terminology key
 
-**The main output of this analysis is estimated maternities: pregnancies reaching a live birth or stillbirth.** Babies, individual women and appointments are different units.
+**For this project, maternities means women entering the maternity pathway through booking and/or delivery.** This includes live births, stillbirths and booked pregnancies without a recorded delivery.
 
 ### Core counting terms
 
@@ -241,13 +242,14 @@ memory, and does not read or overwrite the secure report's saved RDS files.
 | **Live birth** | One baby born showing signs of life. | The unit in the ONS birth projections used here. Two live-born twins count as two. |
 | **Stillbirth** | One baby born without signs of life at 24 or more completed weeks. | Excluded from live-birth counts; included in the definition of a maternity. |
 | **Total births** | Live births plus stillbirths: a count of babies. | Always specify “live births” or “total births”; the projected input here is live births. |
-| **Maternity** | One pregnancy resulting in at least one live birth or stillbirth. | Our main counting unit. Twins or triplets from one pregnancy count as one maternity. |
-| **All pregnancies** | Pregnancies regardless of outcome. | Broader than maternities. Early losses and terminations without a registrable birth require additional data for pathway modelling. |
+| **Maternity — this project** | A woman entering the maternity pathway through booking and/or delivery, regardless of pregnancy outcome. | Counted once per pregnancy. A booking followed by a delivery is the same maternity; twins or triplets also count as one. |
+| **Maternity — ONS** | One pregnancy resulting in at least one live birth or stillbirth. | The source definition used in ONS maternity tables and conversion factors. |
+| **All pregnancies** | Pregnancies regardless of outcome or contact with maternity services. | The project cohort covers those entering the maternity pathway. |
 | **Unique women / mothers** | Individual people counted once during a defined period. | Not supplied by the maternity total: one woman can have more than one maternity during that period. |
 | **Singleton / multiple maternity** | One baby / two or more babies from one pregnancy. | “Multiplicity” describes how many babies are involved. It explains why baby and maternity counts differ. |
 | **Contact, appointment or episode** | A unit of recorded healthcare activity, defined by the service dataset. | One maternity can generate many contacts. These are not counted by ONS maternity totals. |
 
-The ONS definitions above follow the [birth statistics user guide](https://www.ons.gov.uk/peoplepopulationandcommunity/birthsdeathsandmarriages/livebirths/methodologies/userguidetobirthstatistics). The final column explains how each measure is used in this analysis or could inform pathway modelling.
+ONS source definitions follow the [birth statistics user guide](https://www.ons.gov.uk/peoplepopulationandcommunity/birthsdeathsandmarriages/livebirths/methodologies/userguidetobirthstatistics). The table distinguishes these from our project use of “maternity”.
 
 ### Terms used in the calculations
 

@@ -19,8 +19,8 @@ local({
         is.call(statement[[3]]) && identical(statement[[3]][[1]], as.name("function"))) eval(statement)
   }
   counts <- read_national_age_counts()
-  # Section 2.2.2 must also accept a booking trust outside the six named labels.
-  # A missing named lookup must not become an invalid data-frame row name.
+  # Section 2.2.2 includes booking trusts outside the six named labels.
+  # A trust without a named label keeps its provider code as the row name.
   starts <- data.frame(booking_code = c("RXT", "RQ3"),
     outcome = c("No recorded delivery", "Within cluster"))
   pathway <- pathway_summary(c("RXT", "RQ3"), "Trust")
@@ -143,7 +143,7 @@ local({
   m2 <- build_projection_master(altered, residents, ons, counts)
   booking_columns <- grep("^Booking_",names(m),value=TRUE)
   stopifnot(identical(m[booking_columns],m2[booking_columns]))
-  # Booking-year and delivery-year filters must use their own source fields.
+  # Booking-year and delivery-year filters use their respective source fields.
   period_rows <- cohort[rep(1,3), ]
   period_rows$birth_yr <- c("2022/23","2025/26","2026/27")
   period_rows$birth_date <- as.Date(c("2023-02-01","2025-12-01","2026-12-01"))
@@ -169,7 +169,7 @@ local({
   age_rows <- age_master |> dplyr::filter(LA=="E08000025",Year==2025,Age %in% 13:15)
   near(age_rows$Age_weight,c(10,2,7)/19)
 
-  # Character/factor fields from parquet must give the same numeric results.
+  # Character/factor fields from parquet give the same numeric results.
   cohort$age_at_birth_mother <- factor(cohort$age_at_birth_mother)
   residents$count <- as.character(residents$count)
   m3 <- build_projection_master(cohort, residents, ons, counts)
@@ -208,7 +208,7 @@ local({
   stopifnot(setequal(unique(built_comparison$data[[2]]$shape), c(15,16)),
     setequal(unique(built_comparison$data[[1]]$linetype), c("solid","dashed")))
 
-  # The report's 2025 check must use the 2025 count even when adjacent years differ.
+  # The report's 2025 check uses the 2025 count, even when adjacent years differ.
   report_lines <- readLines("index.qmd", warn = FALSE)
   check_start <- grep("^#\\| label: method-1-resident-level-check-table$", report_lines) + 1L
   check_end <- check_start + which(report_lines[check_start:length(report_lines)] == "```")[1] - 2L
@@ -244,7 +244,7 @@ local({
   # Check the existing chart-data builder consumes the completed master columns.
   final_cohort_2326 <- cohort
   total_births_by_LA_2326 <- residents
-  # Section 2.2.3 prepares its own organisation list; it must not depend on
+  # Section 2.2.3 prepares its own organisation list, independently of
   # temporary variables inside the separate projection builder.
   geography <- build_delivery_geography()
   near(sum(geography$matrix_data$N),
@@ -325,6 +325,15 @@ local({
   near(booking_cell$Denominator,c(2,8,35))
   near(booking_cell$Pooled,rep(20/45,3))
   near(variation$ons_pooled$Stillbirth_ratio[variation$ons_pooled$age=="25"],80/1000)
+  # The displayed model marker uses pooled counts, alongside annual points.
+  for (chart_name in c("stillbirth_chart", "multiplicity_chart")) {
+    field <- if (chart_name == "stillbirth_chart") "Stillbirth_ratio" else "Multiplicity_factor"
+    traces <- plotly::plotly_build(variation[[chart_name]])$x$data
+    marker <- Filter(function(x) identical(x$name, "Pooled ratio used"), traces)
+    stopifnot(length(marker) == 1L)
+    expected <- variation$ons_pooled[[field]][match(marker[[1]]$x, variation$ons_pooled$age)]
+    near(marker[[1]]$y, expected)
+  }
   age_variation <- build_input_variation_review(age_cohort,age_residents,counts,
     attr(age_master,"allocation_tables"))
   age_cell <- age_variation$age_mix |>
@@ -374,7 +383,7 @@ local({
       stopifnot(all(is.na(shown$Percent_change[!valid])))
     }
   }
-  # Age 43 shrinks while 44 grows: report growth must be change in summed counts,
+  # Age 43 shrinks while 44 grows: report growth is the change in summed counts,
   # not an unweighted mean of age-specific growth percentages.
   varied_ons <- ons
   varied_ons$projected_births[varied_ons$year==2026 & varied_ons$age_group=="43"] <- 80
@@ -389,7 +398,7 @@ local({
   near(shown_growth$Growth_change,expected_growth)
   stopifnot(abs(expected_growth-mean(c(-.2,.5)))>1e-3)
 
-  # Unmatched ONS coverage must not erase recorded MSDS counts from descriptive shares.
+  # Descriptive shares retain recorded MSDS counts for LAs without ONS coverage.
   restricted <- build_projection_master(cohort,residents,ons[ons$area_code=="E08000025", ],counts)
   restricted_result <- build_first_draft_projections(master=restricted,prepare_outputs=FALSE)
   actual_feeder <- restricted_result$feeder_shares |>
@@ -402,7 +411,7 @@ local({
   near(accounting$Cluster_trusts,20)
   near(accounting$Other_or_unrepresented,0)
 
-  # A recorded delivery provider outside the six named labels must appear in chart selections.
+  # Chart selections include recorded delivery providers outside the six named labels.
   additional <- cohort
   additional$birth_provider[additional$la_of_mother=="E08000027"] <- "RXT"
   final_cohort_2326 <- additional
@@ -415,7 +424,7 @@ local({
   stopifnot(setequal(chart_names,expected_names))
   final_cohort_2326 <- cohort
 
-  # Output factor labels must come from the supplied master, not a global object.
+  # Output factor labels come from the supplied master.
   different_factors <- build_projection_master(cohort,residents,ons,varied)
   different_result <- build_first_draft_projections(master=different_factors,prepare_outputs=FALSE)
   stopifnot(identical(different_result$ons_modifications,attr(different_factors,"ons_modifications")))

@@ -163,7 +163,7 @@ The supplied MSDS pregnancy cohort has one row per pregnancy. Delivery views use
 
 The combined cluster sums its provider ICB groups. The configured provider lookup also retains other supplied providers assigned to these ICBs, including booking-only providers: RYA/RYK in Black Country and RRJ/RXT/RYW in Birmingham and Solihull. They contribute where recorded activity exists.
 
-**Residence and provider are different views.** Resident-LA comparisons include recorded maternities for local residents delivering elsewhere. Trust projections include incoming residents from other LAs. These populations should not be treated as interchangeable.
+**Residence and provider are different views.** Resident-LA comparisons include recorded maternities for local residents delivering elsewhere. Trust projections include incoming residents from other LAs. These views cover different populations.
 
 ## 1.3 Key terminology {#method-1-terminology-key}
 
@@ -189,7 +189,7 @@ ONS source definitions follow the [birth statistics user guide](https://www.ons.
 |----------------------------|--------------------------------------------|
 | **Observed / published count** | An ONS figure derived from registered events that have already happened. |
 | **Projected live births** | [Future baby counts from the [ONS subnational population projection model](#method-1-ref-snpp-method), conditional on its assumptions. (LM edit)]{.lm-edit} |
-| **Estimated / projected maternities** | Counts calculated by this analysis from observed or projected live births using a combined stillbirth allowance and multiplicity conversion, including maternities involving stillbirths |
+| **Estimated / projected maternities** | Counts calculated from ONS projected births (L), after the local age split and pooled age-specific stillbirth/multiplicity adjustments. |
 | **MSDS-recorded resident maternities** | Delivery pregnancies recorded in the resident-LA MSDS extract, including acute and home births. National geographic coverage does not make this a complete population-wide birth count. This is the denominator for the section 3 destination shares. |
 | **Trust delivery projection** | Adjusted ONS maternities × pooled LA(R)/Age (SY) delivery proportions, summed to the trust. |
 | **Multiplicity modifier** | Pooled maternities ÷ pooled births (L+S), using Table 5 counts for 2023–2025 at each published age. Converts babies to maternities. |
@@ -262,7 +262,7 @@ ons_source_table(sources)
 
 #### Historical births (L), 2013–2025 {#method-1-historical-live-births-2013-2025}
 
-These charts show registered births (L) among each LA's residents, directly from [Nomis](#method-1-ref-nomis-births) on April 2023 geography. No maternity conversion is applied to this banded historical source. The published maternities above provide the observed maternity comparison.
+These charts show registered births (L) among each LA's residents, directly from [Nomis](#method-1-ref-nomis-births) on April 2023 geography. No maternity conversion is applied to this banded historical source. The [published maternities](#method-1-published-maternities-2023-2025) provide the observed maternity comparison.
 
 The supplied age bands are Under 20, 20–24, 25–29, 30–34, 35–39, 40–44 and 45+, with unknown age kept separate. The total includes all ages.
 
@@ -1158,7 +1158,7 @@ delivery_over_time$table
 
 #### 2.2.6.2 Percentage change from 2023/24 {#delivery-outcome-percentage-change}
 
-These charts show relative change in each outcome's share since 2023/24. Positive values mean a higher share; negative values mean a lower share. The base year is 0% where its share is positive, and unavailable where its share is zero. The table groups the four outcomes under each year; counts and denominators are in subsection 7.1.
+These charts show relative change in each outcome's share since 2023/24. Positive values mean a higher share; negative values mean a lower share. The base year is 0% where its share is positive, and unavailable where its share is zero. The table groups the four outcomes under each year; counts and denominators are in [section 2.2.6.1](#delivery-outcome-percentages).
 
 ::: panel-tabset
 ##### Trusts
@@ -1490,7 +1490,7 @@ older_age_review$outcomes$comparison |>
   cols_label(measure = "2025 outcome", count = "Outcome maternities", denominator = "All maternities", rate = "Per 1,000 maternities", rate_ratio = "Times the 40-44 rate") |>
   fmt_number(columns = c(count, denominator), decimals = 0) |> fmt_number(columns = rate, decimals = 1) |>
   fmt_number(columns = rate_ratio, decimals = 2) |>
-  tab_source_note("ONS Tables 4 and 7. Twins are a subset of all multiple maternities; home births can also be multiple maternities. Do not add the outcome rows.")
+  tab_source_note("ONS Tables 4 and 7, 2025. Twins are a subset of all multiple maternities; home births can also be multiple maternities. Do not add the outcome rows.")
 ```
 
 ```{r}
@@ -1507,11 +1507,11 @@ older_age_review$plots$multiplicity
 older_age_review$plots$babies_per_maternity
 ```
 
-The final chart shows national conversion evidence at each published age. The combined model uses individual-age factors, sharing the 50+ factor only where exact registration ages are unavailable. Home births remain included in the resident denominator and are allocated separately from trust-location deliveries.
+The final chart shows annual national conversion evidence at each published age. The model uses ratios from pooled 2023–2025 counts, sharing the 50+ factor only where exact registration ages are unavailable. Home births remain included in the resident denominator and are allocated separately from trust-location deliveries.
 
 #### Live births to maternities
 
-**The ONS projection contains live-born babies.** To estimate ONS-defined maternities, stillbirths must be accounted for as well as multiple births. Let L = live births, S = stillbirths and M = ONS maternities in the **same age, year and population**:
+**The ONS projection contains live-born babies.** The conversion to ONS-defined maternities accounts for stillbirths and multiple births. Let L = live births, S = stillbirths and M = ONS maternities, pooled over 2023–2025 at the **same published age and population**:
 
 | Step | Factor | What it does |
 |------------------------|------------------------|------------------------|
@@ -2692,7 +2692,7 @@ Counts are pooled before either division. All actual babies are counted, includi
 
 **Stillbirth coverage:** both factors use matching age/year counts, including stillbirth-only maternities and mixed-outcome multiples. These outcomes are included in total maternities, not separately forecast. National registration ratios apply to every LA and remain fixed over time. Both adjustments remain in the absolute ONS count × MSDS allocation calculation used for trust projections. The [worked modifier example](#modifier-worked-comparison) shows the arithmetic.
 
-**The Table 7 tables below are descriptive context only.** They retain the published banded singleton/twin/triplet/four-plus mix and its annual shares. Those proportions do not enter the modifier or projection calculation.
+**The [Table 7 tables](#method-1-maternity-conversion) are descriptive context only.** They show the published banded singleton/twin/triplet/four-plus mix, with annual shares and pooled three-year proportions. Those proportions do not enter the modifier or projection calculation.
 
 ::: callout-note
 ## Matching the oldest ONS boundary {#method-1-comparable-oldest-age-band}

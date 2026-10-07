@@ -396,8 +396,8 @@ if (file.exists(".delivery_geography.rds")) {
 # 6. Check the master and both independent destination allocations.
 if (file.exists(".projections.rds")) {
   projections <- readRDS(".projections.rds")
-  qa_check("Projection outputs use separate booking and delivery volumes",
-    identical(projections$calculation_version, "ons-shared-age-calculations-v8"))
+  qa_check("Projection outputs use the current pooled ONS modifiers",
+    identical(projections$calculation_version, "ons-shared-age-calculations-v10"))
   flows <- projections$sankey_comparison
   qa_check("Delivery Sankey recorded flows match the observed cluster total",
     !is.null(flows) && numbers_match(sum(flows$flows$Observed),
@@ -409,6 +409,8 @@ if (file.exists(".projections.rds")) {
   for (base in list(projections, projections$backtest$baseline)) {
     m <- base$master
     label <- paste("Reference", base$baseline_fy)
+    qa_check(paste(label, "uses the matching ONS year"),
+      all(m$ONS_reference_year == as.integer(substr(base$baseline_fy, 1, 4))))
     qa_check(paste(label, "separate starting volumes: no booking uplift applied"),
       numbers_match(m$Delivery_projection_base, m$Adjusted_maternities) &&
       numbers_match(m$Booking_projection_base, m$Adjusted_maternities))

@@ -65,8 +65,8 @@ build_ons_age_review <- function(counts, historic, snpp, women, area_config) {
     dplyr::mutate(series = ifelse(age >= 50, "50-54", review_age_band(age))) |>
     dplyr::group_by(year, series) |>
     dplyr::summarise(women = sum(female_population), .groups = "drop")
-  population <- review_index(population, "series", "women", 2026)
-  population_exact <- women |> dplyr::filter(age >= 40, age <= 54, year %in% c(2026, 2035, 2047)) |>
+  population <- review_index(population, "series", "women", 2025)
+  population_exact <- women |> dplyr::filter(age >= 40, age <= 54, year %in% c(2025, 2035, 2047)) |>
     dplyr::group_by(year, age) |> dplyr::summarise(women = sum(female_population), .groups = "drop")
   population_profile <- ggplot2::ggplot(population_exact, ggplot2::aes(age, women, colour = factor(year), group = year)) +
     ggplot2::geom_line() + ggplot2::geom_point() + ggplot2::scale_x_continuous(breaks = 40:54) +
@@ -78,7 +78,7 @@ build_ons_age_review <- function(counts, historic, snpp, women, area_config) {
       age >= 40 & age <= 43 ~ as.character(age), age == 44 ~ "44+")) |>
     dplyr::filter(!is.na(series)) |> dplyr::group_by(area_name, year, series) |>
     dplyr::summarise(births = sum(projected_births), .groups = "drop")
-  births <- review_index(births, c("area_name", "series"), "births", 2026)
+  births <- review_index(births, c("area_name", "series"), "births", 2025)
   local <- historic |> dplyr::filter(age_band %in% c("40-44", "45+")) |>
     dplyr::transmute(year, area_name = as.character(local_authority), series = as.character(age_band), births = live_births)
   local <- review_index(local, c("area_name", "series"), "births", 2013)
@@ -106,7 +106,7 @@ build_ons_age_review <- function(counts, historic, snpp, women, area_config) {
       "ONS Table 5: (live births + stillbirths) / maternities in each year.\nIts reciprocal is the annual multiplicity factor; Method 1 also includes the matching stillbirth allowance.", "age"),
     women = review_line(population, "women", "Women living in the six selected LAs: projected counts", "Women",
       "ONS 2022-based migration-category population projections, 2023 geography.\n44 is one year of age; other groups span several years. These are women, not mothers."),
-    women_change = review_line(population, "index", "Does the older female population grow at the same rate?", "Women: mid-2026 = 100",
+    women_change = review_line(population, "index", "Does the older female population grow at the same rate?", "Women: 2025 = 100",
       "Six selected LAs combined; ages 50-54 exclude women aged 55+. Population change is not itself birth growth.", index = TRUE),
     fertility = review_line(rates |> dplyr::filter(!series %in% c("40-44", "45+")), "rate",
       "Published fertility rates: the longer age pattern", "Live births per 1,000 women",
@@ -121,7 +121,7 @@ build_ons_age_review <- function(counts, historic, snpp, women, area_config) {
       "ONS/Nomis. Indices show proportional change; the counts above show how many older births underpin it.", "area_name", TRUE),
     projected_counts = review_line(births, "births", "What ONS actually projects at the older boundary", "Projected live births",
       "ONS 2022-based migration-category variant, 2023 geography. 44+ is one source row; no separate 45-54 projections.", "area_name"),
-    projected_change = review_line(births, "index", "ONS change underlying the allocated counts", "Projected births: mid-2026 = 100",
+    projected_change = review_line(births, "index", "ONS change underlying the allocated counts", "Projected births: 2025 = 100",
       "Main model: split 44+ births (L) using local MSDS age shares, then apply age-specific conversion factors.\nFixed shares and factors imply common proportional change.", "area_name", TRUE)
   )
   extra <- build_older_outcome_review(path, pooled, old)
@@ -236,7 +236,7 @@ build_msds_age_review <- function(cohort, projections, historical, trust_labels,
   exact <- tidyr::expand_grid(Key = orgs$Key, Year = years, Age = 10:60) |>
     dplyr::left_join(observed |> dplyr::select(Key, Year, Age, Observed), by = c("Key", "Year", "Age")) |>
     dplyr::mutate(Observed = tidyr::replace_na(Observed, 0), series = review_age_band(Age),
-      year = as.integer(substr(Year, 1, 4)) + 1L) |>
+      year = as.integer(substr(Year, 1, 4))) |>
     dplyr::left_join(orgs |> dplyr::select(Key, Organisation), by = "Key")
   bands <- exact |> dplyr::filter(Age >= 40, !is.na(series)) |>
     dplyr::group_by(Key, Organisation, year, series) |>
@@ -261,13 +261,13 @@ build_msds_age_review <- function(cohort, projections, historical, trust_labels,
   # Aggregate charts from exact-age cells only after the model comparison is complete.
   counts <- bands |> dplyr::group_by(year, series) |>
     dplyr::summarise(Observed = sum(Observed), .groups = "drop")
-  counts <- review_index(counts, "series", "Observed", 2024)
+  counts <- review_index(counts, "series", "Observed", 2023)
   old <- exact |> dplyr::filter(Age >= 40) |> dplyr::group_by(Age, year) |>
     dplyr::summarise(Observed = sum(Observed), .groups = "drop")
   profile <- ggplot2::ggplot(old, ggplot2::aes(Age, Observed, colour = factor(year), group = year)) +
     ggplot2::geom_line() + ggplot2::geom_point() + ggplot2::scale_x_continuous(breaks = 40:60) +
     ggplot2::labs(title = "Actual older-age starting counts: cluster trusts combined", x = "Exact age at birth",
-      y = "Recorded non-home deliveries", colour = "Year ending March",
+      y = "Recorded non-home deliveries", colour = "Year",
       caption = "MSDS: birth flag = 1, known age 10-60, cluster delivery provider, home flag = 0. No extra deduplication.") +
     ggplot2::theme_minimal(base_family = "sans") + ggplot2::theme(legend.position = "bottom")
   combined <- comparison |> dplyr::group_by(year, series) |>
@@ -278,7 +278,7 @@ build_msds_age_review <- function(cohort, projections, historical, trust_labels,
     dplyr::group_by(Organisation, year) |>
     dplyr::summarise(Observed = sum(Observed), Modelled = sum(Modelled), .groups = "drop") |>
     tidyr::pivot_longer(c(Observed, Modelled), names_to = "series", values_to = "value")
-  last_year <- exact_model |> dplyr::filter(year == 2026, Age >= 40) |>
+  last_year <- exact_model |> dplyr::filter(year == 2025, Age >= 40) |>
     dplyr::group_by(Age) |> dplyr::summarise(Observed = sum(Observed), Modelled = sum(Modelled), .groups = "drop") |>
     tidyr::pivot_longer(c(Observed, Modelled), names_to = "series", values_to = "value")
   exact_check <- ggplot2::ggplot(last_year, ggplot2::aes(Age, value, colour = series, group = series)) +
@@ -291,8 +291,8 @@ build_msds_age_review <- function(cohort, projections, historical, trust_labels,
     dplyr::mutate(denominator = sum(Observed), share = ifelse(denominator > 0, Observed / denominator * 100, NA_real_)) |>
     dplyr::ungroup()
   readout <- combined |> dplyr::group_by(series) |>
-    dplyr::summarise(start = Observed[year == 2024], finish = Observed[year == 2026],
-      model_start = Modelled[year == 2024], model_finish = Modelled[year == 2026], .groups = "drop") |>
+    dplyr::summarise(start = Observed[year == 2023], finish = Observed[year == 2025],
+      model_start = Modelled[year == 2023], model_finish = Modelled[year == 2025], .groups = "drop") |>
     dplyr::mutate(observed_change = ifelse(start > 0, finish/start-1, NA_real_),
       model_change = ifelse(model_start > 0, model_finish/model_start-1, NA_real_),
       difference = model_finish - finish,
@@ -302,19 +302,19 @@ build_msds_age_review <- function(cohort, projections, historical, trust_labels,
     age_mix = review_line(age_mix, "share", "Is the observed mix within 44+ stable?", "% of known-age 44+ deliveries",
       "MSDS cluster trusts combined. Denominator = recorded deliveries aged 44-60 in that financial year.\nChanging LA/provider mix can alter these shares even with common growth within each LA."),
     counts = review_line(counts, "Observed", "MSDS deliveries: the actual age-band trends", "Recorded non-home deliveries",
-      "Cluster trusts combined. Year is financial year ending March; 50+ includes valid ages 50-60."),
+      "Cluster trusts combined. 50+ includes valid ages 50-60."),
     change = review_line(counts, "index", "MSDS age trends compared on a common scale", "Deliveries: 2023/24 = 100",
       "A zero reference count has no index. Differences can reflect case mix, provider flows or recording, not just demography.", index = TRUE),
     backtest = review_line(long, "value", "Retrospective check: does common boundary growth track actual activity?", "Deliveries",
-      "ONS mid-2024 to mid-2026 counts use fixed pooled 2023/24--2025/26 allocation proportions.\nThe first count is not fitted to MSDS. Current inputs make this a retrospective diagnostic.", "age_group"),
+      "ONS 2023 to 2025 counts use fixed pooled 2023/24--2025/26 allocation proportions.\nThe first count is not fitted to MSDS. Current inputs make this a retrospective diagnostic.", "age_group"),
     trust_backtest = review_line(by_trust, "value", "The same check for each trust: ages 44+", "Deliveries",
       "Observed versus ONS-count estimates. Unmatched MSDS LA/age records have no projected contribution.", "Organisation"))
-  list(version = "age-review-counts-v2", plots = plots, exact = exact, bands = bands, share = share,
+  list(version = "age-review-counts-v3", plots = plots, exact = exact, bands = bands, share = share,
     comparison = comparison, exact_comparison = exact_model, coverage = coverage, readout = readout, age_mix = age_mix)
 }
 
 show_msds_age_review <- function(review, plot) {
-  if (is.null(review) || !identical(review$version, "age-review-counts-v2")) {
+  if (is.null(review) || !identical(review$version, "age-review-counts-v3")) {
     htmltools::div(class = "callout callout-note",
       "MSDS evidence is not available in this render. Run Run analysis.R again in the secure environment. ")
   } else review$plots[[plot]]

@@ -32,12 +32,13 @@ local({
   stopifnot(nrow(counts) == 117, all(factors$factors$Stillbirth_factor >= 1))
   source25 <- counts[counts$age == "25", ]
   f25 <- factors$factors[factors$factors$age == "25", ]
-  near(f25$Stillbirth_ratio, mean(source25$stillbirths / source25$live_births))
-  near(f25$Multiplicity_factor, mean(source25$maternities / source25$total_births))
+  near(f25$Stillbirth_ratio, sum(source25$stillbirths) / sum(source25$live_births))
+  near(f25$Multiplicity_factor, sum(source25$maternities) / sum(source25$total_births))
+  near(factors$factors$Maternity_modifier,
+    factors$factors$Pooled_maternities / factors$factors$Pooled_live_births)
   stopifnot(length(unique(factors$modifications$Stillbirth_factor[which(factors$modifications$Age >= 50)])) == 1)
 
-  # Unequal annual volumes distinguish the agreed mean ratios from pooled ratios
-  # and distinguish product-of-means from mean-of-products.
+  # Unequal annual volumes distinguish pooling counts from averaging ratios.
   varied <- counts
   ix <- which(varied$age == "25")
   varied$live_births[ix] <- c(100,200,700)
@@ -46,11 +47,35 @@ local({
   varied$total_births <- varied$live_births + varied$stillbirths
   v <- prepare_projection_age_factors(varied)$factors
   v <- v[v$age=="25", ]
-  near(v$Stillbirth_factor, (1.1+1+1.1)/3)
-  near(v$Multiplicity_factor, (.9+.5+.5)/3)
-  near(v$Maternity_modifier, ((1.1+1+1.1)/3)*((.9+.5+.5)/3))
-  stopifnot(abs(v$Maternity_modifier-584/1000)>1e-3,
+  near(v$Pooled_live_births, 1000)
+  near(v$Pooled_stillbirths, 80)
+  near(v$Pooled_maternities, 584)
+  near(v$Stillbirth_factor, 1080/1000)
+  near(v$Multiplicity_factor, 584/1080)
+  near(v$Maternity_modifier, 584/1000)
+  stopifnot(abs(v$Maternity_modifier-((1.1+1+1.1)/3)*((.9+.5+.5)/3))>1e-3,
     abs(v$Maternity_modifier-(.99+.5+.55)/3)>1e-3)
+
+  # Combined-age fallback factors also pool source counts before division.
+  for (boundary in c(15L, 44L)) {
+    ages <- if (boundary == 15L) c("<14", "14", "15") else c(as.character(44:49), "50+")
+    source <- counts[counts$age %in% ages, ]
+    fallback <- factors$modifications |>
+      dplyr::filter(is.na(Age), ONS_source_age == boundary)
+    near(fallback$Stillbirth_factor, 1 + sum(source$stillbirths)/sum(source$live_births))
+    near(fallback$Multiplicity_factor, sum(source$maternities)/sum(source$total_births))
+  }
+
+  # Table 7 provides counts for pooled descriptive proportions too.
+  multiplicity <- read_national_multiplicity()
+  pooled <- pooled_multiplicity_rates(multiplicity)
+  totals <- pooled |> dplyr::group_by(age_band) |>
+    dplyr::summarise(total = sum(pooled_proportion), .groups = "drop")
+  near(totals$total, rep(1, nrow(totals)))
+  unequal <- data.frame(age_band = "25-29", multiplicity = "2",
+    maternities = c(1, 90), all_maternities = c(10, 100))
+  near(pooled_multiplicity_rates(unequal)$pooled_proportion, 91/110)
+  stopifnot(nchar(gt::as_raw_html(multiplicity_table(pooled))) > 0)
 
   # LA A, age 25: delivery A 12 / 20; annual-average share would be 2 / 3.
   # Bookings without a recorded delivery affect booking shares, not delivery shares.
@@ -80,10 +105,12 @@ local({
   booking_only$booking_provider <- "RXT"
   booking_only$person_id_mother <- booking_only$uniq_preg_id <- 2001:2005
   cohort <- dplyr::bind_rows(cohort, extra, booking_only)
-  ons <- tidyr::expand_grid(area_code = unique(cells$LA), age_group = as.character(15:44), year = 2026:2027)
+  ons <- tidyr::expand_grid(area_code = unique(cells$LA), age_group = as.character(15:44), year = 2025:2026)
   ons$area_name <- ons$area_code
-  ons$projected_births <- ifelse(ons$year == 2026, 100, 110)
+  ons$projected_births <- ifelse(ons$year == 2025, 100, 110)
   m <- build_projection_master(cohort, residents, ons, counts)
+  stopifnot(identical(sort(unique(m$Year)), 2025:2026),
+    all(m$ONS_reference_year == 2025L))
   stopifnot(identical(names(m)[1:6], c("LA", "Age", "Year", "Exact_age_live_births",
     "Delivery_projection_base", "Booking_projection_base")))
   near(m$Exact_age_live_births, m$ONS_live_births * m$Age_weight)
@@ -96,7 +123,7 @@ local({
   near(a$Adjusted_births_ls, c(100,110) * f25$Stillbirth_factor)
   near(a$Adjusted_maternities, a$Adjusted_births_ls * f25$Multiplicity_factor)
   near(a$Delivery_count_RQ3, a$Adjusted_maternities * .6)
-  near(m$Age_weight[m$LA == "E08000025" & m$Year == 2026 & m$Age %in% 13:15], c(.1,.2,.7))
+  near(m$Age_weight[m$LA == "E08000025" & m$Year == 2025 & m$Age %in% 13:15], c(.1,.2,.7))
   for (type in c("Delivery", "Booking")) {
     volume <- m[[paste0(type, "_projection_base")]]
     near(rowSums(m[grep(paste0("^",type,"_count_"), names(m), value=TRUE)]),volume)
@@ -139,7 +166,7 @@ local({
   age_residents <- age_cohort |> dplyr::filter(birth_flag==1) |>
     dplyr::count(birth_yr,la_of_mother,age_at_birth_mother,name="count")
   age_master <- build_projection_master(age_cohort,age_residents,ons,counts)
-  age_rows <- age_master |> dplyr::filter(LA=="E08000025",Year==2026,Age %in% 13:15)
+  age_rows <- age_master |> dplyr::filter(LA=="E08000025",Year==2025,Age %in% 13:15)
   near(age_rows$Age_weight,c(10,2,7)/19)
 
   # Character/factor fields from parquet must give the same numeric results.
@@ -156,7 +183,7 @@ local({
   # All resident charts use the completed master; all years remain available.
   ons_full <- tidyr::expand_grid(area_code = unique(cells$LA), age_group = as.character(15:44), year = 2023:2047)
   ons_full$area_name <- read_area_config()$area_name[match(ons_full$area_code, read_area_config()$area_code)]
-  ons_full$projected_births <- ifelse(ons_full$year == 2027, 110, 100)
+  ons_full$projected_births <- ifelse(ons_full$year == 2026, 110, 100)
   full <- build_projection_master(cohort,residents,ons_full,counts,start_year=2023)
   resident <- summarise_resident_projections(full)
   stopifnot(identical(sort(unique(resident$projected_trajectory$year)),2023:2047))
@@ -174,11 +201,28 @@ local({
   near(comparison$data$maternities[comparison$data$Source == "ONS published maternities"],80)
   estimate_rows <- comparison$data |> dplyr::filter(Source == "Adjusted maternity projections")
   near(sum(estimate_rows$maternities),sum(resident$projected_trajectory$maternities))
-  stopifnot(min(estimate_rows$Date) == as.Date("2023-06-30"),
-    comparison$latest_recorded_date == as.Date("2026-03-31"))
+  stopifnot(min(estimate_rows$Year) == 2023L,
+    comparison$latest_recorded_year == 2025L,
+    all(comparison$msds$Year == as.integer(substr(comparison$msds$Period, 1, 4))))
   built_comparison <- ggplot2::ggplot_build(comparison$chart)
   stopifnot(setequal(unique(built_comparison$data[[2]]$shape), c(15,16)),
     setequal(unique(built_comparison$data[[1]]$linetype), c("solid","dashed")))
+
+  # The report's 2025 check must use the 2025 count even when adjacent years differ.
+  report_lines <- readLines("index.qmd", warn = FALSE)
+  check_start <- grep("^#\\| label: method-1-resident-level-check-table$", report_lines) + 1L
+  check_end <- check_start + which(report_lines[check_start:length(report_lines)] == "```")[1] - 2L
+  check_code <- parse(text = report_lines[check_start:check_end])
+  observed_trajectory <- data.frame(area_name = c("Birmingham", "Dudley"),
+    year = 2025L, maternities = c(80, 100))
+  projected_trajectory <- data.frame(area_name = rep(c("Birmingham", "Dudley"), 3),
+    year = rep(2024:2026, each = 2), maternities = c(20, 30, 90, 120, 900, 1200))
+  invisible(eval(check_code))
+  near(resident_level_check$Projected, c(90, 120))
+  near(resident_level_check$Difference, c(10, 20))
+  projected_trajectory <- projected_trajectory[projected_trajectory$year == 2025, ]
+  invisible(eval(check_code))
+  near(resident_level_check$Projected, c(90, 120))
   by_la <- full |> dplyr::group_by(LA,Year) |>
     dplyr::summarise(N=sum(Adjusted_maternities),.groups="drop") |>
     dplyr::left_join(resident$total_maternity_projections,by=c("LA"="area_code","Year"="year"))
@@ -187,14 +231,14 @@ local({
     dplyr::summarise(N=sum(projected_maternities),.groups="drop") |>
     dplyr::left_join(resident$total_maternity_projections,by=c("area_code","year"))
   near(summed_bands$N,summed_bands$projected_maternities)
-  exact_a <- full[full$LA=="E08000025" & full$Year==2026 & !is.na(full$Age), ]
+  exact_a <- full[full$LA=="E08000025" & full$Year==2025 & !is.na(full$Age), ]
   for (band in c("Under 20","40-44","45+")) {
     expected <- sum(exact_a$Adjusted_maternities[report_age_band(exact_a$Age)==band])
-    actual <- resident$age_band_projections |> dplyr::filter(area_code=="E08000025",year==2026,age_band==band)
+    actual <- resident$age_band_projections |> dplyr::filter(area_code=="E08000025",year==2025,age_band==band)
     near(actual$projected_maternities,expected)
   }
   # Filtering forward years retains allocation metadata used by charts.
-  forward <- full[full$Year>=2026, ]
+  forward <- full[full$Year>=2025, ]
   stopifnot(identical(attr(forward,"Delivery_destinations"),attr(full,"Delivery_destinations")))
 
   # Check the existing chart-data builder consumes the completed master columns.
@@ -212,12 +256,36 @@ local({
   projection_trust_lookup <- readr::read_csv("data/lookups/trust_names.csv", show_col_types=FALSE)
   projection_catchment_las <- read_area_config()$area_code
   result <- build_first_draft_projections(master=m,prepare_outputs=TRUE)
+
+  # ONS 2023/2024/2025 counts pair with MSDS 2023/24, 2024/25 and 2025/26.
+  # A much larger 2026 count catches accidental use of the following source year.
+  history_ons <- ons_full
+  history_ons$projected_births <- dplyr::case_when(
+    history_ons$year == 2023 ~ 60, history_ons$year == 2024 ~ 80,
+    history_ons$year == 2025 ~ 100, TRUE ~ 900)
+  projection_master_backtest <- build_projection_master(cohort, residents, history_ons, counts,
+    baseline_fy = "2023/24", end_year = 2025L)
+  history <- build_projection_backtest()
+  checked_history <- history$data |>
+    dplyr::filter(Key == "trust-rq3") |> dplyr::arrange(Year)
+  stopifnot(identical(checked_history$Year, 2023:2025),
+    identical(checked_history$Year_label, c("2023/24", "2024/25", "2025/26")))
+  near(checked_history$Observed, c(2, 0, 35))
+  reference_total <- result$maternity_projections |>
+    dplyr::filter(Key == "trust-rq3", Year == 2025) |> dplyr::pull(Projected)
+  near(checked_history$Modelled, reference_total * c(.6, .8, 1))
+  age_review <- build_msds_age_review(cohort, result, history$baseline, trust_labels, cluster_trusts)
+  stopifnot(identical(sort(unique(age_review$exact_comparison$year)), 2023:2025))
+  age43 <- age_review$exact_comparison |>
+    dplyr::filter(Key == "trust-rq3", Age == 43) |> dplyr::arrange(year)
+  near(age43$Modelled, c(60, 80, 100) * factors$factors$Maternity_modifier[factors$factors$age == "43"])
+  near(age43$Observed, c(0, 0, 5))
   # Sankeys reconcile to observed deliveries and the completed final-year master.
   sankey <- result$sankey_comparison
   near(sum(sankey$flows$Observed), sum(result$observed_totals$Observed_baseline[
     result$observed_totals$Key %in% result$organisations$Key[result$organisations$Level=="Trust"]]))
   near(sum(sankey$flows$Projected), sum(result$maternity_projections$Projected[
-    result$maternity_projections$Key=="cluster" & result$maternity_projections$Year==2027]))
+    result$maternity_projections$Key=="cluster" & result$maternity_projections$Year==2026]))
   # Grouped change is 65/100-1, not the mean of +100% and -50%.
   observed_flows <- data.frame(LA=c(rep("A",10),rep("B",90),rep("X",2),"Unknown LA"),
     Trust=c(rep("RQ3",100),rep("RL4",2),"RRK"))
@@ -256,7 +324,7 @@ local({
     dplyr::filter(LA=="E08000025",Age==25,Destination=="RQ3") |> dplyr::arrange(FY)
   near(booking_cell$Denominator,c(2,8,35))
   near(booking_cell$Pooled,rep(20/45,3))
-  near(variation$ons_means$Stillbirth_ratio[variation$ons_means$age=="25"],(.1+0+.1)/3)
+  near(variation$ons_pooled$Stillbirth_ratio[variation$ons_pooled$age=="25"],80/1000)
   age_variation <- build_input_variation_review(age_cohort,age_residents,counts,
     attr(age_master,"allocation_tables"))
   age_cell <- age_variation$age_mix |>
@@ -300,7 +368,7 @@ local({
       shown <- shown[shown$Key==org$Key, ]
       near(shown$Projected,expected$x[match(shown$Year,expected$Year)])
       denominator <- if (type=="Delivery") shown$Observed_baseline else
-        rep(shown$Projected[shown$Year==2026],nrow(shown))
+        rep(shown$Projected[shown$Year==2025],nrow(shown))
       valid <- denominator>0
       near(shown$Percent_change[valid],shown$Projected[valid]/denominator[valid]-1)
       stopifnot(all(is.na(shown$Percent_change[!valid])))
@@ -309,15 +377,15 @@ local({
   # Age 43 shrinks while 44 grows: report growth must be change in summed counts,
   # not an unweighted mean of age-specific growth percentages.
   varied_ons <- ons
-  varied_ons$projected_births[varied_ons$year==2027 & varied_ons$age_group=="43"] <- 80
-  varied_ons$projected_births[varied_ons$year==2027 & varied_ons$age_group=="44"] <- 150
+  varied_ons$projected_births[varied_ons$year==2026 & varied_ons$age_group=="43"] <- 80
+  varied_ons$projected_births[varied_ons$year==2026 & varied_ons$age_group=="44"] <- 150
   varied_master <- build_projection_master(cohort,residents,varied_ons,counts)
   varied_result <- build_first_draft_projections(master=varied_master,prepare_outputs=FALSE)
   f43 <- factors$factors$Maternity_modifier[factors$factors$age=="43"]
   f44 <- factors$factors$Maternity_modifier[factors$factors$age=="44"]
   expected_growth <- (80*f43+60*f44)/(100*f43+40*f44)-1
   shown_growth <- varied_result$weighted_age_growth |>
-    dplyr::filter(Key=="trust-rq3",Age_band=="40-44",Year==2027)
+    dplyr::filter(Key=="trust-rq3",Age_band=="40-44",Year==2026)
   near(shown_growth$Growth_change,expected_growth)
   stopifnot(abs(expected_growth-mean(c(-.2,.5)))>1e-3)
 
@@ -404,5 +472,5 @@ local({
   finish <- grep("^# Reconcile sections",qa_text)-1L
   eval(parse(text=qa_text[start:finish]))
   stopifnot(all(qa_results$Result == "OK"))
-  message("PASS: Table 5 factors, pooled delivery proportions, age split, separate booking/delivery bases, independent allocations, earlier-year feeders, booking-only providers, seven age bands, shared resident results, annual mean ratios, period filters, count-weighted changes, unmatched-ONS descriptive counts and chart provider coverage.")
+  message("PASS: direct source-year comparisons, pooled Table 5 factors and Table 7 proportions, pooled delivery proportions, age split, separate booking/delivery bases, independent allocations, earlier-year feeders, booking-only providers, seven age bands, shared resident results, pooled ONS ratios, period filters, count-weighted changes, unmatched-ONS descriptive counts and chart provider coverage.")
 })

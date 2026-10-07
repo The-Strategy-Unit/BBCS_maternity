@@ -138,8 +138,8 @@ source-group row where local age information is unavailable.
 Calculation steps:
 
 1. Pool 2023/24–2025/26 resident counts. Split combined ONS ages using each LA's maternity age mix; preserve each ONS births (L) total.
-2. Join `ons_modifications`: at each published age, mean annual stillbirths/live births gives the ratio; multiply births (L) by **1 + that ratio** to obtain births (L+S).
-3. Multiply by mean annual maternities/births (L+S), using Table 5 for 2023–2025. Ages below 14 share the under-14 factor; ages 50+ share its published factor. Other ages use their own factors.
+2. Join `ons_modifications`: at each published age, pool 2023–2025 Table 5 counts, then divide stillbirths by live births; multiply births (L) by **1 + that ratio** to obtain births (L+S).
+3. Multiply by pooled maternities/pooled births (L+S), using the same Table 5 counts for 2023–2025. Ages below 14 share the under-14 factor; ages 50+ share its published factor. Other ages use their own factors.
 4. Delivery proportions = pooled destination deliveries / resident maternities. Booking proportions = pooled destination bookings / all bookings, including those without a recorded delivery. Both use LA(R)/Age (1) and remain fixed over future years.
 5. Multiply each starting-volume column by its own destination proportions. Aggregate completed delivery and booking counts separately into age bands, trusts, ICBs and cluster.
 
@@ -161,7 +161,7 @@ Under 20, 20–24, 25–29, 30–34, 35–39, 40–44 and 45+; grouping follows 
 Historical banded births (L) and published maternities are displayed directly,
 without a second estimated-maternity conversion.
 
-The report requires calculation version `ons-shared-age-calculations-v8`.
+The report requires calculation version `ons-shared-age-calculations-v10`.
 The three ONS registration workbooks were checked against the public downloads
 on 6 October 2026 and matched exactly. Table 5 supplies both modifiers; Table 7
 remains descriptive evidence about multiplicity.
@@ -256,14 +256,14 @@ The ONS definitions above follow the [birth statistics user guide](https://www.o
 | **Observed / published count** | An ONS figure derived from registered events that have already happened. |
 | **Projected live births** | Future baby counts from the ONS demographic model, conditional on its assumptions. |
 | **Estimated / projected maternities** | Counts calculated from projected births (L), after the local age split and age-specific stillbirth/multiplicity adjustments. |
-| **Maternity modifier** | [1 + mean annual S/L] × mean annual M/(L+S), from Table 5 at each published age. Multiplies projected live births to estimate maternities. |
+| **Maternity modifier** | [1 + S/L] × M/(L+S), with S, L and M pooled from 2023–2025 Table 5 counts at each published age. Multiplies projected live births to estimate maternities. |
 | **General fertility rate (GFR)** | Live births per 1,000 women aged 15–44 in this report. It describes frequency relative to population size, not the number needing care. |
 | **Age-specific fertility rate (ASFR)** | Live births per 1,000 women in the relevant age group. |
 | **Total fertility rate (TFR)** | Children per woman if the year's age-specific fertility rates applied throughout childbearing life. Not an annual maternity count. |
 
 **The conversion in one line:** projected live-born babies × maternity modifier = estimated maternities. Split combined ONS ages first, apply each published-age factor, then add completed results. Birth rates are a separate contextual measure and are not used instead of this conversion.
 
-For illustration only, a modifier of **0.99** means an estimated **99 maternities for every 100 live-born babies**. A projection of 10,000 live births would therefore become 9,900 maternities if that modifier applied throughout. The actual analysis uses different age-specific modifiers. Method 1 includes both stillbirths and multiplicity. Its factors change the absolute ONS counts allocated to trusts. MSDS already includes live-birth and stillbirth maternities and supplies allocation rates without an uplift. Each factor is the mean of its annual ratios; their product is applied to births (L).
+For illustration only, a modifier of **0.99** means an estimated **99 maternities for every 100 live-born babies**. A projection of 10,000 live births would therefore become 9,900 maternities if that modifier applied throughout. The actual analysis uses different age-specific modifiers. Method 1 includes both stillbirths and multiplicity. Its factors change the absolute ONS counts allocated to trusts. MSDS already includes live-birth and stillbirth maternities and supplies allocation rates without an uplift. Each factor uses pooled counts before division; their product is applied to births (L).
 
 ### Using these figures for pathway demand and capacity
 

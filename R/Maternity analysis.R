@@ -6,7 +6,9 @@
 # TERMINOLOGY KEY --------------------------------------------------------
 # Births (L)   = live-born babies
 # Births (L+S) = live-born + stillborn babies
-# Maternities = pregnancies reaching at least one live birth or stillbirth
+# Maternities = women entering the maternity pathway: booking and/or delivery
+#               Count once per pregnancy, regardless of outcome
+# ONS maternities = pregnancies reaching at least one live birth or stillbirth
 # Age (1)     = individual year of maternal age (34, 35, 36, ...)
 # Age (B)     = age band used for descriptive charts / final summaries
 # ONS age     = Age (1) at 16-43, plus combined <=15 and 44+ source rows
@@ -19,7 +21,7 @@
 # This model uses LA(R), Trust(B/D), and separate booking/delivery-provider ICBs.
 # It does not contain a booking-site or delivery-site LA lookup.
 # A catchment is a set of contributing LA(R)s, not a new LA code.
-# FY          = financial year; ONS projection years end at mid-year
+# FY          = financial year, labelled 2025/26 for example
 # MODEL_INPUT = source/prepared data used in the projection calculation
 # CONTEXT_ONLY = exploration or description, not a model multiplier
 
@@ -117,7 +119,7 @@ cluster_las <- readr::read_csv("config/local_authorities.csv", show_col_types = 
 
 # Projection settings: comparator year, ONS reference and reporting groups
 projection_baseline <- "2025/26"
-projection_reference_year <- 2026L
+projection_reference_year <- as.integer(substr(projection_baseline, 1, 4))
 projection_end_year <- NULL # NULL uses all years in the ONS file.
 projection_history_years <- c("2023/24", "2024/25", "2025/26")
 projection_age_bands <- report_age_bands
@@ -145,7 +147,7 @@ area_config <- read_area_config()
 analysis_parameters <- read_analysis_parameters()
 sources <- build_source_summary()
 # MODEL_INPUT: ONS_BIRTHS_L
-# Births (L), LA(R) x ONS source age x year ending mid-year
+# Births (L), LA(R) x ONS source age x year
 snpp <- read_snpp_births()
 
 # MODEL_INPUT: ONS_REGISTRATIONS
@@ -160,7 +162,7 @@ observed_birth_rates <- read_local_authority_birth_rates(selected_las)
 # CONTEXT_ONLY: observed births and maternities are shown as published.
 # No conversion of historical banded births into estimated maternities.
 multiplicity_data <- read_national_multiplicity()
-average_rates <- average_multiplicity_rates(multiplicity_data)
+pooled_rates <- pooled_multiplicity_rates(multiplicity_data)
 historic_live_births <- read_historic_live_births(area_config = area_config)
 historic_trends <- historic_live_births |> filter(age_band == "Total")
 female_population_single_age <- read_female_population_single_age(
@@ -212,7 +214,7 @@ ons_exploration <- list(
   la_maternities = la_maternities,
   observed_birth_rates = observed_birth_rates,
   multiplicity_data = multiplicity_data,
-  average_rates = average_rates,
+  pooled_rates = pooled_rates,
   projection_age_factors = projection_age_factors,
   historic_live_births = historic_live_births,
   historic_trends = historic_trends,
@@ -1697,7 +1699,7 @@ build_allocation_tables <- function(cohort, resident_totals,
 }
 
 build_projection_master <- function(cohort, resident_totals, ons_births, registration_counts,
-    baseline_fy = "2025/26", reference_year = 2026L, end_year = NULL,
+    baseline_fy = "2025/26", reference_year = as.integer(substr(baseline_fy, 1, 4)), end_year = NULL,
     include_las = character(), calibration_years = c("2023/24", "2024/25", "2025/26"),
     start_year = reference_year) {
   # MODEL_INPUT: MSDS_RESIDENTS, MSDS_DELIVERIES, MSDS_BOOKINGS
@@ -1818,7 +1820,7 @@ build_projection_master <- function(cohort, resident_totals, ons_births, registr
   attr(master, "unmatched_las") <- setdiff(selected_las, unique(ons$LA))
   attr(master, "registration_source") <- registration_counts
   attr(master, "ons_modifications") <- ons_modifications
-  attr(master, "calculation_version") <- "ons-shared-age-calculations-v8"
+  attr(master, "calculation_version") <- "ons-shared-age-calculations-v10"
   master
 }
 
@@ -1862,13 +1864,15 @@ projection_column_dictionary <- function(master) {
       Column == "LA" ~ "LA(R): resident local authority.",
       Column == "Age" ~ "Age (1); NA only where a boundary group cannot be split.",
       Column == "ONS_age" ~ "ONS source row: 15 means <=15; 44 means >=44.",
-      Column == "Year" ~ "ONS year ending mid-year.",
+      Column == "Year" ~ "ONS projection year.",
       Column == "ONS_live_births" ~ "Source births (L); repeated across ages within a combined group.",
       Column == "Age_weight" ~ "Pooled exact-age resident maternities / matching combined-age total; 1 for ages 16--43.",
       Column == "Exact_age_live_births" ~ "ONS births (L) after the age split only: ONS_live_births * Age_weight; before stillbirth, multiplicity or booking adjustments.",
-      Column == "Stillbirth_ratio" ~ "Mean annual Table 5 stillbirths / live births, 2023--2025.",
+      Column %in% c("Pooled_live_births", "Pooled_stillbirths", "Pooled_total_births", "Pooled_maternities") ~ "National Table 5 count summed across 2023--2025 at the matching registration age; used to calculate the factors, not a projected count.",
+      Column == "Calculation_basis" ~ "Pool national counts across 2023--2025 at each published age, then divide.",
+      Column == "Stillbirth_ratio" ~ "Pooled Table 5 stillbirths / pooled live births, 2023--2025.",
       Column == "Stillbirth_factor" ~ "1 + Stillbirth_ratio; births (L) to births (L+S).",
-      Column == "Multiplicity_factor" ~ "Mean annual Table 5 maternities / births (L+S), 2023--2025.",
+      Column == "Multiplicity_factor" ~ "Pooled Table 5 maternities / pooled births (L+S), 2023--2025.",
       Column == "Adjusted_births_ls" ~ "Exact_age_live_births * Stillbirth_factor.",
       Column == "Adjusted_maternities" ~ "Adjusted_births_ls * Multiplicity_factor; counted once per LA/age/year.",
       Column == "Delivery_projection_base" ~ "Adjusted maternities available for delivery allocation.",
@@ -1890,15 +1894,15 @@ allocation_table_wide <- function(rates, prefix = "Delivery") {
 
 # 3.7 Build forward and retrospective master tables ----------------------
 # Same calculations and pooled rates; only the projection years differ.
-# Keep all source years for resident charts; forward destination charts start at mid-2026.
+# Keep all source years for resident charts; forward destination charts start at 2025.
 projection_master_all_years <- build_projection_master(final_cohort_2326, total_births_by_LA_2326,
   snpp, registration_counts, include_las = area_config$area_code, start_year = min(snpp$year))
 projection_master <- projection_master_all_years[
   projection_master_all_years$Year >= projection_reference_year, ]
 # Same pooled rates for the historical comparison: retrospective, not held-out validation.
 projection_master_backtest <- build_projection_master(final_cohort_2326, total_births_by_LA_2326,
-  snpp, registration_counts, baseline_fy = "2023/24", reference_year = 2024L,
-  end_year = 2026L, include_las = read_area_config()$area_code)
+  snpp, registration_counts, baseline_fy = "2023/24", reference_year = 2023L,
+  end_year = 2025L, include_las = read_area_config()$area_code)
 # 3.8 Expose the factors, proportions and column key for inspection -------
 # These objects describe the inputs already used in projection_master.
 ons_modifications <- attr(projection_master, "ons_modifications")
@@ -1924,44 +1928,43 @@ build_resident_comparison <- function(resident_totals, observed, projected,
     dplyr::summarise(maternities = sum(maternities), .groups = "drop") |>
     dplyr::left_join(areas[c("area_code", "area_name")], by = "area_code") |>
     dplyr::mutate(Source = "MSDS recorded maternities",
-      Date = as.Date(paste0(as.integer(substr(Period, 1, 4)) + 1L, "-03-31")))
-  # Keep source periods explicit. Dates position the end of each full year.
+      Year = as.integer(substr(Period, 1, 4)))
   registered <- observed |>
     dplyr::transmute(area_name = as.character(area_name), maternities,
       Period = as.character(year), Source = "ONS published maternities",
-      Date = as.Date(paste0(year, "-12-31")))
+      Year = year)
   estimates <- projected |>
     dplyr::transmute(area_name = as.character(area_name), maternities,
-      Period = paste0("Mid-", year), Source = "Adjusted maternity projections",
-      Date = as.Date(paste0(year, "-06-30")))
+      Period = as.character(year), Source = "Adjusted maternity projections",
+      Year = year)
   data <- dplyr::bind_rows(registered, msds |> dplyr::select(-area_code), estimates)
   series <- c("ONS published maternities", "MSDS recorded maternities", "Adjusted maternity projections")
   data$Source <- factor(data$Source, levels = series)
   data$area_name <- factor(data$area_name, levels = areas$area_name)
-  data <- data |> dplyr::arrange(Source, area_name, Date)
+  data <- data |> dplyr::arrange(Source, area_name, Year)
   recorded <- data |> dplyr::filter(Source != "Adjusted maternity projections")
-  boundary <- max(recorded$Date)
-  start <- min(data$Date)
-  finish <- max(data$Date)
+  boundary <- max(recorded$Year)
+  start <- min(data$Year)
+  finish <- max(data$Year)
 
   # LA colour is constant across sources; line and marker distinguish sources.
-  chart <- ggplot2::ggplot(data, ggplot2::aes(Date, maternities, colour = area_name,
+  chart <- ggplot2::ggplot(data, ggplot2::aes(Year, maternities, colour = area_name,
       group = interaction(area_name, Source), linetype = Source)) +
     ggplot2::geom_line(linewidth = 1) +
     ggplot2::geom_point(data = recorded, ggplot2::aes(shape = Source), size = 2.5) +
     ggplot2::geom_vline(xintercept = boundary, colour = "#666666", linetype = "dotted") +
-    ggplot2::annotate("text", x = start + as.numeric(boundary - start) / 2, y = Inf,
+    ggplot2::annotate("text", x = (start + boundary) / 2, y = Inf,
       label = "Historical comparison", vjust = 1.3, size = 3.5) +
-    ggplot2::annotate("text", x = boundary + as.numeric(finish - boundary) / 2, y = Inf,
+    ggplot2::annotate("text", x = (boundary + finish) / 2, y = Inf,
       label = "Future projection", vjust = 1.3, size = 3.5) +
     ggplot2::scale_colour_manual(values = area_colour_palette(areas)) +
     ggplot2::scale_linetype_manual(values = stats::setNames(c("solid", "solid", "dashed"), series)) +
     ggplot2::scale_shape_manual(values = stats::setNames(c(16, 15, NA), series), drop = FALSE) +
-    ggplot2::scale_x_date(date_breaks = "2 years", date_labels = "%Y",
+    ggplot2::scale_x_continuous(breaks = seq(start, finish, by = 2),
       expand = ggplot2::expansion(mult = c(0.025, 0.015))) +
     ggplot2::scale_y_continuous(labels = scales::label_comma(),
       expand = ggplot2::expansion(mult = c(0.02, 0.16))) +
-    ggplot2::labs(x = "Source period end", y = "Resident maternities", colour = "LA(R)",
+    ggplot2::labs(x = "Year", y = "Resident maternities", colour = "LA(R)",
       linetype = "Series", shape = "Series") +
     ons_plot_theme() +
     ggplot2::guides(colour = ggplot2::guide_legend(order = 1, nrow = 1,
@@ -1969,7 +1972,7 @@ build_resident_comparison <- function(resident_totals, observed, projected,
       linetype = ggplot2::guide_legend(order = 2, nrow = 1),
       shape = ggplot2::guide_legend(order = 2, nrow = 1)) +
     ggplot2::theme(legend.box = "vertical")
-  list(data = data, msds = msds, latest_recorded_date = boundary, chart = chart)
+  list(data = data, msds = msds, latest_recorded_year = boundary, chart = chart)
 }
 
 ons_exploration <- c(ons_exploration, resident_outputs)
@@ -2026,7 +2029,7 @@ make_projection_coverage_table <- function(coverage, baseline_fy) {
 build_first_draft_projections <- function(baseline_fy = projection_baseline,
   ons_reference_year = projection_reference_year, projection_end = projection_end_year,
   prepare_outputs = TRUE, master = if (baseline_fy == "2023/24") projection_master_backtest else projection_master) {
-  stopifnot(identical(attr(master, "calculation_version"), "ons-shared-age-calculations-v8"),
+  stopifnot(identical(attr(master, "calculation_version"), "ons-shared-age-calculations-v10"),
     all(master$Baseline_FY == baseline_fy), all(master$ONS_reference_year == ons_reference_year))
   if (!is.null(projection_end)) master <- dplyr::filter(master, Year <= projection_end)
   wide_master <- master
@@ -2211,7 +2214,7 @@ build_first_draft_projections <- function(baseline_fy = projection_baseline,
         Denominator = dplyr::first(MSDS_resident_count), .groups = "drop") |>
       dplyr::mutate(Key = org$Key, Level = org$Level, Organisation = org$Organisation,
         Share = Numerator / Denominator, Age_band = report_age_band(Age),
-        Treatment = Age_treatment, Year_label = paste0("Mid-", Year))
+        Treatment = Age_treatment, Year_label = as.character(Year))
   })) |>
     dplyr::left_join(ons_maternity_projections, by = c("LA", "ONS_age", "Year"), relationship = "many-to-one")
 
@@ -2219,7 +2222,7 @@ build_first_draft_projections <- function(baseline_fy = projection_baseline,
     dplyr::transmute(trust_age_totals, Key = paste0("trust-", tolower(Trust)), Age, Year, Projected),
     dplyr::transmute(icb_age_totals, Key = paste0("icb-", tolower(ICB)), Age, Year, Projected),
     dplyr::mutate(cluster_age_totals, Key = "cluster"))
-  single_age_projections$Year_label <- paste0("Mid-", single_age_projections$Year)
+  single_age_projections$Year_label <- as.character(single_age_projections$Year)
   # Presentation only: sum the already projected exact-age contributions for charts.
   age_projections <- feeder_projections |>
     dplyr::group_by(Key, Age_band, Year, Year_label) |>
@@ -2235,7 +2238,7 @@ build_first_draft_projections <- function(baseline_fy = projection_baseline,
       dplyr::group_by(Key, Year) |>
       dplyr::summarise(Projected = sum(Projected), .groups = "drop"), by = c("Key", "Year")) |>
     dplyr::mutate(Projected = ifelse(!Key %in% feeder_projections$Key, 0, Projected),
-      Year_label = paste0("Mid-", Year)) |>
+      Year_label = as.character(Year)) |>
     dplyr::left_join(observed_totals, by = "Key") |>
     dplyr::mutate(Change = Projected - Observed_baseline,
       Percent_change = relative_change(Projected, Observed_baseline)) |>
@@ -2269,11 +2272,12 @@ build_first_draft_projections <- function(baseline_fy = projection_baseline,
     dplyr::mutate(Percent_change = relative_change(Projected, Projected[Year == ons_reference_year])) |>
     dplyr::ungroup() |>
     dplyr::left_join(organisations, by = "Key")
-  projection_note <- paste("ONS births (L) × local exact-age share × [1 + mean annual national S/L]",
-    "× mean annual national M/(L+S) × direct LA/age destination proportion.",
+  projection_note <- paste("ONS births (L) × local exact-age share × [1 + S/L]",
+    "× M/(L+S) × direct LA/age destination proportion.",
+    "S, L and M are national Table 5 counts pooled across 2023--2025 at each published age.",
     "Delivery and booking proportions separately pool 2023/24--2025/26 counts; no booking uplift is applied.",
     "No rebasing to observed activity. Home, unknown and unallocated destinations remain explicit.")
-  result <- list(calculation_version = "ons-shared-age-calculations-v8", organisations = organisations, feeder_shares = feeder_shares,
+  result <- list(calculation_version = "ons-shared-age-calculations-v10", organisations = organisations, feeder_shares = feeder_shares,
     master = wide_master, delivery_rows = master, booking_rows = booking_rows,
     booking_totals = list(Trust = booking_trust_totals, ICB = booking_icb_totals, Cluster = booking_cluster_totals),
     booking_age_projections = booking_age_projections, booking_total_projections = booking_total_projections,
@@ -2404,9 +2408,9 @@ build_first_draft_projections <- function(baseline_fy = projection_baseline,
     tick_years <- sort(unique(c(ons_reference_year,
       projection_years[projection_years %% 5 == 0], max(projection_years))))
     plotly::layout(chart,
-      xaxis = list(title = "ONS year ending mid-year (modelled counts)",
+      xaxis = list(title = "Year",
         tickmode = "array", tickvals = tick_years,
-        ticktext = paste0("Mid-", tick_years)),
+        ticktext = as.character(tick_years)),
       yaxis = list(title = y_title, tickformat = if (percent) ".0%" else ",.0f",
                    rangemode = "tozero", zeroline = TRUE),
       legend = list(orientation = "h", x = 0, y = -0.25),
@@ -2422,7 +2426,7 @@ build_first_draft_projections <- function(baseline_fy = projection_baseline,
       line <- data |> dplyr::filter(Age_band == chart_bands[i]) |> dplyr::arrange(Year)
       if (!nrow(line)) next
       values <- line[[value]]
-      hover <- paste0(paste0("Mid-", line$Year),
+      hover <- paste0(as.character(line$Year),
         "<br>Age: ", chart_bands[i], "<br>", title, ": ",
         if (percent) scales::percent(values, accuracy = 0.1) else scales::comma(values, accuracy = 1))
       chart <- plotly::add_trace(chart, x = line$Year, y = values, text = hover,
@@ -2445,7 +2449,7 @@ build_first_draft_projections <- function(baseline_fy = projection_baseline,
     incoming_chart <- age_line_chart(org_ages, "Projected", "Incoming maternities")
     # Tables retain every forecast year; their columns scroll horizontally.
     growth_table <- if (nrow(org_flows)) org_flows |>
-      dplyr::mutate(ONS_year_label = paste0("Mid-", Year)) |>
+      dplyr::mutate(ONS_year_label = as.character(Year)) |>
       dplyr::select(LA_name, LA, Age, ONS_age, Numerator, Denominator, Share, Treatment, ONS_year_label, ONS_change) |>
       tidyr::pivot_wider(names_from = ONS_year_label, values_from = ONS_change) |>
       dplyr::arrange(LA_name, Age) |>
@@ -2454,7 +2458,7 @@ build_first_draft_projections <- function(baseline_fy = projection_baseline,
         Numerator = "Pooled deliveries here", Denominator = "Pooled MSDS LA/age maternities", Share = "% sent here",
         ONS_age = "ONS model age", Treatment = "Projection treatment") |>
       gt::fmt_number(columns = c("Numerator", "Denominator"), decimals = 0) |>
-      gt::fmt_percent(columns = c("Share", paste0("Mid-", projection_years)), decimals = 1) else
+      gt::fmt_percent(columns = c("Share", as.character(projection_years)), decimals = 1) else
       base_table(data.frame(Note = "No matched feeder-LA flows in the pooled 2023/24--2025/26 period"), "ONS change")
     incoming_table <- if (nrow(org_flows)) org_flows |>
       dplyr::select(LA_name, LA, Age, ONS_age, Treatment, Year_label, Projected) |>
@@ -2463,7 +2467,7 @@ build_first_draft_projections <- function(baseline_fy = projection_baseline,
       base_table("Incoming maternities by feeder LA and age") |>
       gt::cols_label(LA_name = "Resident LA", LA = "LA code", Age = "Maternal age",
                      ONS_age = "ONS model age", Treatment = "Projection treatment") |>
-      gt::fmt_number(columns = paste0("Mid-", projection_years), decimals = 0) else
+      gt::fmt_number(columns = as.character(projection_years), decimals = 0) else
       base_table(data.frame(Note = "No matched feeder-LA flows in the pooled 2023/24--2025/26 period"), "Incoming maternities")
     if (!nrow(org_flows)) {
       growth_chart <- htmltools::div("No matched feeder-LA flows in the pooled 2023/24--2025/26 period")
@@ -2641,7 +2645,7 @@ build_first_draft_projections <- function(baseline_fy = projection_baseline,
     tidyr::pivot_wider(names_from = Year_label, values_from = Projected) |>
     gt::gt(groupname_col = "Level", rowname_col = "Organisation") |>
     gt::tab_header(title = "All organisation maternity projections") |>
-    gt::fmt_number(columns = paste0("Mid-", projection_years), decimals = 0) |>
+    gt::fmt_number(columns = as.character(projection_years), decimals = 0) |>
     gt::tab_options(container.width = "100%", container.overflow.x = TRUE,
                     table.font.names = c("Open Sans", "Arial", "sans-serif"))
   all_changes_table <- maternity_projections |>
@@ -2649,7 +2653,7 @@ build_first_draft_projections <- function(baseline_fy = projection_baseline,
     tidyr::pivot_wider(names_from = Year_label, values_from = Percent_change) |>
     gt::gt(groupname_col = "Level", rowname_col = "Organisation") |>
     gt::tab_header(title = paste("All organisation changes from observed", baseline_fy)) |>
-    gt::fmt_percent(columns = paste0("Mid-", projection_years), decimals = 1) |>
+    gt::fmt_percent(columns = as.character(projection_years), decimals = 1) |>
     gt::sub_missing(missing_text = "n.a.") |>
     gt::tab_options(container.width = "100%", container.overflow.x = TRUE,
                     table.font.names = c("Open Sans", "Arial", "sans-serif"))
@@ -2664,7 +2668,7 @@ build_first_draft_projections <- function(baseline_fy = projection_baseline,
       Delivery_destination %in% cluster_trusts) |>
     dplyr::select(LA, Age, Delivery_destination, Exact_age_live_births, Stillbirth_factor,
       Multiplicity_factor, Adjusted_maternities, Destination_proportion, Projected_maternities) |>
-    base_table(paste("Mid-", ons_reference_year, " direct delivery allocations", sep = "")) |>
+    base_table(paste(ons_reference_year, "direct delivery allocations")) |>
     gt::fmt_number(columns = c("Exact_age_live_births", "Stillbirth_factor", "Multiplicity_factor",
       "Adjusted_maternities", "Projected_maternities"), decimals = 3) |>
     gt::fmt_percent(columns = "Destination_proportion", decimals = 1)
@@ -2681,7 +2685,7 @@ build_first_draft_projections <- function(baseline_fy = projection_baseline,
         chart <- plotly::add_trace(chart, x = band_data$Year, y = band_data$Projected,
           type = "scatter", mode = "lines", name = band,
           line = list(color = age_colours[match(band, age_bands)], width = 2),
-          text = paste0("Age ", band, "<br>Mid-", band_data$Year, "<br>Modelled bookings: ",
+          text = paste0("Age ", band, "<br>", band_data$Year, "<br>Modelled bookings: ",
             scales::comma(band_data$Projected, accuracy = 1)),
           hovertemplate = "%{text}<extra></extra>")
       }
@@ -2694,13 +2698,13 @@ build_first_draft_projections <- function(baseline_fy = projection_baseline,
       chart <- plotly::add_trace(chart, x = data$Year, y = values,
         type = "scatter", mode = "lines+markers", name = "Modelled bookings",
         line = list(color = main_chart_colour, width = 2),
-        text = paste0("Mid-", data$Year, "<br>", if (view == "change")
-          paste0("Change from modelled Mid-", ons_reference_year, ": ", scales::percent(values, accuracy = 0.1)) else
+        text = paste0(data$Year, "<br>", if (view == "change")
+          paste0("Change from modelled ", ons_reference_year, ": ", scales::percent(values, accuracy = 0.1)) else
           paste0("Modelled bookings: ", scales::comma(values, accuracy = 1))),
         hovertemplate = "%{text}<extra></extra>")
     }
     chart <- chart |> style_line_chart(
-      if (view == "change") paste("% change from modelled Mid-", ons_reference_year, sep = "") else
+      if (view == "change") paste("% change from modelled ", ons_reference_year, sep = "") else
         "Modelled bookings (no uplift)", percent = view == "change")
     if (view == "age") chart <- plotly::layout(chart, showlegend = TRUE,
       legend = list(orientation = "h", y = -0.25), margin = list(b = 100))
@@ -2823,7 +2827,7 @@ build_projection_sankeys <- function(observed, projected, organisations,
   flow_text <- paste0(la_labels[match(flows$LA, origins)], " to ",
     trust_names[match(flows$Trust, trusts)],
     "<br>", observed_year, " recorded: ", scales::comma(flows$Observed, accuracy = 1),
-    "<br>Mid-", final_year, " projected: ", scales::comma(flows$Projected, accuracy = 0.1),
+    "<br>", final_year, " projected: ", scales::comma(flows$Projected, accuracy = 0.1),
     "<br>Change: ", change_label(flows$Percent_change))
   make_panel <- function(field) {
     visible <- flows[[field]] > 0
@@ -2834,7 +2838,7 @@ build_projection_sankeys <- function(observed, projected, organisations,
         color = if (field == "Observed") rep("#75A6CE", nrow(nodes)) else change_colour(nodes$Percent_change),
         line = list(color = "#666666", width = 0.4),
         customdata = paste0(labels, "<br>", observed_year, ": ", scales::comma(nodes$Observed),
-          "<br>Mid-", final_year, ": ", scales::comma(nodes$Projected, accuracy = 0.1),
+          "<br>", final_year, ": ", scales::comma(nodes$Projected, accuracy = 0.1),
           "<br>Change: ", change_label(nodes$Percent_change)),
         hovertemplate = "%{customdata}<extra></extra>"),
       link = list(source = match(flows$LA[visible], origins) - 1L,
@@ -2850,7 +2854,7 @@ build_projection_sankeys <- function(observed, projected, organisations,
     htmltools::div(class = "projection-flow-pair",
       htmltools::div(htmltools::h4(paste(observed_year, "- recorded MSDS")),
         htmltools::p(paste(scales::comma(sum(flows$Observed)), "deliveries at cluster trusts")), panels$observed),
-      htmltools::div(htmltools::h4(paste0("Mid-", final_year, " - projected")),
+      htmltools::div(htmltools::h4(paste0(final_year, " - projected")),
         htmltools::p(paste(scales::comma(sum(flows$Projected), accuracy = 1), "deliveries at cluster trusts")), panels$projected)),
     htmltools::div(class = "projection-change-key",
       htmltools::span(paste0(scales::percent(-colour_limit), " (decrease)")),
@@ -2946,7 +2950,7 @@ build_input_variation_review <- function(cohort, resident_totals, registration_c
   }
 
   # ONS boxes contain the three annual ratios at EACH original published age.
-  # Show every annual point and the exact arithmetic mean used by the model.
+  # Show every annual point and the ratio from pooled counts used by the model.
   ons <- prepare_projection_age_factors(registration_counts)
   age_order <- c("<14", as.character(14:49), "50+")
   ons_plot <- function(field, y_title) {
@@ -2966,7 +2970,7 @@ build_input_variation_review <- function(cohort, resident_totals, registration_c
           "; stillbirths: ", rows$stillbirths, "; maternities: ", rows$maternities), hoverinfo = "text+y")
     }
     chart <- plotly::add_trace(chart, type = "scatter", mode = "markers",
-      x = ons$factors$age, y = ons$factors[[field]], name = "Three-year mean used",
+      x = ons$factors$age, y = ons$factors[[field]], name = "Pooled ratio used",
       marker = list(color = "#222222", symbol = "diamond-open", size = 10))
     chart |> plotly::layout(xaxis = list(title = "ONS original maternal age", type = "category",
         categoryorder = "array", categoryarray = age_order, tickangle = -45),
@@ -2982,7 +2986,7 @@ build_input_variation_review <- function(cohort, resident_totals, registration_c
       No_annual_denominator = sum(!is.finite(Annual)), .groups = "drop") |>
       dplyr::mutate(Input = label)
   }))
-  list(ons_annual = ons$annual, ons_means = ons$factors,
+  list(ons_annual = ons$annual, ons_pooled = ons$factors,
     delivery = delivery, booking = booking, age_mix = age_mix, coverage = coverage,
     delivery_chart = departure_plot(delivery, "Destination", "Delivery trust"),
     booking_chart = departure_plot(booking, "Destination", "Booking trust"),
@@ -2998,7 +3002,7 @@ build_projection_backtest <- function() {
   # Apply the same pooled three-year proportions to historical ONS counts.
   # This is a retrospective diagnostic using current ONS/registration data, not a vintage backtest.
   historical <- build_first_draft_projections(baseline_fy = "2023/24",
-    ons_reference_year = 2024L, projection_end = 2026L, prepare_outputs = FALSE)
+    ons_reference_year = 2023L, projection_end = 2025L, prepare_outputs = FALSE)
   organisations <- historical$organisations
   years <- projection_history_years
   # Count the actual deliveries separately for each financial year.
@@ -3016,7 +3020,7 @@ build_projection_backtest <- function() {
   # Put observed and modelled counts side by side and calculate the difference.
   comparison <- historical$maternity_projections |>
     dplyr::transmute(Key, Level, Organisation, Year,
-      Year_label = paste0(Year - 1L, "/", substr(Year, 3, 4)), Modelled = Projected) |>
+      Year_label = paste0(Year, "/", substr(Year + 1L, 3, 4)), Modelled = Projected) |>
     dplyr::left_join(observed_totals, by = c("Key", "Year_label")) |>
     dplyr::mutate(Difference = Modelled - Observed,
       Percent_difference = ifelse(Observed > 0, Difference / Observed, NA_real_)) |>
@@ -3038,12 +3042,12 @@ build_projection_backtest <- function() {
       plotly::add_trace(x = data$Year, y = data$Modelled, type = "scatter", mode = "lines+markers",
         name = "ONS-based model", line = list(color = projection_history_colours[["ONS-based model"]], width = 2),
         marker = list(color = projection_history_colours[["ONS-based model"]], size = 5),
-        text = paste0("ONS year ending mid-", data$Year, "<br>Modelled: ", scales::comma(data$Modelled, accuracy = 1),
+        text = paste0("ONS ", data$Year, "<br>Modelled: ", scales::comma(data$Modelled, accuracy = 1),
           "<br>Difference from observed: ", ifelse(is.na(data$Percent_difference), "n.a.",
                                                    scales::percent(data$Percent_difference, accuracy = 0.1))),
         hovertemplate = "%{text}<extra></extra>") |>
       plotly::layout(xaxis = list(title = "Comparison year",
-        tickmode = "array", tickvals = 2024:2026, ticktext = years),
+        tickmode = "array", tickvals = as.integer(substr(years, 1, 4)), ticktext = years),
         yaxis = list(title = "Maternities", tickformat = ",.0f", rangemode = "tozero"),
         showlegend = FALSE,
         margin = list(l = 65, r = 12, t = 15, b = 55), font = list(family = "Arial", size = 11)) |>

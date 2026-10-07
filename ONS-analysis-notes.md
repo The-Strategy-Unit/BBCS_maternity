@@ -7,8 +7,8 @@ All adjusted projections use the same LA(R) × Age (1) × year master, prepared 
 
 1. Retain the original ONS source age. Split combined ≤15 and 44+ births (L)
    using local resident maternity counts pooled across 2023/24–2025/26.
-2. Apply national Table 5 factors for 2023–2025: first 1 + mean annual S/L,
-   then mean annual M/(L+S). Each year has equal weight in each factor.
+2. Pool national Table 5 counts across 2023–2025 at each published age.
+   Calculate 1 + S/L, then M/(L+S), from those pooled totals.
 3. Keep separate delivery and booking starting volumes. Both currently equal
    adjusted maternities; a booking early-loss uplift remains undecided.
 4. Apply independent destination proportions at LA(R) × Age (1). Pool counts
@@ -34,7 +34,7 @@ The first review columns are `Exact_age_live_births` (age split only),
 `Delivery_projection_base` and `Booking_projection_base`. Source `ONS_live_births`
 repeats across split ages; `Exact_age_live_births` preserves each source total.
 Delivery and booking columns each reconcile to their own starting volume;
-never sum the two views together. Calculation version: `ons-shared-age-calculations-v8`.
+never sum the two views together. Calculation version: `ons-shared-age-calculations-v10`.
 
 Historical births (L), supplied in bands, are shown directly from Nomis. Observed
 maternities come directly from ONS Table 3. Historical banded births are not

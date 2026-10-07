@@ -330,15 +330,21 @@ read_national_age_counts <- function(data_dir = ons_data_dir()) {
 # Separate age-specific factors for the projection master and method tables.
 # MODEL_INPUT: ONS_STILLBIRTH_RATIO and ONS_MULTIPLICITY
 prepare_projection_age_factors <- function(counts = read_national_age_counts(), ages = NULL) {
+  # Annual ratios are retained for the variation charts only.
   annual <- counts[counts$age != "Unknown", ]
   annual$Stillbirth_ratio <- annual$stillbirths / annual$live_births
   annual$Stillbirth_factor <- 1 + annual$Stillbirth_ratio
   annual$Multiplicity_factor <- annual$maternities / annual$total_births
   factors <- annual |>
     dplyr::group_by(age) |>
-    dplyr::summarise(Stillbirth_ratio = mean(Stillbirth_ratio),
-      Stillbirth_factor = mean(Stillbirth_factor),
-      Multiplicity_factor = mean(Multiplicity_factor), .groups = "drop")
+    dplyr::summarise(Pooled_live_births = sum(live_births),
+      Pooled_stillbirths = sum(stillbirths), Pooled_maternities = sum(maternities),
+      .groups = "drop")
+  # Pool the three years at each published age, then calculate each factor once.
+  factors$Pooled_total_births <- factors$Pooled_live_births + factors$Pooled_stillbirths
+  factors$Stillbirth_ratio <- factors$Pooled_stillbirths / factors$Pooled_live_births
+  factors$Stillbirth_factor <- 1 + factors$Stillbirth_ratio
+  factors$Multiplicity_factor <- factors$Pooled_maternities / factors$Pooled_total_births
   factors$Maternity_modifier <- factors$Stillbirth_factor * factors$Multiplicity_factor
   parameters <- read_analysis_parameters()
   if (is.null(ages)) ages <- seq(parameters[["minimum_maternal_age"]], parameters[["maximum_maternal_age"]])
@@ -349,44 +355,45 @@ prepare_projection_age_factors <- function(counts = read_national_age_counts(), 
   modifications <- dplyr::left_join(modifications, factors, by = c("Registration_age" = "age"))
   modifications$Aggregation_level <- "National: England and Wales"
   modifications$Time_period <- paste(range(annual$year), collapse = "--")
-  modifications$Averaging <- "Mean of each annual age-specific ratio"
+  modifications$Calculation_basis <- "Pool counts across 2023--2025, then divide"
   modifications$Age_application <- ifelse(modifications$Registration_age %in% c("<14", "50+"),
     "Same published group factor for each individual age", "Own individual-age factor")
   modifications <- modifications[c("Aggregation_level", "Time_period", "ONS_source_age",
-    "Registration_age", "Age", "Age_application", "Stillbirth_ratio", "Stillbirth_factor",
-    "Multiplicity_factor", "Maternity_modifier", "Averaging")]
+    "Registration_age", "Age", "Age_application", "Pooled_live_births", "Pooled_stillbirths",
+    "Pooled_total_births", "Pooled_maternities", "Stillbirth_ratio", "Stillbirth_factor",
+    "Multiplicity_factor", "Maternity_modifier", "Calculation_basis")]
   # Explicit fallback rows for a combined ONS age with no local age split.
   grouped <- counts |> filter(age != "Unknown") |>
     mutate(numeric_age = suppressWarnings(as.integer(age)),
       ONS_age = case_when(age == "<14" | numeric_age <= 15 ~ 15L,
         age == "50+" | numeric_age >= 44 ~ 44L, TRUE ~ NA_integer_)) |>
-    filter(!is.na(ONS_age)) |> group_by(year, ONS_age) |>
-    summarise(L = sum(live_births), S = sum(stillbirths), M = sum(maternities), .groups = "drop") |>
-    group_by(ONS_age) |>
-    summarise(mean_stillbirth_allowance = mean((L + S) / L),
-      mean_multiplicity_conversion = mean(M / (L + S)), .groups = "drop")
-  grouped$maternity_modifier <- grouped$mean_stillbirth_allowance * grouped$mean_multiplicity_conversion
+    filter(!is.na(ONS_age)) |> group_by(ONS_age) |>
+    summarise(L = sum(live_births), S = sum(stillbirths), M = sum(maternities), .groups = "drop")
   fallback <- data.frame(Aggregation_level = "National: England and Wales",
     Time_period = paste(range(annual$year), collapse = "--"),
     ONS_source_age = grouped$ONS_age,
     Registration_age = c("<=15 combined", "44+ combined"), Age = NA_integer_,
     Age_application = "Unsplit fallback only: no local MSDS age distribution",
-    Stillbirth_ratio = grouped$mean_stillbirth_allowance - 1,
-    Stillbirth_factor = grouped$mean_stillbirth_allowance,
-    Multiplicity_factor = grouped$mean_multiplicity_conversion,
-    Maternity_modifier = grouped$maternity_modifier,
-    Averaging = "Mean of each annual age-specific ratio")
+    Pooled_live_births = grouped$L, Pooled_stillbirths = grouped$S,
+    Pooled_total_births = grouped$L + grouped$S, Pooled_maternities = grouped$M,
+    Stillbirth_ratio = grouped$S / grouped$L,
+    Stillbirth_factor = 1 + grouped$S / grouped$L,
+    Multiplicity_factor = grouped$M / (grouped$L + grouped$S),
+    Maternity_modifier = (1 + grouped$S / grouped$L) * grouped$M / (grouped$L + grouped$S),
+    Calculation_basis = "Pool counts across 2023--2025, then divide")
   modifications <- dplyr::bind_rows(modifications, fallback)
   modifications$Source <- "ONS birth registrations, Table 5"
   list(annual = annual, factors = factors, modifications = modifications)
 }
 
 # 4. Table 7 multiplicity proportions: descriptive context only ----------
-average_multiplicity_rates <- function(multiplicity_data) {
+pooled_multiplicity_rates <- function(multiplicity_data) {
   multiplicity_data |>
     filter(multiplicity != "All") |>
     group_by(age_band, multiplicity) |>
-    summarise(average_proportion = mean(proportion), .groups = "drop")
+    summarise(maternities = sum(maternities), all_maternities = sum(all_maternities),
+      .groups = "drop") |>
+    mutate(pooled_proportion = maternities / all_maternities)
 }
 
 # 5. Historical births (L): source counts only ---------------------------
@@ -561,7 +568,7 @@ birth_rate_plot <- function(observed, projected, colours) {
     ggplot2::scale_colour_manual(values = colours) +
     ggplot2::labs(x = NULL, y = "Live births per 1,000 women aged 15-44", colour = NULL,
       caption = paste("Solid: observed ONS general fertility rate, 2023-2025.",
-        "Dashed: calculated mid-year projection ratio, 2023-2047; periods differ from observed rates.")) +
+        "Dashed: projected births per 1,000 women, 2023-2047.")) +
     ons_plot_theme()
 }
 
@@ -581,8 +588,8 @@ ons_year_table <- function(data, value, source_note) {
 multiplicity_table <- function(data, year = NULL) {
   if (is.null(year)) {
     display <- data |>
-      transmute(measure = "Average proportion", multiplicity = as.character(multiplicity),
-                age_band, value = average_proportion)
+      transmute(measure = "Pooled proportion", multiplicity = as.character(multiplicity),
+                age_band, value = pooled_proportion)
   } else {
     selected <- data |> filter(.data$year == .env$year)
     display <- bind_rows(
@@ -593,7 +600,7 @@ multiplicity_table <- function(data, year = NULL) {
                   age_band, value = proportion))
   }
   display |>
-    mutate(measure = factor(measure, levels = c("Maternities", "Proportion", "Average proportion")),
+    mutate(measure = factor(measure, levels = c("Maternities", "Proportion", "Pooled proportion")),
            multiplicity = factor(multiplicity, levels = c("1", "2", "3", "4+", "All"))) |>
     arrange(measure, multiplicity) |>
     pivot_wider(names_from = age_band, values_from = value) |>
@@ -601,7 +608,7 @@ multiplicity_table <- function(data, year = NULL) {
     gt::tab_stubhead(label = "Babies per maternity") |>
     gt::fmt_integer(columns = where(is.numeric), rows = measure == "Maternities", sep_mark = ",") |>
     gt::fmt_percent(columns = where(is.numeric),
-                    rows = measure %in% c("Proportion", "Average proportion"), decimals = 2) |>
+                    rows = measure %in% c("Proportion", "Pooled proportion"), decimals = 2) |>
     gt::sub_missing(columns = everything(), missing_text = "n.a.") |>
     ons_table_style()
 }
@@ -614,7 +621,7 @@ maternity_modifier_table <- function(modifications) {
       `Stillbirth factor` = Stillbirth_factor, `Multiplicity factor` = Multiplicity_factor,
       `Combined modifier` = Maternity_modifier) |>
     gt::gt() |> gt::fmt_number(columns = c("Stillbirth factor", "Multiplicity factor", "Combined modifier"), decimals = 5) |>
-    gt::tab_source_note("ONS Table 5, 2023-2025. Each factor is the mean of its annual ratios. Applied after the local age split in every projection. Unsplit fallback rows are used only where local age evidence is absent; they remain unallocated.") |>
+    gt::tab_source_note("ONS Table 5, 2023-2025. Pool counts at each published age, then divide. Applied after the local age split in every projection. Unsplit fallback rows use pooled combined-age counts and remain unallocated.") |>
     ons_table_style()
 }
 

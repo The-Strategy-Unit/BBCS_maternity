@@ -93,7 +93,8 @@ a { color: var(--su-blue); }
   line-height: 1.4;
 }
 
-.example-step h2 {
+.example-step h2, .example-step h3, .example-step h4,
+.example-step h5, .example-step h6 {
   margin: 0 0 0.5rem;
   padding: 0;
   border: 0;
@@ -119,7 +120,7 @@ a { color: var(--su-blue); }
   .projection-example-grid { grid-template-columns: 1fr; }
 }
 
-/* Modifier example: match section 11's cards, with caveats at the relevant step. */
+/* Modifier examples share the compact table-and-panel layout. */
 .whole-trust-example-grid .example-step h3,
 .modifier-example-grid .example-step h3,
 .boundary-example .example-step h3 {
@@ -140,4 +141,30 @@ a { color: var(--su-blue); }
   border-left: 3px solid #b07300;
   font-size: 0.85rem;
   line-height: 1.45;
+}
+
+/* Compare the same delivery flows in two years, with a shared colour key. */
+.projection-flow-pair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1.25rem;
+}
+.projection-flow-pair > div { min-width: 0; }
+.projection-flow-pair h4 { margin: 0.5rem 0; }
+.projection-change-key {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  margin: 0.75rem 0;
+  font-size: 0.85rem;
+}
+.projection-change-gradient {
+  width: 220px;
+  text-align: center;
+  background: linear-gradient(to right, #B2182B, #F2F2F2, #2166AC);
+  border: 1px solid #999;
+}
+@media (max-width: 850px) {
+  .projection-flow-pair { grid-template-columns: 1fr; }
 }

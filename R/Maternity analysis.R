@@ -137,7 +137,7 @@ if (length(absent)) stop("Missing inputs: ", paste(absent, collapse = ", "),
 
 # 1. ONS DATA EXPLORATION ================================================
 # 1.1 Source definitions and inputs -------------------------------------
-# Shared public inputs for the section 1 comparison and section 2 report.
+# Shared public inputs for the ONS exploration and resident comparison.
 check_ons_input_files()
 
 # Use the configured areas, age range and colours.
@@ -232,7 +232,7 @@ ons_exploration <- list(
 # MODEL_INPUT: MSDS_RESIDENTS
 # total_births_by_LA_2326: resident maternities by LA(R), Age (1), delivery FY
 # Source names containing "births" do not change their maternity counting unit.
-# 2.1 Latest-year patient flows (report section 4) ------------------------
+# 2.1 Latest-year patient flows (report section 2.2.4) ------------------------
 # CONTEXT_ONLY: booking-year charts and Age (B) summaries stay exploratory.
 # Section 3 separately pools delivery-year and booking-year counts at LA(R) x Age (1).
 # Check the required inputs once; data QA is in R/QA.R.
@@ -242,7 +242,7 @@ if (length(missing_objects)) stop("Run the preparation scripts first. Missing: "
                                   paste(missing_objects, collapse = ", "), call. = FALSE)
 report_episodes <- prepare_report_cohort(final_cohort_2326)
 
-# Section 4: patient flows in 2025/26
+# Section 2.2.4: patient flows in 2025/26
 # Two-stage flows and the combined residence-to-booking-to-birth flow.
 # Clean the supplied codes and group providers outside the labelled areas as Other.
 group_flow_code <- function(x, keep_codes) {
@@ -319,7 +319,7 @@ flow_coverage_table <- gt::gt(flow_coverage) |>
     Unknown_home_flag = "Home flag unknown/invalid", Non_home = "Recorded non-home deliveries",
     Unknown_birth_provider = "Of non-home: provider unknown/invalid") |>
   gt::fmt_number(columns = -Period, decimals = 0) |>
-  gt::tab_source_note("Only recorded non-home deliveries in 2023/24–2025/26 enter sections 4–5. Unknown providers remain separate. The four inclusion columns sum to supplied rows; the last column is a subset.") |>
+  gt::tab_source_note("Only recorded non-home deliveries in 2023/24–2025/26 enter the patient-flow views. Unknown providers remain separate. The four inclusion columns sum to supplied rows; the last column is a subset.") |>
   gt::tab_options(container.width = "100%", container.overflow.x = TRUE)
 
 # Sankey charts
@@ -447,7 +447,7 @@ trust_sankey <- make_sankey(
 )
 residence_booking_birth_sankey <- make_three_stage_sankey(residence_booking_birth_flow)
 
-# 2.2 Patient flows by financial year (report section 5) ------------------
+# 2.2 Patient flows by financial year (report section 2.2.5) ------------------
 # This bit repeats the two Sankeys for each year and makes their tables.
 
 make_year_sankeys <- function(start_year) {
@@ -468,7 +468,7 @@ by_year <- list(
                    icb_sankey = icb_sankey, trust_sankey = trust_sankey)
 )
 
-# Section 5 tables: use the same counts and order as the Sankeys
+# Section 2.2.5 tables: use the same counts and order as the Sankeys
 make_flow_table <- function(flow, labels, source_label, target_label,
                             source_order, target_order, year) {
   flow_counts <- flow$links
@@ -498,8 +498,8 @@ for (year in names(by_year)) {
   )
 }
 
-# 2.3 Cluster deliveries and booking starts (report section 6) ------------
-# Use the same supplied pregnancy rows as sections 4-5, 9 and 10.
+# 2.3 Cluster deliveries and booking starts (report section 2.2.2) ------------
+# Use the same supplied pregnancy rows as the patient-flow, geography and projection views.
 activity_episodes <- report_episodes |>
   dplyr::transmute(Row, person_id_mother = Person, uniq_preg_id = Pregnancy,
     delivery_date = Delivery_date, delivery_year = Delivery_year,
@@ -520,7 +520,7 @@ classify_pathway_outcome <- function(episodes) {
     TRUE ~ "Unknown location")
 }
 
-# Section 8 splits section 7's cluster deliveries using the actual booking trust.
+# Section 2.2.7 splits section 2.2.6's cluster deliveries using the actual booking trust.
 # Compare trusts first, then aggregate those outcomes for the ICB/cluster views.
 classify_booking_delivery_outcome <- function(episodes) {
   cluster_outcome <- classify_pathway_outcome(episodes)
@@ -700,7 +700,7 @@ cluster_activity$outside_totals <- outside_summary
 cluster_activity$delivery_trend <- delivery_trend
 cluster_activity$pathways <- pathways
 
-# Section 6e and 6f: antenatal pathway Sankeys
+# Antenatal pathway views: antenatal pathway Sankeys
 # This bit plots the outcomes above, with one common key for each grid.
 
 outcome_key <- function(i, text) {
@@ -769,9 +769,9 @@ pathway_grid <- function(group) {
 cluster_activity$pathway_icb_sankeys <- pathway_grid("ICB_Cluster")
 cluster_activity$pathway_trust_sankeys <- pathway_grid("Trust")
 
-# 2.4 Booking-cohort outcomes over time (report sections 7-8) --------------
+# 2.4 Booking-cohort outcomes over time (report sections 2.2.6-2.2.7) --------------
 # This bit counts all booking starts, including those without a recorded delivery.
-# ICBs group the booking trusts, as in section 6.
+# ICBs group the booking trusts, as in the antenatal pathway views.
 pathway_years <- analysis_years
 trend_starts <- activity_episodes[
   !is.na(activity_episodes$booking_year) &
@@ -1005,14 +1005,14 @@ build_delivery_outcome_trends <- function(starts, trend_outcomes, trend_labels, 
   delivery_over_time
 }
 
-# Section 7: retain the original four-outcome view.
+# Section 2.2.6: retain the original four-outcome view.
 trend_starts$outcome <- classify_pathway_outcome(trend_starts)
 delivery_over_time <- build_delivery_outcome_trends(trend_starts,
   trend_outcomes = c("Within cluster", "Outside cluster", "No recorded delivery", "Unknown location"),
   trend_labels = outcome_labels, trend_colours = outcome_colours,
   outcome_short_labels = c("At cluster trust", "Other trust or home", "No recorded delivery", "Location unknown"))
 
-# Section 8: distinguish delivery at the booking trust from another cluster trust.
+# Section 2.2.7: distinguish delivery at the booking trust from another cluster trust.
 booking_delivery_starts <- trend_starts
 booking_delivery_starts$outcome <- classify_booking_delivery_outcome(booking_delivery_starts)
 booking_delivery_outcomes <- c("Same trust", "Different cluster trust",
@@ -1442,7 +1442,7 @@ build_delivery_geography <- function(years = delivery_years, age_bands = deliver
       font = list(family = "Arial", size = 10)) |>
       plotly::config(displayModeBar = FALSE, responsive = TRUE)
   }
-  # Step 7: make the organisation charts and the tables shown in section 9.
+  # Step 7: make the organisation charts and resident-geography tables.
   age_colours <- grDevices::hcl.colors(length(age_bands), palette = delivery_palette)
   organisation_plots <- stats::setNames(lapply(seq_len(nrow(organisations)), function(i) {
     org <- organisations[i, , drop = FALSE]
@@ -1909,8 +1909,73 @@ booking_proportions <- allocation_table_wide(attr(projection_master, "allocation
 # 3.8a Resident charts: sum the same adjusted counts before allocation ----
 # CONTEXT_ONLY: report summaries; no additional conversion or rate applied.
 resident_outputs <- summarise_resident_projections(projection_master_all_years, area_config)
+
+# 3.8b Compare resident maternities from ONS, MSDS and the model -----------
+# CONTEXT_ONLY: all ages and delivery destinations in the resident-LA file.
+# Use the supplied resident totals, including residents outside cluster trusts.
+build_resident_comparison <- function(resident_totals, observed, projected,
+    areas = read_area_config(), years = projection_history_years) {
+  # Sum ages AFTER reading all resident counts; unknown ages still count here.
+  msds <- resident_totals |>
+    dplyr::transmute(area_code = report_code(la_of_mother, "Unknown LA"),
+      Period = as.character(birth_yr), maternities = report_number(count)) |>
+    dplyr::filter(area_code %in% areas$area_code, Period %in% years) |>
+    dplyr::group_by(area_code, Period) |>
+    dplyr::summarise(maternities = sum(maternities), .groups = "drop") |>
+    dplyr::left_join(areas[c("area_code", "area_name")], by = "area_code") |>
+    dplyr::mutate(Source = "MSDS recorded maternities",
+      Date = as.Date(paste0(as.integer(substr(Period, 1, 4)) + 1L, "-03-31")))
+  # Keep source periods explicit. Dates position the end of each full year.
+  registered <- observed |>
+    dplyr::transmute(area_name = as.character(area_name), maternities,
+      Period = as.character(year), Source = "ONS published maternities",
+      Date = as.Date(paste0(year, "-12-31")))
+  estimates <- projected |>
+    dplyr::transmute(area_name = as.character(area_name), maternities,
+      Period = paste0("Mid-", year), Source = "Adjusted maternity projections",
+      Date = as.Date(paste0(year, "-06-30")))
+  data <- dplyr::bind_rows(registered, msds |> dplyr::select(-area_code), estimates)
+  series <- c("ONS published maternities", "MSDS recorded maternities", "Adjusted maternity projections")
+  data$Source <- factor(data$Source, levels = series)
+  data$area_name <- factor(data$area_name, levels = areas$area_name)
+  data <- data |> dplyr::arrange(Source, area_name, Date)
+  recorded <- data |> dplyr::filter(Source != "Adjusted maternity projections")
+  boundary <- max(recorded$Date)
+  start <- min(data$Date)
+  finish <- max(data$Date)
+
+  # LA colour is constant across sources; line and marker distinguish sources.
+  chart <- ggplot2::ggplot(data, ggplot2::aes(Date, maternities, colour = area_name,
+      group = interaction(area_name, Source), linetype = Source)) +
+    ggplot2::geom_line(linewidth = 1) +
+    ggplot2::geom_point(data = recorded, ggplot2::aes(shape = Source), size = 2.5) +
+    ggplot2::geom_vline(xintercept = boundary, colour = "#666666", linetype = "dotted") +
+    ggplot2::annotate("text", x = start + as.numeric(boundary - start) / 2, y = Inf,
+      label = "Historical comparison", vjust = 1.3, size = 3.5) +
+    ggplot2::annotate("text", x = boundary + as.numeric(finish - boundary) / 2, y = Inf,
+      label = "Future projection", vjust = 1.3, size = 3.5) +
+    ggplot2::scale_colour_manual(values = area_colour_palette(areas)) +
+    ggplot2::scale_linetype_manual(values = stats::setNames(c("solid", "solid", "dashed"), series)) +
+    ggplot2::scale_shape_manual(values = stats::setNames(c(16, 15, NA), series), drop = FALSE) +
+    ggplot2::scale_x_date(date_breaks = "2 years", date_labels = "%Y",
+      expand = ggplot2::expansion(mult = c(0.025, 0.015))) +
+    ggplot2::scale_y_continuous(labels = scales::label_comma(),
+      expand = ggplot2::expansion(mult = c(0.02, 0.16))) +
+    ggplot2::labs(x = "Source period end", y = "Resident maternities", colour = "LA(R)",
+      linetype = "Series", shape = "Series") +
+    ons_plot_theme() +
+    ggplot2::guides(colour = ggplot2::guide_legend(order = 1, nrow = 1,
+      override.aes = list(linetype = "solid", shape = NA)),
+      linetype = ggplot2::guide_legend(order = 2, nrow = 1),
+      shape = ggplot2::guide_legend(order = 2, nrow = 1)) +
+    ggplot2::theme(legend.box = "vertical")
+  list(data = data, msds = msds, latest_recorded_date = boundary, chart = chart)
+}
+
 ons_exploration <- c(ons_exploration, resident_outputs)
 ons_exploration$ons_modifications <- ons_modifications
+ons_exploration$resident_comparison <- build_resident_comparison(
+  total_births_by_LA_2326, observed_trajectory, resident_outputs$projected_trajectory, area_config)
 saveRDS(ons_exploration, ".ons_exploration.rds")
 
 # 3.9 Summaries and report outputs ---------------------------------------
@@ -2228,7 +2293,7 @@ build_first_draft_projections <- function(baseline_fy = projection_baseline,
 
   # 3.9c Delivery charts and tables: display the completed counts ----------
 
-  # Make charts and tables for sections 10.1 to 10.4.
+  # Make charts and tables for the allocation and projection views.
   coverage_table <- make_projection_coverage_table(coverage, baseline_fy)
   coverage_details_table <- coverage_details |>
     dplyr::select(Level, Organisation, LA_name, LA, Age, Reason, N) |>
@@ -2240,7 +2305,7 @@ build_first_draft_projections <- function(baseline_fy = projection_baseline,
     base_table("Feeder codes matched to the ONS geography") |>
     gt::cols_label(LA = "MSDS LA code", LA_name = "Resident LA", Treatment = "ONS treatment",
                    ONS_source_codes = "ONS source area codes")
-  # Section 10.1: exact-age shares in tables; chart bands sum counts before division.
+  # Section 2.2.8: exact-age shares in tables; chart bands sum counts before division.
   # Rank LAs by actual deliveries here; keep cluster LAs and ten additional feeders.
   # The other-feeder share sums counts and denominators, including zero-flow ages.
   mapping_share_max <- max(1, feeder_shares$Share, na.rm = TRUE)
@@ -2446,7 +2511,7 @@ build_first_draft_projections <- function(baseline_fy = projection_baseline,
     Trust = organisations[organisations$Level == "Trust" &
       organisations$Code %in% c(setdiff(names(trust_labels), "Other"), recorded_trusts), , drop = FALSE],
     ICB_Cluster = organisations[organisations$Level %in% c("ICB", "Cluster"), , drop = FALSE])
-  # Section 10.1: put the allocation dot plots together with one age-band legend.
+  # Section 2.2.8: put the allocation dot plots together with one age-band legend.
   mapping_key <- htmltools::div(
     style = "display: flex; flex-wrap: wrap; gap: 12px 24px; margin-bottom: 20px; font-size: 14px;",
     htmltools::tagList(lapply(seq_along(age_bands), function(i) {
@@ -2469,7 +2534,7 @@ build_first_draft_projections <- function(baseline_fy = projection_baseline,
       mapping_outputs[[mapping_table_rows$Key[i]]]$table)
   }))
 
-  # Section 10.2: use the same organisation groups for the age-growth charts.
+  # Section 3.3.2: use the same organisation groups for the age-growth charts.
   age_grid <- function(rows, field) {
     bands <- age_bands
     if (any(age_projections$Key %in% rows$Key &
@@ -2515,7 +2580,7 @@ build_first_draft_projections <- function(baseline_fy = projection_baseline,
     }))
   }), c("growth_table", "incoming_table"))
 
-  # Section 10.3: trusts share one chart; the two ICBs and whole cluster share another.
+  # Section 3.3.1: trusts share one chart; the two ICBs and whole cluster share another.
   # Each line uses the existing totals across all feeder LAs and age bands.
   total_charts <- stats::setNames(lapply(c("Trust", "ICB_Cluster"), function(group) {
     rows <- age_groups[[group]]
@@ -2542,7 +2607,7 @@ build_first_draft_projections <- function(baseline_fy = projection_baseline,
         margin = list(l = 85, r = 20, t = 130, b = 125))
   }), c("Trust", "ICB_Cluster"))
 
-  # Section 10.4: compare percentage changes from the actual 2025/26 baseline.
+  # Section 3.3.3: compare percentage changes from the actual 2025/26 baseline.
   # Trusts share one chart; the two ICBs and whole cluster share the other.
   change_charts <- stats::setNames(lapply(c("Trust", "ICB_Cluster"), function(group) {
     rows <- age_groups[[group]]
@@ -2692,13 +2757,244 @@ build_first_draft_projections <- function(baseline_fy = projection_baseline,
   result$change_charts <- change_charts
   result$all_totals_table <- all_totals_table
   result$all_changes_table <- all_changes_table
+  result$sankey_comparison <- build_projection_sankeys(
+    target_episodes, completed, organisations, baseline_fy, max(projection_years))
   result
+}
+
+# 3.9e Delivery flows: observed year and final projection side by side -----
+# CONTEXT_ONLY: sum completed counts; these charts do not change the model.
+build_projection_sankeys <- function(observed, projected, organisations,
+    observed_year, final_year, main_las = projection_catchment_las,
+    other_las = projection_other_feeders) {
+  # Keep every recorded non-home delivery, including an unknown resident LA.
+  actual <- observed |> dplyr::count(LA, Trust, name = "Observed")
+  future <- projected |> dplyr::filter(Year == final_year) |>
+    dplyr::group_by(LA, Trust) |>
+    dplyr::summarise(Projected = sum(Projected_maternities), .groups = "drop")
+  raw_flows <- dplyr::full_join(actual, future, by = c("LA", "Trust")) |>
+    dplyr::mutate(Observed = dplyr::coalesce(Observed, 0),
+      Projected = dplyr::coalesce(Projected, 0))
+  raw_flows$LA[raw_flows$LA %in% c("Unknown LA", "L99999999", "") | is.na(raw_flows$LA)] <- "Unknown LA"
+
+  # Use the same LA groups in both panels. Rank extra feeders across BOTH years.
+  ranking <- raw_flows |> dplyr::group_by(LA) |>
+    dplyr::summarise(Volume = sum(Observed + Projected), .groups = "drop") |>
+    dplyr::arrange(dplyr::desc(Volume), LA)
+  keep_las <- unique(c(main_las, head(ranking$LA[
+    !ranking$LA %in% c(main_las, "Unknown LA")], other_las)))
+  flows <- raw_flows |>
+    dplyr::mutate(LA = ifelse(LA %in% c(keep_las, "Unknown LA"), LA, "All other feeder LAs")) |>
+    dplyr::group_by(LA, Trust) |>
+    dplyr::summarise(Observed = sum(Observed), Projected = sum(Projected), .groups = "drop") |>
+    dplyr::filter(Observed > 0 | Projected > 0)
+  # Calculate change AFTER summing the displayed flow, not by averaging percentages.
+  flows$Percent_change <- ifelse(flows$Observed > 0,
+    flows$Projected / flows$Observed - 1, NA_real_)
+  origins <- unique(c(keep_las, "All other feeder LAs", "Unknown LA"))
+  origins <- origins[origins %in% flows$LA]
+  trusts <- organisations$Code[organisations$Level == "Trust"]
+  trusts <- trusts[trusts %in% flows$Trust]
+  la_labels <- projection_la_lookup$LA_name[match(origins, projection_la_lookup$LA)]
+  la_labels[is.na(la_labels)] <- origins[is.na(la_labels)]
+  trust_names <- organisations$Organisation[match(trusts, organisations$Code)]
+  labels <- c(la_labels, paste0(trusts, " - ", trust_names))
+  nodes <- dplyr::bind_rows(
+    flows |> dplyr::group_by(Code = LA) |>
+      dplyr::summarise(Observed = sum(Observed), Projected = sum(Projected), .groups = "drop") |>
+      dplyr::slice(match(origins, Code)),
+    flows |> dplyr::group_by(Code = Trust) |>
+      dplyr::summarise(Observed = sum(Observed), Projected = sum(Projected), .groups = "drop") |>
+      dplyr::slice(match(trusts, Code)))
+  nodes$Percent_change <- ifelse(nodes$Observed > 0, nodes$Projected / nodes$Observed - 1, NA_real_)
+
+  # One symmetric red-to-blue scale, centred on zero. Zero starting counts are grey.
+  changes <- c(flows$Percent_change, nodes$Percent_change)
+  colour_limit <- max(0.1, ceiling(max(c(0, abs(changes[is.finite(changes)]))) * 10) / 10)
+  palette <- grDevices::colorRampPalette(c("#B2182B", "#F2F2F2", "#2166AC"))(101)
+  change_colour <- function(x) {
+    colour <- rep("#909090", length(x))
+    valid <- is.finite(x)
+    colour[valid] <- palette[1L + round(50 * (1 + x[valid] / colour_limit))]
+    colour
+  }
+  change_label <- function(x) ifelse(is.finite(x), sprintf("%+.1f%%", 100 * x),
+    "Not calculable: no recorded starting count")
+  flow_text <- paste0(la_labels[match(flows$LA, origins)], " to ",
+    trust_names[match(flows$Trust, trusts)],
+    "<br>", observed_year, " recorded: ", scales::comma(flows$Observed, accuracy = 1),
+    "<br>Mid-", final_year, " projected: ", scales::comma(flows$Projected, accuracy = 0.1),
+    "<br>Change: ", change_label(flows$Percent_change))
+  make_panel <- function(field) {
+    visible <- flows[[field]] > 0
+    if (!any(visible)) return(htmltools::p("No deliveries in this panel."))
+    plotly::plot_ly(type = "sankey", arrangement = "snap",
+      height = max(540, 32 * length(origins)),
+      node = list(label = gsub("\n", "<br>", stringr::str_wrap(labels, 24)), pad = 16, thickness = 14,
+        color = if (field == "Observed") rep("#75A6CE", nrow(nodes)) else change_colour(nodes$Percent_change),
+        line = list(color = "#666666", width = 0.4),
+        customdata = paste0(labels, "<br>", observed_year, ": ", scales::comma(nodes$Observed),
+          "<br>Mid-", final_year, ": ", scales::comma(nodes$Projected, accuracy = 0.1),
+          "<br>Change: ", change_label(nodes$Percent_change)),
+        hovertemplate = "%{customdata}<extra></extra>"),
+      link = list(source = match(flows$LA[visible], origins) - 1L,
+        target = length(origins) + match(flows$Trust[visible], trusts) - 1L,
+        value = flows[[field]][visible],
+        color = if (field == "Observed") rep("#75A6CE", sum(visible)) else change_colour(flows$Percent_change[visible]),
+        customdata = flow_text[visible], hovertemplate = "%{customdata}<extra></extra>")) |>
+      plotly::layout(font = list(size = 11), margin = list(l = 8, r = 8, t = 20, b = 15)) |>
+      plotly::config(displayModeBar = FALSE, responsive = TRUE)
+  }
+  panels <- list(observed = make_panel("Observed"), projected = make_panel("Projected"))
+  display <- htmltools::tagList(
+    htmltools::div(class = "projection-flow-pair",
+      htmltools::div(htmltools::h4(paste(observed_year, "- recorded MSDS")),
+        htmltools::p(paste(scales::comma(sum(flows$Observed)), "deliveries at cluster trusts")), panels$observed),
+      htmltools::div(htmltools::h4(paste0("Mid-", final_year, " - projected")),
+        htmltools::p(paste(scales::comma(sum(flows$Projected), accuracy = 1), "deliveries at cluster trusts")), panels$projected)),
+    htmltools::div(class = "projection-change-key",
+      htmltools::span(paste0(scales::percent(-colour_limit), " (decrease)")),
+      htmltools::span(class = "projection-change-gradient", "0%"),
+      htmltools::span(paste0("+", scales::percent(colour_limit), " (increase)"))),
+    htmltools::p(class = "example-method-note",
+      "Grey: no recorded starting count. Ribbon colour = flow change; node colour = total change. ",
+      "Ribbon widths show volumes within each panel; panels scale independently. Hover for both counts."))
+  list(raw_flows = raw_flows, flows = flows, nodes = nodes, panels = panels, display = display,
+    observed_year = observed_year, final_year = final_year, colour_limit = colour_limit)
+}
+
+# 3.9f Variation around the three-year model inputs -----------------------
+# CONTEXT_ONLY: annual comparisons; no rates or projections are replaced.
+build_input_variation_review <- function(cohort, resident_totals, registration_counts,
+    pooled, providers = cluster_trusts) {
+  years <- pooled$years
+  # Reuse the model's counting rules, taking one full year at a time.
+  annual <- lapply(years, function(fy) {
+    tables <- build_allocation_tables(cohort, resident_totals, calibration_years = fy)
+    lapply(tables[c("residents", "delivery", "booking")], function(x) {
+      x$FY <- rep(fy, nrow(x)); x
+    })
+  })
+  annual_residents <- dplyr::bind_rows(lapply(annual, `[[`, "residents"))
+  annual_delivery <- dplyr::bind_rows(lapply(annual, `[[`, "delivery"))
+  annual_booking <- dplyr::bind_rows(lapply(annual, `[[`, "booking"))
+
+  # Compare the SAME LA(R), Age (1) and destination with its pooled proportion.
+  # Zero deliveries to a trust count as zero; a zero resident denominator is undefined.
+  allocation_variation <- function(reference, yearly, denominator) {
+    reference <- reference |> dplyr::filter(Destination %in% providers, Count > 0) |>
+      dplyr::select(LA, Age, Destination, Pooled = Proportion)
+    denominators <- yearly |> dplyr::distinct(LA, Age, FY, .data[[denominator]])
+    names(denominators)[4] <- "Denominator"
+    data <- merge(reference, data.frame(FY = years), by = NULL) |>
+      dplyr::left_join(yearly |> dplyr::select(LA, Age, Destination, FY, Count),
+        by = c("LA", "Age", "Destination", "FY")) |>
+      dplyr::left_join(denominators, by = c("LA", "Age", "FY")) |>
+      dplyr::mutate(Count = dplyr::coalesce(Count, 0),
+        Annual = ifelse(Denominator > 0, Count / Denominator, NA_real_),
+        Departure_pp = 100 * (Annual - Pooled))
+    data
+  }
+  delivery <- allocation_variation(pooled$delivery, annual_delivery, "MSDS_resident_count")
+  booking <- allocation_variation(pooled$booking, annual_booking, "MSDS_booking_total")
+
+  # Boundary age mix: local exact-age share within <=15 or 44+, for each LA.
+  boundary <- pooled$residents |>
+    dplyr::mutate(ONS_age = report_ons_age(Age)) |>
+    dplyr::filter(ONS_age %in% c(15, 44)) |>
+    dplyr::group_by(LA, ONS_age) |>
+    dplyr::mutate(Pooled = MSDS_resident_count / sum(MSDS_resident_count)) |>
+    dplyr::ungroup() |> dplyr::select(LA, Age, ONS_age, Pooled)
+  annual_boundary <- annual_residents |>
+    dplyr::mutate(ONS_age = report_ons_age(Age)) |>
+    dplyr::filter(ONS_age %in% c(15, 44))
+  boundary_denominators <- annual_boundary |> dplyr::group_by(LA, ONS_age, FY) |>
+    dplyr::summarise(Denominator = sum(MSDS_resident_count), .groups = "drop")
+  age_mix <- merge(boundary, data.frame(FY = years), by = NULL) |>
+    dplyr::left_join(annual_boundary |> dplyr::select(LA, Age, FY, MSDS_resident_count),
+      by = c("LA", "Age", "FY")) |>
+    dplyr::left_join(boundary_denominators, by = c("LA", "ONS_age", "FY")) |>
+    dplyr::mutate(Count = dplyr::coalesce(MSDS_resident_count, 0),
+      Annual = ifelse(Denominator > 0, Count / Denominator, NA_real_),
+      Departure_pp = 100 * (Annual - Pooled))
+
+  # MSDS boxes describe the spread ACROSS cells of each cell's annual departure.
+  # Each cell has equal display weight; model proportions still pool the counts.
+  departure_plot <- function(data, group, x_title) {
+    data$Group <- as.character(data[[group]])
+    groups <- if (group == "Age") as.character(sort(unique(data$Age))) else sort(unique(data$Group))
+    plot_data <- data |> dplyr::filter(is.finite(Departure_pp))
+    if (!nrow(plot_data)) return(htmltools::p("No annual denominators available for this comparison."))
+    chart <- plotly::plot_ly(height = 440)
+    colours <- c("#005EB8", "#D55E00", "#00856A")
+    for (i in seq_along(years)) {
+      rows <- plot_data[plot_data$FY == years[i], ]
+      if (!nrow(rows)) next
+      chart <- plotly::add_trace(chart, type = "box", x = rows$Group, y = rows$Departure_pp,
+        name = years[i], boxpoints = "outliers", marker = list(color = colours[i]),
+        line = list(color = colours[i]),
+        text = paste0(rows$LA, ", Age (1) ", rows$Age,
+          "<br>Annual count / total: ", rows$Count, " / ", rows$Denominator,
+          "<br>Annual: ", scales::percent(rows$Annual, accuracy = 0.1),
+          "; pooled: ", scales::percent(rows$Pooled, accuracy = 0.1)), hoverinfo = "text+y")
+    }
+    chart |> plotly::layout(boxmode = "group",
+      xaxis = list(title = x_title, type = "category", categoryorder = "array", categoryarray = groups),
+      yaxis = list(title = "Annual minus pooled (percentage points)", zeroline = TRUE, zerolinecolor = "#333333"),
+      legend = list(orientation = "h", x = 0, y = 1.1), margin = list(l = 85, r = 20, t = 50, b = 75)) |>
+      plotly::config(displayModeBar = FALSE, responsive = TRUE)
+  }
+
+  # ONS boxes contain the three annual ratios at EACH original published age.
+  # Show every annual point and the exact arithmetic mean used by the model.
+  ons <- prepare_projection_age_factors(registration_counts)
+  age_order <- c("<14", as.character(14:49), "50+")
+  ons_plot <- function(field, y_title) {
+    chart <- plotly::plot_ly(height = 440)
+    for (age in age_order) {
+      rows <- ons$annual[ons$annual$age == age, ]
+      chart <- plotly::add_trace(chart, type = "box", x = rep(age, nrow(rows)), y = rows[[field]],
+        name = age, boxpoints = FALSE, showlegend = FALSE,
+        line = list(color = "#9BA9B4"), fillcolor = "#E4ECF2")
+    }
+    for (i in seq_along(sort(unique(ons$annual$year)))) {
+      year <- sort(unique(ons$annual$year))[i]
+      rows <- ons$annual[ons$annual$year == year, ]
+      chart <- plotly::add_trace(chart, type = "scatter", mode = "markers", x = rows$age, y = rows[[field]],
+        name = as.character(year), marker = list(color = c("#005EB8", "#D55E00", "#00856A")[i], size = 6),
+        text = paste0("Age ", rows$age, ", ", year, "<br>Births (L): ", rows$live_births,
+          "; stillbirths: ", rows$stillbirths, "; maternities: ", rows$maternities), hoverinfo = "text+y")
+    }
+    chart <- plotly::add_trace(chart, type = "scatter", mode = "markers",
+      x = ons$factors$age, y = ons$factors[[field]], name = "Three-year mean used",
+      marker = list(color = "#222222", symbol = "diamond-open", size = 10))
+    chart |> plotly::layout(xaxis = list(title = "ONS original maternal age", type = "category",
+        categoryorder = "array", categoryarray = age_order, tickangle = -45),
+      yaxis = list(title = y_title, tickformat = ".1%"),
+      legend = list(orientation = "h", x = 0, y = 1.15), margin = list(l = 80, r = 20, t = 65, b = 85)) |>
+      plotly::config(displayModeBar = FALSE, responsive = TRUE)
+  }
+  # Keep the underlying counts and denominators available for analyst inspection.
+  coverage <- dplyr::bind_rows(lapply(c("Delivery", "Booking", "Boundary age mix"), function(label) {
+    data <- switch(label, Delivery = delivery, Booking = booking, "Boundary age mix" = age_mix)
+    data |> dplyr::group_by(FY) |> dplyr::summarise(
+      Cells = dplyr::n(), Plotted = sum(is.finite(Departure_pp)),
+      No_annual_denominator = sum(!is.finite(Annual)), .groups = "drop") |>
+      dplyr::mutate(Input = label)
+  }))
+  list(ons_annual = ons$annual, ons_means = ons$factors,
+    delivery = delivery, booking = booking, age_mix = age_mix, coverage = coverage,
+    delivery_chart = departure_plot(delivery, "Destination", "Delivery trust"),
+    booking_chart = departure_plot(booking, "Destination", "Booking trust"),
+    age_mix_chart = departure_plot(age_mix, "Age", "Age (1) within the combined ONS boundary groups"),
+    stillbirth_chart = ons_plot("Stillbirth_ratio", "Stillbirths / births (L)"),
+    multiplicity_chart = ons_plot("Multiplicity_factor", "Maternities / births (L+S)"))
 }
 
 # 3.10 Retrospective comparison with recorded deliveries -----------------
 # Pooled calibration includes the comparison years; not independent validation.
 build_projection_backtest <- function() {
-  # Section 10.5: compare with actual history.
+  # Section 3.5.2: compare with actual history.
   # Apply the same pooled three-year proportions to historical ONS counts.
   # This is a retrospective diagnostic using current ONS/registration data, not a vintage backtest.
   historical <- build_first_draft_projections(baseline_fy = "2023/24",
@@ -2755,7 +3051,7 @@ build_projection_backtest <- function() {
     list(chart = chart)
   }), chart_organisations$Key)
 
-  # Put one shared colour key above each grid, as in sections 6e and 6f.
+  # Put one shared colour key above each grid, as in the antenatal pathway charts.
   comparison_key <- htmltools::div(
     style = "display: flex; flex-wrap: wrap; gap: 12px 24px; margin-bottom: 20px; font-size: 14px;",
     htmltools::tagList(lapply(names(projection_history_colours), function(series) {
@@ -2821,5 +3117,8 @@ first_draft_projections$backtest <- projection_backtest
 first_draft_projections$age_boundary_review <- build_msds_age_review(
   final_cohort_2326, first_draft_projections, projection_backtest$baseline,
   trust_labels, cluster_trusts)
+first_draft_projections$input_variation <- build_input_variation_review(
+  final_cohort_2326, total_births_by_LA_2326, registration_counts,
+  first_draft_projections$allocation_tables)
 saveRDS(first_draft_projections, ".projections.rds")
 

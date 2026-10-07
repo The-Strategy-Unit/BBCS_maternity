@@ -106,11 +106,11 @@ qa_check("Historic age-band births add up to published totals",
   nrow(historic_age_totals) > 0 && !anyNA(historic_age_totals$Published) &&
     numbers_match(historic_age_totals$Age_total, historic_age_totals$Published))
 
-# 4. Check sections 4-8, using the saved calculations rather than remaking charts.
+# 4. Check MSDS exploration views, using the saved calculations rather than remaking charts.
 if (file.exists(".patient_flows.rds")) {
   patient_flows <- readRDS(".patient_flows.rds")
   counted_episodes <- patient_flows$activity_episodes
-  qa_check("Sections 4-8 retain every supplied pregnancy row",
+  qa_check("MSDS exploration views retain every supplied pregnancy row",
     identical(counted_episodes$Row, prepared_records$Row))
   qa_check("Patient-flow episodes cover all delivery years",
     all(2023:2025 %in% counted_episodes$delivery_year))
@@ -125,12 +125,12 @@ if (file.exists(".patient_flows.rds")) {
   hospital_counts <- vapply(2023:2025, function(year) sum(
     counted_episodes$birth_recorded & counted_episodes$delivery_year %in% year & counted_episodes$home_birth %in% 0L &
       counted_episodes$birth_code %in% cluster_trusts), integer(1))
-  qa_check("Section 6 trust delivery totals use recorded non-home births",
+  qa_check("Section 2.2.2 trust delivery totals use recorded non-home births",
     numbers_match(patient_flows$cluster_activity$delivery_trend$Total, hospital_counts))
   latest_pathways <- patient_flows$cluster_activity$pathways
   latest_cluster <- latest_pathways[latest_pathways$Level == "Cluster", , drop = FALSE]
   pathway_columns <- c("Starts", "Within", "Outside", "No_delivery", "Unknown")
-  qa_check("Section 6 combined-cluster starts and outcomes equal the sum of its two ICBs",
+  qa_check("Section 2.2.2 combined-cluster starts and outcomes equal the sum of its two ICBs",
     nrow(latest_cluster) == 1L &&
       sum(latest_pathways$Level == "ICB") == 2L &&
       numbers_match(unlist(latest_cluster[1, pathway_columns], use.names = FALSE),
@@ -142,14 +142,14 @@ if (file.exists(".patient_flows.rds")) {
       all(is.finite(flow$n) & flow$n > 0 & !is.na(flow$source) & !is.na(flow$target)))
   }
   three_stage <- patient_flows$residence_booking_birth_flow
-  qa_check("Section 4 has residence-to-booking-to-delivery flows available", !is.null(three_stage),
+  qa_check("Section 2.2.4 has residence-to-booking-to-delivery flows available", !is.null(three_stage),
     "Run R/Run analysis.R again if these outputs are missing")
   if (!is.null(three_stage)) {
     expected_flow_total <- sum(patient_flows$trust_flow$links$n)
-    qa_check("Section 4's three-stage paths and both legs count the same deliveries as the trust flow",
+    qa_check("Section 2.2.4's three-stage paths and both legs count the same deliveries as the trust flow",
       numbers_match(c(sum(three_stage$paths$n), sum(three_stage$residence_booking$n),
         sum(three_stage$booking_birth$n)), rep(expected_flow_total, 3)))
-    qa_check("Section 4's three-stage paths have unique complete groups and positive counts",
+    qa_check("Section 2.2.4's three-stage paths have unique complete groups and positive counts",
       !anyDuplicated(three_stage$paths[c("residence", "booking", "birth")]) &&
         !anyNA(three_stage$paths[c("residence", "booking", "birth")]) &&
         all(is.finite(three_stage$paths$n) & three_stage$paths$n > 0))
@@ -161,13 +161,13 @@ if (file.exists(".patient_flows.rds")) {
         dplyr::group_by(Booking = source) |>
         dplyr::summarise(Outgoing = sum(n), .groups = "drop"), by = "Booking")
     qa_details$residence_booking_birth_conservation <- booking_conservation
-    qa_check("Section 4's three-stage flow conserves deliveries at every booking organisation",
+    qa_check("Section 2.2.4's three-stage flow conserves deliveries at every booking organisation",
       numbers_match(booking_conservation$Incoming, booking_conservation$Outgoing))
     booking_birth_check <- dplyr::full_join(
       patient_flows$trust_flow$links |> dplyr::rename(Trust_flow = n),
       three_stage$booking_birth |> dplyr::rename(Three_stage = n), by = c("source", "target"))
     qa_details$residence_booking_birth_reconciliation <- booking_birth_check
-    qa_check("Section 4's three-stage booking-to-delivery counts match the existing trust flow",
+    qa_check("Section 2.2.4's three-stage booking-to-delivery counts match the existing trust flow",
       numbers_match(booking_birth_check$Trust_flow, booking_birth_check$Three_stage))
   }
   outcome_counts <- patient_flows$delivery_over_time$data |>
@@ -182,18 +182,18 @@ if (file.exists(".patient_flows.rds")) {
     dplyr::summarise(N = sum(Numerator), Starts = sum(Denominator), .groups = "drop") |>
     tidyr::pivot_wider(names_from = Level, values_from = c(N, Starts))
   qa_details$delivery_outcome_levels <- outcome_levels
-  qa_check("Section 7 trust and ICB numerators and denominators add up to the combined cluster",
+  qa_check("Section 2.2.6 trust and ICB numerators and denominators add up to the combined cluster",
     numbers_match(outcome_levels$N_Trust, outcome_levels$N_Cluster) &&
       numbers_match(outcome_levels$N_ICB, outcome_levels$N_Cluster) &&
       numbers_match(outcome_levels$Starts_Trust, outcome_levels$Starts_Cluster) &&
       numbers_match(outcome_levels$Starts_ICB, outcome_levels$Starts_Cluster))
   change_table <- patient_flows$delivery_over_time$change_data
-  qa_check("Section 7 change table has one organisation per row and all outcome/year columns",
+  qa_check("Section 2.2.6 change table has one organisation per row and all outcome/year columns",
     nrow(change_table) == nrow(patient_flows$delivery_over_time$organisations) &&
       ncol(change_table) == 2 + 4 * length(qa_years))
 
   booking_outcomes <- patient_flows$booking_delivery_over_time
-  qa_check("Section 8 has the new booking-to-delivery outputs available",
+  qa_check("Section 2.2.7 has the new booking-to-delivery outputs available",
     !is.null(booking_outcomes), "Run R/Run analysis.R again if these outputs are missing")
   if (!is.null(booking_outcomes)) {
     expected_outcomes <- c("Delivery at same trust as booking",
@@ -206,12 +206,12 @@ if (file.exists(".patient_flows.rds")) {
         Categories = dplyr::n_distinct(Outcome), Denominators = dplyr::n_distinct(Denominator),
         .groups = "drop")
     qa_details$booking_delivery_outcome_counts <- booking_counts
-    qa_check("Section 8's five outcomes partition all starts with one common denominator",
+    qa_check("Section 2.2.7's five outcomes partition all starts with one common denominator",
       setequal(unique(booking_outcomes$data$Outcome), expected_outcomes) &&
         all(booking_counts$Categories == 5L & booking_counts$Denominators == 1L) &&
         numbers_match(booking_counts$Outcomes, booking_counts$Starts))
 
-    # Collapsing the two within-cluster destinations must reproduce section 7 exactly.
+    # Collapsing the two within-cluster destinations must reproduce section 2.2.6 exactly.
     collapsed <- booking_outcomes$data |>
       dplyr::mutate(Outcome = dplyr::case_when(
         Outcome %in% expected_outcomes[1:2] ~ "Delivery at cluster trust",
@@ -225,7 +225,7 @@ if (file.exists(".patient_flows.rds")) {
         dplyr::select(Key, Year_start, Outcome, Section7 = Numerator, Section7_starts = Denominator),
       collapsed, by = c("Key", "Year_start", "Outcome"))
     qa_details$booking_delivery_outcome_reconciliation <- outcome_reconciliation
-    qa_check("Sections 7 and 8 have the same starts and outcomes after combining the within-cluster split",
+    qa_check("The booking-outcome views have the same starts and outcomes after combining the within-cluster split",
       numbers_match(outcome_reconciliation$Section7, outcome_reconciliation$Section8) &&
         numbers_match(outcome_reconciliation$Section7_starts, outcome_reconciliation$Section8_starts))
 
@@ -234,17 +234,17 @@ if (file.exists(".patient_flows.rds")) {
       dplyr::summarise(N = sum(Numerator), Starts = sum(Denominator), .groups = "drop") |>
       tidyr::pivot_wider(names_from = Level, values_from = c(N, Starts))
     qa_details$booking_delivery_outcome_levels <- booking_levels
-    qa_check("Section 8 trust and ICB numerators and denominators add up to the combined cluster",
+    qa_check("Section 2.2.7 trust and ICB numerators and denominators add up to the combined cluster",
       numbers_match(booking_levels$N_Trust, booking_levels$N_Cluster) &&
         numbers_match(booking_levels$N_ICB, booking_levels$N_Cluster) &&
         numbers_match(booking_levels$Starts_Trust, booking_levels$Starts_Cluster) &&
         numbers_match(booking_levels$Starts_ICB, booking_levels$Starts_Cluster))
-    qa_check("Section 8 change table has one trust, ICB or cluster per row and all five outcomes for each year",
+    qa_check("Section 2.2.7 change table has one trust, ICB or cluster per row and all five outcomes for each year",
       nrow(booking_outcomes$change_data) == nrow(booking_outcomes$organisations) &&
         ncol(booking_outcomes$change_data) == 2 + 5 * length(qa_years))
   }
   booking_icb_outcomes <- patient_flows$booking_icb_delivery_over_time
-  qa_check("Section 8 has booking-ICB-to-delivery-ICB outcomes available",
+  qa_check("Section 2.2.7 has booking-ICB-to-delivery-ICB outcomes available",
     !is.null(booking_icb_outcomes), "Run R/Run analysis.R again if these outputs are missing")
   if (!is.null(booking_icb_outcomes)) {
     icb_outcome_labels <- c("Delivery ICB same as booking ICB",
@@ -256,7 +256,7 @@ if (file.exists(".patient_flows.rds")) {
         Categories = dplyr::n_distinct(Outcome), Denominators = dplyr::n_distinct(Denominator),
         .groups = "drop")
     qa_details$booking_icb_delivery_counts <- icb_counts
-    qa_check("Section 8's ICB comparison partitions the same starts into five outcomes",
+    qa_check("Section 2.2.7's ICB comparison partitions the same starts into five outcomes",
       setequal(unique(booking_icb_outcomes$data$Outcome), icb_outcome_labels) &&
         setequal(booking_icb_outcomes$organisations$Level, c("ICB", "Cluster")) &&
         all(icb_counts$Categories == 5L & icb_counts$Denominators == 1L) &&
@@ -274,14 +274,14 @@ if (file.exists(".patient_flows.rds")) {
         dplyr::select(Key, Year_start, Outcome, Section7 = Numerator, Section7_starts = Denominator),
       icb_collapsed, by = c("Key", "Year_start", "Outcome"))
     qa_details$booking_icb_delivery_reconciliation <- icb_reconciliation
-    qa_check("Section 8's ICB comparison reconciles to section 7 after combining both cluster destinations",
+    qa_check("Section 2.2.7's ICB comparison reconciles to section 2.2.6 after combining both cluster destinations",
       numbers_match(icb_reconciliation$ICB_comparison, icb_reconciliation$Section7) &&
         numbers_match(icb_reconciliation$ICB_starts, icb_reconciliation$Section7_starts))
     icb_levels <- booking_icb_outcomes$data |>
       dplyr::group_by(Level, Year_start, Outcome) |>
       dplyr::summarise(N = sum(Numerator), Starts = sum(Denominator), .groups = "drop") |>
       tidyr::pivot_wider(names_from = Level, values_from = c(N, Starts))
-    qa_check("Section 8's ICB comparison adds up to the combined cluster",
+    qa_check("Section 2.2.7's ICB comparison adds up to the combined cluster",
       numbers_match(icb_levels$N_ICB, icb_levels$N_Cluster) &&
         numbers_match(icb_levels$Starts_ICB, icb_levels$Starts_Cluster))
     icb_changes <- booking_icb_outcomes$data |>
@@ -291,41 +291,41 @@ if (file.exists(".patient_flows.rds")) {
           Share / Base_share - 1, NA_real_)) |>
       dplyr::ungroup()
     usable_icb_changes <- is.finite(icb_changes$Expected_change)
-    qa_check("Section 8's ICB changes are calculated from the grouped shares",
+    qa_check("Section 2.2.7's ICB changes are calculated from the grouped shares",
       numbers_match(icb_changes$Base_change[usable_icb_changes],
         icb_changes$Expected_change[usable_icb_changes]) &&
         all(is.na(icb_changes$Base_change[!usable_icb_changes])))
-    qa_check("Section 8's ICB change table has all five outcomes for each year",
+    qa_check("Section 2.2.7's ICB change table has all five outcomes for each year",
       nrow(booking_icb_outcomes$change_data) == nrow(booking_icb_outcomes$organisations) &&
         ncol(booking_icb_outcomes$change_data) == 2 + 5 * length(qa_years))
   }
 } else {
-  qa_check("Sections 4-8 have saved outputs available", FALSE, "Run R/Run analysis.R first")
+  qa_check("MSDS exploration views have saved outputs available", FALSE, "Run R/Run analysis.R first")
 }
 
-# 5. Check section 9's destination flows and hospital counts.
+# 5. Check section 2.2.3's destination flows and hospital counts.
 if (file.exists(".delivery_geography.rds")) {
   delivery_mapping <- readRDS(".delivery_geography.rds")
   delivery_records <- delivery_mapping$episodes
-  qa_check("Section 9 retains every recorded delivery in the three years",
+  qa_check("Section 2.2.3 retains every recorded delivery in the three years",
     identical(delivery_records$Row, prepared_records$Row[prepared_records$Birth_recorded &
       prepared_records$Year %in% qa_years]))
-  qa_check("Section 9 includes all required years", all(qa_years %in% delivery_records$Year))
+  qa_check("Section 2.2.3 includes all required years", all(qa_years %in% delivery_records$Year))
   destination_total <- nrow(delivery_mapping$matrix_episodes)
-  qa_check("Section 9 matrix counts add up to its recorded deliveries",
+  qa_check("Section 2.2.3 matrix counts add up to its recorded deliveries",
     numbers_match(sum(delivery_mapping$matrix_data$N), destination_total))
-  qa_check("Section 9 Sankey counts match the destination matrix",
+  qa_check("Section 2.2.3 Sankey counts match the destination matrix",
     numbers_match(sum(delivery_mapping$sankey_links$N), destination_total))
-  qa_check("Section 9 grouped matrix retains all destination counts",
+  qa_check("Section 2.2.3 grouped matrix retains all destination counts",
     numbers_match(sum(delivery_mapping$grouped_matrix$N), destination_total))
-  qa_check("Section 9.1 destination grid shows no more than ten additional organisations",
+  qa_check("Section 2.2.3.1 destination grid shows no more than ten additional organisations",
     length(delivery_mapping$visible_other_trusts) <= delivery_mapping$sankey_focus_n)
   # Check the separately grouped charts against their original delivery counts.
   la_links <- delivery_mapping$sankey_by_la_links
   destination_links <- delivery_mapping$sankey_by_destination_links
-  qa_check("Section 9.1 LA charts retain all recorded deliveries",
+  qa_check("Section 2.2.3.1 LA charts retain all recorded deliveries",
     numbers_match(sum(vapply(la_links, function(links) sum(links$N), numeric(1))), destination_total))
-  qa_check("Section 9.1 destination charts retain all recorded deliveries",
+  qa_check("Section 2.2.3.1 destination charts retain all recorded deliveries",
     numbers_match(sum(vapply(destination_links, function(links) sum(links$N), numeric(1))), destination_total))
   chart_counts <- delivery_mapping$matrix_data |>
     dplyr::mutate(Origin_focus = dplyr::case_when(
@@ -337,22 +337,22 @@ if (file.exists(".delivery_geography.rds")) {
   for (origin in names(la_links)) {
     links <- la_links[[origin]]
     original <- chart_counts[chart_counts$Origin_focus == origin, , drop = FALSE]
-    qa_check(paste("Section 9.1 LA chart keeps its deliveries and home births:", origin),
+    qa_check(paste("Section 2.2.3.1 LA chart keeps its deliveries and home births:", origin),
       numbers_match(c(sum(links$N), sum(links$N[links$Destination_group == "Home"])),
         c(sum(original$N), sum(original$N[original$Destination == "Home"]))))
     extra_trusts <- setdiff(unique(links$Destination_group),
       c(main_trust_codes, "Home", "Unknown provider", "Unknown location", "All other trusts"))
-    qa_check(paste("Section 9.1 LA chart has up to five other trusts, ranked by volume:", origin),
+    qa_check(paste("Section 2.2.3.1 LA chart has up to five other trusts, ranked by volume:", origin),
       length(extra_trusts) <= delivery_mapping$sankey_top_n && all(diff(links$N) <= 0))
   }
   for (destination in names(destination_links)) {
     links <- destination_links[[destination]]
     original <- chart_counts[chart_counts$Destination_focus == destination, , drop = FALSE]
-    qa_check(paste("Section 9.1 destination chart keeps its recorded deliveries:", destination),
+    qa_check(paste("Section 2.2.3.1 destination chart keeps its recorded deliveries:", destination),
       numbers_match(sum(links$N), sum(original$N)))
     extra_las <- setdiff(unique(links$Origin),
       c(cluster_la_codes, "Unknown LA", "All other feeder LAs"))
-    qa_check(paste("Section 9.1 destination chart has up to five other LAs, ranked by volume:", destination),
+    qa_check(paste("Section 2.2.3.1 destination chart has up to five other LAs, ranked by volume:", destination),
       length(extra_las) <= delivery_mapping$sankey_top_n && all(diff(links$N) <= 0))
   }
   qa_details$unmatched_la_names <- delivery_records |>
@@ -360,9 +360,9 @@ if (file.exists(".delivery_geography.rds")) {
   qa_details$unmatched_trust_names <- delivery_mapping$matrix_data |>
     dplyr::filter(Delivery_destination == "Unmatched delivery provider") |>
     dplyr::distinct(Destination)
-  qa_check("Section 9 resident LA codes have names in the local lookup",
+  qa_check("Section 2.2.3 resident LA codes have names in the local lookup",
     !nrow(qa_details$unmatched_la_names))
-  qa_check("Section 9 delivery provider codes have names in the local lookup",
+  qa_check("Section 2.2.3 delivery provider codes have names in the local lookup",
     !nrow(qa_details$unmatched_trust_names))
   for (key in names(delivery_mapping$outputs)) {
     output <- delivery_mapping$outputs[[key]]
@@ -372,12 +372,12 @@ if (file.exists(".delivery_geography.rds")) {
       dplyr::summarise(N = sum(N), .groups = "drop") |> dplyr::arrange(Year)
     charted <- output$trend_groups |> dplyr::group_by(Year) |>
       dplyr::summarise(N = sum(N), .groups = "drop") |> dplyr::arrange(Year)
-    qa_check(paste("Section 9 LA chart groups retain every count:", key),
+    qa_check(paste("Section 2.2.3 LA chart groups retain every count:", key),
       identical(original$Year, charted$Year) && numbers_match(original$N, charted$N))
     if (!is.null(output$age_mix)) {
       age_totals <- output$age_mix |> dplyr::group_by(LA) |>
         dplyr::summarise(Share = sum(Age_share), .groups = "drop")
-      qa_check(paste("Section 9 age mix adds up to 100% within each LA group:", key),
+      qa_check(paste("Section 2.2.3 age mix adds up to 100% within each LA group:", key),
         numbers_match(age_totals$Share, rep(1, nrow(age_totals))))
     }
   }
@@ -386,11 +386,11 @@ if (file.exists(".delivery_geography.rds")) {
     dplyr::summarise(N = sum(N), .groups = "drop") |>
     tidyr::pivot_wider(names_from = Level, values_from = N)
   qa_details$hospital_delivery_levels <- hospital_levels
-  qa_check("Section 9 trust and ICB deliveries add up to the combined cluster",
+  qa_check("Section 2.2.3 trust and ICB deliveries add up to the combined cluster",
     numbers_match(hospital_levels$Trust, hospital_levels$Cluster) &&
       numbers_match(hospital_levels$ICB, hospital_levels$Cluster))
 } else {
-  qa_check("Section 9 has saved outputs available", FALSE, "Run R/Run analysis.R first")
+  qa_check("Section 2.2.3 has saved outputs available", FALSE, "Run R/Run analysis.R first")
 }
 
 # 6. Check the master and both independent destination allocations.
@@ -398,6 +398,14 @@ if (file.exists(".projections.rds")) {
   projections <- readRDS(".projections.rds")
   qa_check("Projection outputs use separate booking and delivery volumes",
     identical(projections$calculation_version, "ons-shared-age-calculations-v8"))
+  flows <- projections$sankey_comparison
+  qa_check("Delivery Sankey recorded flows match the observed cluster total",
+    !is.null(flows) && numbers_match(sum(flows$flows$Observed),
+      projections$observed_totals$Observed_baseline[projections$observed_totals$Key == "cluster"]))
+  qa_check("Delivery Sankey final-year flows match the projected cluster total",
+    !is.null(flows) && numbers_match(sum(flows$flows$Projected),
+      projections$maternity_projections$Projected[projections$maternity_projections$Key == "cluster" &
+        projections$maternity_projections$Year == flows$final_year], 1e-7))
   for (base in list(projections, projections$backtest$baseline)) {
     m <- base$master
     label <- paste("Reference", base$baseline_fy)
@@ -506,7 +514,7 @@ if (file.exists(".projections.rds")) {
       dplyr::filter(!Allocation_available, Projected_maternities > 0)
   }
 } else {
-  qa_check("Section 10 has saved outputs available", FALSE, "Run Run analysis.R first")
+  qa_check("Section 3 has saved outputs available", FALSE, "Run Run analysis.R first")
 }
 
 # Reconcile sections that claim to describe the same delivery activity.
@@ -520,26 +528,26 @@ if (all(file.exists(c(".patient_flows.rds", ".delivery_geography.rds", ".project
     dplyr::left_join(section9_totals, by = c("Key", "Year")) |>
     dplyr::mutate(Section9 = dplyr::coalesce(Section9, 0L))
   qa_details$delivery_reconciliation <- reconciliation
-  qa_check("Sections 9 and 10 count the same deliveries for every organisation/year",
+  qa_check("Geography and projection views count the same deliveries for every organisation/year",
     numbers_match(reconciliation$Section9, reconciliation$Section10_observed))
   cluster_reconciliation <- reconciliation |> dplyr::filter(Key == "cluster") |>
     dplyr::left_join(patient_flows$cluster_activity$delivery_trend |>
       dplyr::select(Year, Section6 = Total), by = "Year")
   qa_details$cluster_reconciliation <- cluster_reconciliation
-  qa_check("Sections 6, 9 and 10 have identical annual cluster delivery totals",
+  qa_check("Activity, geography and projection views have identical annual cluster delivery totals",
     numbers_match(cluster_reconciliation$Section6, cluster_reconciliation$Section9))
   for (year in qa_years) {
     flows <- patient_flows$by_year[[year]]
     expected <- sum(prepared_records$Year %in% year & prepared_records$Birth_recorded &
       prepared_records$Home %in% 0)
-    qa_check(paste("Section 5 uses the same recorded non-home definition:", year),
+    qa_check(paste("Section 2.2.5 uses the same recorded non-home definition:", year),
       numbers_match(c(sum(flows$trust_flow$links$n), sum(flows$icb_flow$links$n)), rep(expected, 2)))
     cluster_links <- flows$icb_flow$links
     cluster_n <- sum(cluster_links$n[cluster_links$target %in% cluster_icbs])
-    qa_check(paste("Sections 5 and 6 agree on deliveries at cluster providers:", year),
+    qa_check(paste("Patient-flow and activity views agree on deliveries at cluster providers:", year),
       numbers_match(cluster_n, cluster_reconciliation$Section6[cluster_reconciliation$Year == year]))
   }
-  qa_check("Sections 4 and 5 use identical latest-year flows",
+  qa_check("The latest-year and annual patient flows use identical latest-year flows",
     identical(patient_flows$icb_flow, patient_flows$by_year[["2025/26"]]$icb_flow) &&
     identical(patient_flows$trust_flow, patient_flows$by_year[["2025/26"]]$trust_flow))
 

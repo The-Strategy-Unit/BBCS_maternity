@@ -1,6 +1,5 @@
 # RUN THE ANALYSIS ======================================================
-# Run from the project root in RStudio, with the usual secure Azure access.
-# Each run reads the parquet files afresh in this R session.
+# Run this whole sript to get the report to open. It does take awhile - ~ 10 minutes
 # Order: read parquet files -> analyse -> check -> render -> open report.
 # Run with: source("R/Run analysis.R")
 
@@ -19,7 +18,7 @@ run_maternity_project <- function() {
   present <- intersect(inspection_names, ls(envir = .GlobalEnv))
   if (length(present)) rm(list = present, envir = .GlobalEnv)
 
-  # Replace saved outputs; a failed run must not leave old or partial results.
+  # Replace saved outputs so failed runs don't break things
   output_files <- c(".ons_exploration.rds", ".patient_flows.rds",
     ".delivery_geography.rds", ".projections.rds", ".qa.rds")
   generated_paths <- c(output_files, ".analysis_run.rds", "_site")
@@ -42,7 +41,6 @@ run_maternity_project <- function() {
   saveRDS(run_info, ".analysis_run.rds")
 
   # 1. READ SARAH'S PARQUET FILES ----------------------------------------
-  # Her unchanged reader runs in this session, using the existing Azure setup.
   message("Preparing data and analysis...")
   source("R/Read parquet files from azure.R", local = .GlobalEnv)
 
@@ -62,8 +60,7 @@ run_maternity_project <- function() {
   run_info$qa_checks <- sum(qa_results$Result == "Check")
 
   # 4. RENDER THE REPORT -------------------------------------------------
-  # Build in a temporary folder to avoid OneDrive locks and editor clashes.
-  # Only the finished report is copied back to _site.
+  # Build in a temporary folder and report is put in  _site.
   quarto <- Sys.which("quarto")
   if (!nzchar(quarto)) stop("Quarto was not found. Install/configure Quarto before running.")
   render_folder <- tempfile("maternity-report-")
@@ -104,7 +101,7 @@ run_maternity_project <- function() {
   message("Report ready: _site/index.html")
 
   # 6. OPEN THE FINISHED REPORT ------------------------------------------
-  # Use the current RStudio / default browser setting (for example, Edge).
+  # Use the current RStudio / default browser setting 
   report_file <- normalizePath("_site/index.html", winslash = "/", mustWork = TRUE)
   tryCatch(
     utils::browseURL(report_file),

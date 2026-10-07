@@ -6,11 +6,11 @@ project:
     - index.qmd
 
 website:
-  title: "BBCS maternity: ONS analysis"
+  title: "BBCS maternity: ONS and MSDS"
   navbar: false
   page-footer:
     left: "The Strategy Unit"
-    right: "ONS data foundation"
+    right: "Maternity demand projections"
 
 format:
   html:

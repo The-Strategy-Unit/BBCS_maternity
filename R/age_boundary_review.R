@@ -1,4 +1,4 @@
-# Section 1: evidence for the common older-age growth assumption.
+# Age-boundary evidence for the common older-age growth assumption.
 # Chart summaries only; none of these comparisons feeds the projection.
 
 review_age_band <- function(age) {
@@ -228,7 +228,7 @@ build_msds_age_review <- function(cohort, projections, historical, trust_labels,
   years <- c("2023/24", "2024/25", "2025/26")
   orgs <- projections$organisations |> dplyr::filter(Level == "Trust", Code %in% cluster_trusts) |>
     dplyr::select(Key, Trust = Code, Organisation)
-  # Match section 10's hospital-location population, including unmatched LA rows.
+  # Match section 3's hospital-location population, including unmatched LA rows.
   eligible <- prepare_report_cohort(cohort) |>
     dplyr::filter(Year %in% years, Birth_recorded, Home == 0, Trust %in% cluster_trusts)
   observed <- eligible |> dplyr::count(Trust, Year, Age, name = "Observed") |>

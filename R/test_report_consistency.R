@@ -1,5 +1,5 @@
-# Arithmetic and source-contract checks; does not run a report or connect to Azure.
-# Small counted examples verify rates. They are not an alternative project dataset.
+# Arithmetic and source-contract checks
+# Small counted examples verify rates.
 local({
   source("R/ons_data.R")
   source("R/report_cohort.R")
@@ -19,7 +19,7 @@ local({
         is.call(statement[[3]]) && identical(statement[[3]][[1]], as.name("function"))) eval(statement)
   }
   counts <- read_national_age_counts()
-  # Section 6 must also accept a booking trust outside the six named labels.
+  # Section 2.2.2 must also accept a booking trust outside the six named labels.
   # A missing named lookup must not become an invalid data-frame row name.
   starts <- data.frame(booking_code = c("RXT", "RQ3"),
     outcome = c("No recorded delivery", "Within cluster"))
@@ -160,6 +160,25 @@ local({
   full <- build_projection_master(cohort,residents,ons_full,counts,start_year=2023)
   resident <- summarise_resident_projections(full)
   stopifnot(identical(sort(unique(resident$projected_trajectory$year)),2023:2047))
+  # Resident comparison uses all-age resident totals, including activity beyond
+  # the cluster cohort; counts and historical projections are never rebased.
+  comparison_residents <- dplyr::bind_rows(residents |> dplyr::mutate(count = as.numeric(count)),
+    data.frame(birth_yr = "2025/26", la_of_mother = "E08000025",
+      age_at_birth_mother = NA_real_, count = 7))
+  registered_example <- data.frame(area_name = "Birmingham", year = 2025L, maternities = 80)
+  comparison <- build_resident_comparison(comparison_residents, registered_example,
+    resident$projected_trajectory)
+  near(comparison$msds$maternities[comparison$msds$area_code == "E08000025" &
+      comparison$msds$Period == "2025/26"],
+    sum(as.numeric(residents$count[residents$la_of_mother == "E08000025" & residents$birth_yr == "2025/26"])) + 7)
+  near(comparison$data$maternities[comparison$data$Source == "ONS published maternities"],80)
+  estimate_rows <- comparison$data |> dplyr::filter(Source == "Adjusted maternity projections")
+  near(sum(estimate_rows$maternities),sum(resident$projected_trajectory$maternities))
+  stopifnot(min(estimate_rows$Date) == as.Date("2023-06-30"),
+    comparison$latest_recorded_date == as.Date("2026-03-31"))
+  built_comparison <- ggplot2::ggplot_build(comparison$chart)
+  stopifnot(setequal(unique(built_comparison$data[[2]]$shape), c(15,16)),
+    setequal(unique(built_comparison$data[[1]]$linetype), c("solid","dashed")))
   by_la <- full |> dplyr::group_by(LA,Year) |>
     dplyr::summarise(N=sum(Adjusted_maternities),.groups="drop") |>
     dplyr::left_join(resident$total_maternity_projections,by=c("LA"="area_code","Year"="year"))
@@ -181,7 +200,7 @@ local({
   # Check the existing chart-data builder consumes the completed master columns.
   final_cohort_2326 <- cohort
   total_births_by_LA_2326 <- residents
-  # Section 9 prepares its own organisation list; it must not depend on
+  # Section 2.2.3 prepares its own organisation list; it must not depend on
   # temporary variables inside the separate projection builder.
   geography <- build_delivery_geography()
   near(sum(geography$matrix_data$N),
@@ -193,6 +212,61 @@ local({
   projection_trust_lookup <- readr::read_csv("data/lookups/trust_names.csv", show_col_types=FALSE)
   projection_catchment_las <- read_area_config()$area_code
   result <- build_first_draft_projections(master=m,prepare_outputs=TRUE)
+  # Sankeys reconcile to observed deliveries and the completed final-year master.
+  sankey <- result$sankey_comparison
+  near(sum(sankey$flows$Observed), sum(result$observed_totals$Observed_baseline[
+    result$observed_totals$Key %in% result$organisations$Key[result$organisations$Level=="Trust"]]))
+  near(sum(sankey$flows$Projected), sum(result$maternity_projections$Projected[
+    result$maternity_projections$Key=="cluster" & result$maternity_projections$Year==2027]))
+  # Grouped change is 65/100-1, not the mean of +100% and -50%.
+  observed_flows <- data.frame(LA=c(rep("A",10),rep("B",90),rep("X",2),"Unknown LA"),
+    Trust=c(rep("RQ3",100),rep("RL4",2),"RRK"))
+  projected_flows <- data.frame(LA=c("A","B","C","X"),Trust=c("RQ3","RQ3","RRK","RL4"),
+    Year=2047,Projected_maternities=c(20,45,7,4))
+  comparison <- build_projection_sankeys(observed_flows,projected_flows,result$organisations,
+    "2025/26",2047,main_las=character(),other_las=0)
+  near(comparison$flows$Percent_change[comparison$flows$Trust=="RQ3"],-.35)
+  near(comparison$flows$Percent_change[comparison$flows$Trust=="RL4"],1)
+  stopifnot(is.na(comparison$flows$Percent_change[
+    comparison$flows$Trust=="RRK" & comparison$flows$LA=="All other feeder LAs"]))
+  near(comparison$flows$Percent_change[comparison$flows$LA=="Unknown LA"],-1)
+  for (field in c("observed","projected")) {
+    trace <- plotly::plotly_build(comparison$panels[[field]])$x$data[[1]]
+    near(sum(trace$link$value),if(field=="observed") 103 else 76)
+    stopifnot(all(trace$link$source>=0),all(trace$link$target<length(trace$node$label)))
+  }
+  future_trace <- plotly::plotly_build(comparison$panels$projected)$x$data[[1]]
+  visible <- comparison$flows[comparison$flows$Projected>0, ]
+  stopifnot(future_trace$link$color[is.na(visible$Percent_change)]=="#909090")
+  colours <- grDevices::col2rgb(future_trace$link$color)
+  stopifnot(all(colours[1,visible$Percent_change<0 & !is.na(visible$Percent_change)] >
+    colours[3,visible$Percent_change<0 & !is.na(visible$Percent_change)]),
+    all(colours[3,visible$Percent_change>0 & !is.na(visible$Percent_change)] >
+    colours[1,visible$Percent_change>0 & !is.na(visible$Percent_change)]))
+
+  # Annual comparisons retain the model's delivery / booking denominators.
+  variation <- build_input_variation_review(cohort,residents,varied,attr(m,"allocation_tables"))
+  cell <- variation$delivery |>
+    dplyr::filter(LA=="E08000025",Age==25,Destination=="RQ3") |> dplyr::arrange(FY)
+  near(cell$Denominator,c(2,8,10))
+  near(cell$Count,c(2,0,10))
+  near(cell$Departure_pp,c(40,-60,40))
+  near(weighted.mean(cell$Departure_pp,cell$Denominator),0)
+  booking_cell <- variation$booking |>
+    dplyr::filter(LA=="E08000025",Age==25,Destination=="RQ3") |> dplyr::arrange(FY)
+  near(booking_cell$Denominator,c(2,8,35))
+  near(booking_cell$Pooled,rep(20/45,3))
+  near(variation$ons_means$Stillbirth_ratio[variation$ons_means$age=="25"],(.1+0+.1)/3)
+  age_variation <- build_input_variation_review(age_cohort,age_residents,counts,
+    attr(age_master,"allocation_tables"))
+  age_cell <- age_variation$age_mix |>
+    dplyr::filter(LA=="E08000025",Age==14) |> dplyr::arrange(FY)
+  near(age_cell$Pooled,rep(2/19,3))
+  near(age_cell$Annual[c(1,3)],c(0,.2))
+  stopifnot(is.na(age_cell$Annual[2]))
+  for (field in c("delivery_chart","booking_chart","age_mix_chart","stillbirth_chart","multiplicity_chart")) {
+    stopifnot(length(plotly::plotly_build(variation[[field]])$x$data)>0)
+  }
   near(result$maternity_projections$Projected[result$maternity_projections$Level=="Cluster"],
     result$delivery_rows |> dplyr::filter(Delivery_destination %in% cluster_trusts) |>
       dplyr::group_by(Year) |> dplyr::summarise(N=sum(Projected_maternities),.groups="drop") |> dplyr::pull(N))

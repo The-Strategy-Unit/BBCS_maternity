@@ -31,6 +31,8 @@
 !/data/ons_2022_based_female_population_projections.csv
 !/data/ons_live_births_la_2013_2025.csv
 !/ONS Birth Methods Review.docx
+!/databricks notebooks/Maternity cohort over time.ipynb
+!/databricks notebooks/SL_maternity_data_wrangling.ipynb
 
 # Generated Quarto files and separately supplied data stay local.
 /.quarto/

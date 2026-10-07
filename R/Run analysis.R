@@ -1,5 +1,5 @@
 # RUN THE ANALYSIS ======================================================
-# Run this whole sript to get the report to open. It does take awhile - ~ 10 minutes
+# Run this whole sript to get the report to open. It does take awhile - ~ 10-15 minutes
 # Order: read parquet files -> analyse -> check -> render -> open report.
 # Run with: source("R/Run analysis.R")
 

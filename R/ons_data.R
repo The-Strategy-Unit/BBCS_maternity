@@ -621,7 +621,7 @@ maternity_modifier_table <- function(modifications) {
       `Stillbirth factor` = Stillbirth_factor, `Multiplicity factor` = Multiplicity_factor,
       `National factor product` = National_conversion_factor) |>
     gt::gt() |> gt::fmt_number(columns = c("Stillbirth factor", "Multiplicity factor", "National factor product"), decimals = 5) |>
-    gt::tab_source_note("ONS Table 5, 2023-2025: the two national factors only. Pool counts at each published age, then divide. The model applies these after the local age split and also applies the LA/age Bookings uplift. Unsplit boundary rows have grouped national factors but no exact-age Bookings uplift; positive projections remain unestimated.") |>
+    gt::tab_source_note("ONS Table 5, pooled 2023-2025 counts at each published age. These two factors convert live births to ONS-defined maternities. The model also applies the local age split and booking uplift.") |>
     ons_table_style()
 }
 

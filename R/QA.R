@@ -404,7 +404,7 @@ if (file.exists(".delivery_geography.rds")) {
 if (file.exists(".projections.rds")) {
   projections <- readRDS(".projections.rds")
   qa_check("Projection outputs use the current four-modifier method",
-    identical(projections$calculation_version, "ons-shared-age-calculations-v15"))
+    identical(projections$calculation_version, "ons-shared-age-calculations-v16"))
   flows <- projections$sankey_comparison
   qa_check("Delivery Sankey recorded flows match the observed cluster total",
     !is.null(flows) && numbers_match(sum(flows$flows$Observed),
@@ -428,6 +428,11 @@ if (file.exists(".projections.rds")) {
     qa_check(paste(label, "both allocations use the same adjusted maternity total"),
       projection_numbers_match(m$Delivery_projection_base, m$Adjusted_maternities) &&
       projection_numbers_match(m$Booking_projection_base, m$Adjusted_maternities))
+    expected_denominator <- ifelse(m$Allocation_available %in% TRUE,
+      m$MSDS_resident_count * m$Bookings_uplift_modifier, NA_real_)
+    qa_check(paste(label, "both allocations use resident births multiplied by the booking uplift"),
+      projection_numbers_match(m$Delivery_denominator, expected_denominator) &&
+      projection_numbers_match(m$Booking_denominator, expected_denominator))
     qa_check(paste(label, "unique LA/Age (SY)/source-age/year master rows"),
       !anyDuplicated(m[c("LA", "ONS_age", "Age", "Year")]))
     national <- base$ons_modifications
@@ -449,8 +454,10 @@ if (file.exists(".projections.rds")) {
     qa_check(paste(label, "resident and cohort births reconcile"),
       all(is.finite(calibration$Resident_birth_gap) & abs(calibration$Resident_birth_gap) < 1e-8),
       "Review source coverage/processing for every difference; residual groups retain valid positive gaps")
+    recorded_cells <- calibration[is.na(calibration$MSDS_resident_count) |
+      calibration$MSDS_resident_count > 0 | calibration$Cohort_pregnancies > 0, ]
     qa_check(paste(label, "calibration denominators support nonnegative allocations"),
-      all(calibration$Allocation_available), paste(sum(!calibration$Allocation_available), "LA/age cells need review"))
+      all(recorded_cells$Allocation_available), paste(sum(!recorded_cells$Allocation_available), "LA/age cells need review"))
     valid_calibration <- calibration[calibration$Allocation_available, ]
     qa_check(paste(label, "booking residual plus supplied pregnancies equals shared denominator"),
       numbers_match(valid_calibration$Booking_Denominator_Factor + valid_calibration$Cohort_pregnancies,
@@ -493,7 +500,7 @@ if (file.exists(".projections.rds")) {
       numbers_match(presented$Available_projected, master_totals$N))
     qa_details[[paste(label, "provider coverage gaps")]] <- base$provider_projection_gaps
     provider_gaps <- base$provider_projection_gaps
-    qa_check(paste(label, "all supplied provider flows have matching projections"),
+    qa_check(paste(label, "provider flows within the model age range have matching projections"),
       !nrow(provider_gaps),
       if (nrow(provider_gaps)) paste(unique(paste(provider_gaps$LA, provider_gaps$Age,
         provider_gaps$Reason, sep = " / ")), collapse = "; ") else "No unmatched provider flows")

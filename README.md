@@ -109,8 +109,9 @@ The reader expects the environment variables `container`, `lake`, `folder` and
 - `config/local_authorities.csv` sets the LAs, display order and colours for the
   public ONS sections. Adding an LA also requires its data in the historic births
   and female-population extracts.
-- `config/analysis_parameters.csv` sets the female-population age range, currently
-  13–55. This does not restrict the ages in the service projection.
+- `config/analysis_parameters.csv` sets ages **13–54** for the model, its MSDS
+  rates and age weights, and the female-population context charts. The model
+  does not expand this range to include other ages found in the supplied data.
 - Trust and ICB labels, provider membership and the service cluster are defined in
   `R/Maternity analysis.R`. The current cluster combines Black Country and
   Birmingham and Solihull. These settings are separate from the ONS LA configuration.
@@ -137,19 +138,19 @@ source-group row where local age information is unavailable.
 
 Calculation steps:
 
-1. Use pooled 2023/24–2025/26 resident-LA births to split the combined ONS ages;
-   preserve each source live-birth total.
+1. Use pooled 2023/24–2025/26 resident-LA deliveries to split ONS ≤15 across
+   ages 13–15 and ONS 44+ across ages 44–54; preserve each source live-birth total.
+   Ages with no recorded activity have zero counts and zero boundary-age shares.
 2. Apply the stillbirth factor, 1 + pooled S/L, from national Table 5 counts for
    2023–2025 at each published age.
 3. Apply pooled M/(L+S) from the same national counts.
-4. Apply the Bookings uplift: all supplied cohort pregnancies / recorded cohort
-   births for each cluster LA/age. Outside LAs use the pooled same-age rate among
+4. Apply the Bookings uplift: all supplied cohort pregnancies / recorded cohort deliveries for each cluster LA/age. Outside LAs use the pooled same-age rate among
    cluster residents as a proxy; use that proxy for missing local evidence too.
 5. Divide each delivery or booking category count by the shared denominator:
    resident-LA births × Bookings uplift. Apply these independent proportions to
    the same adjusted projection. Sum finished counts to age bands and providers.
 
-Use every supplied cohort row without an extra date filter. Only No recorded
+Use supplied cohort rows aged 13–54 without an extra date filter. Only No recorded
 delivery drives the fourth modifier. Home birth and Delivery location unknown
 remain recorded births. Where no same-age cluster ratio exists, flag the
 projection as unestimated; do not substitute a ratio pooled across ages.
@@ -164,22 +165,22 @@ factors. The master's `Maternity_modifier` also includes the Bookings uplift;
 it is applied to `Exact_age_live_births`, after the age split.
 
 **Booking Denominator Factor** is the shared denominator minus supplied cohort
-pregnancies. It is an estimated residual group whose size appears in the method
-and booking-projection tables. It remains separate from observed booking
+pregnancies. It is an estimated residual group shown in the booking-projection tables. It remains separate from observed booking
 providers, No recorded booking (provider and date both absent), and Booking
-provider unknown. Resident births absent from the linked cohort remain a separate
+provider unknown. Resident deliveries absent from the linked cohort remain a separate
 delivery category. Negative residuals and conflicting source counts are flagged
 and left unallocated, not silently clamped or assigned to a provider.
 
-Every configured or supplied MSDS LA is checked against the resident birth counts
-and ONS births. Missing source codes are QA issues: the console and report list
-the affected LAs and the source to review. `la_source_matching` in the projection
-outputs and QA details retains the complete check. An outside LA without linked
+Every configured or supplied MSDS LA is checked against the recorded resident delivery counts
+and ONS births. Missing source codes are QA issues: the console lists
+the affected LAs and the source to review. The complete check is retained as
+`la_source_matching` in the projection outputs and QA details. An outside LA without linked
 cohort rows can use the agreed same-age cluster proxy; missing resident or ONS
 source data requires investigation.
 
-Provider coverage follows all supplied records, including rows without a usable
-LA, age or ONS match. If a known provider flow cannot be projected, its reported
+Provider coverage follows supplied records aged 13–54, including rows without a usable
+LA or ONS match, and retains unknown-age records for checks. Known ages outside
+13–54 do not count as missing projection coverage. If a known provider flow cannot be projected, its reported
 total and percentage change remain unavailable. Known-age gaps affect that age
 band; missing-age records can affect every band. `Available_projected` retains
 the successfully allocated portion for accounting, and `Projection_complete`
@@ -192,7 +193,7 @@ source contribution cannot be estimated or allocated. Zero source contributions
 remain zero. The detailed ONS growth tables use the source birth counts once per
 LA/source age/year, independently of the availability of individual-age modifiers.
 
-Review the method tables for differences between resident births and cohort
+Review `booking_modifications` for differences between resident and cohort
 births; check the Databricks processing when these differ. Cluster proxy rates
 are explicitly assumed for outside-LA flows. These are not national MSDS ratios.
 If available locally, `R/check_projection_cohort.R` provides additional aggregate
@@ -207,7 +208,24 @@ Under 20, 20–24, 25–29, 30–34, 35–39, 40–44 and 45+; grouping follows 
 Historical banded births (L) and published maternities are displayed directly,
 without a second estimated-maternity conversion.
 
-The report requires calculation version `ons-shared-age-calculations-v15`.
+Sections 3.3 and 3.4 both show combined organisation charts and separate panels
+for trusts, ICBs and the cluster. Total charts compare blue modelled projections,
+orange ONS base projections and green recorded MSDS counts. The ONS line is
+`Exact_age_live_births × destination proportion`, before stillbirth, multiplicity
+and booking adjustments, using the same provider shares as the model. It remains
+a live-birth baseline, not an ONS provider or booking forecast. Historical points
+use the existing delivery-year or booking-year counts for 2023/24–2025/26; their
+x-axis position is the financial year's start. Missing projection coverage stays
+unavailable, while recorded historical counts remain visible.
+
+Both sections retain age-band charts and total-change charts, with age-band change
+also available for bookings. Existing percentage-change references are unchanged:
+recorded 2025/26 for delivery totals; modelled 2025 for booking totals and age bands.
+Run `Rscript R/test_projection_scale.R` to check the three chart series with
+invented data and confirm that outside-LA bookings use the shared resident
+denominator rather than being scaled up to the whole LA population.
+
+The report requires calculation version `ons-shared-age-calculations-v16`.
 The three ONS registration workbooks were checked against the public downloads
 on 6 October 2026 and matched exactly. Table 5 supplies the two national modifiers; Table 7
 remains descriptive evidence about multiplicity.
@@ -222,7 +240,7 @@ exploration contains the main-LA code comparison; the projection method section
 illustrates the calculations.
 
 The booking-ICB flow charts show the two ICBs and the combined cluster together. The cluster
-counts combine the same booking starts shown in the two ICB charts.
+counts combine the same antenatal bookings shown in the two ICB charts.
 
 The booking-organisation charts use five outcome lines: the within-cluster delivery
 group is split into the same trust as booking and a different cluster trust.
@@ -230,7 +248,7 @@ The trust-comparison panels retain this split when grouped into ICB and cluster 
 Separate ICB-comparison tabs compare the booking trust's ICB with
 the delivery trust's ICB: a transfer between trusts in the same ICB stays in the
 same-ICB group. The combined cluster pools these comparisons across both ICBs.
-Both views retain the same all-starts booking-year denominators, follow-up rules
+Both views use all antenatal bookings in the booking year as their denominator, with the same follow-up rules
 and relative-percentage-change calculation; they do not use residence ICB.
 
 ## Saved outputs and missing sections
@@ -267,7 +285,7 @@ subset(qa_results, Result == "Check")
 ```
 
 The QA script reports plain-language results and lists any records or totals that
-need attention. It runs automatically before the runner renders the report.
+need attention. It runs automatically before rendering. QA results stay in the console and saved analysis objects; they are not report sections.
 Run `R/Run analysis.R` after changing inputs or calculations, and review QA before
 using a new version of the results.
 
@@ -286,17 +304,19 @@ report's saved RDS files.
 
 ## Terminology key
 
-**For this project, maternities means women entering the maternity pathway through booking and/or delivery.** This includes live births, stillbirths and booked pregnancies without a recorded delivery.
+**For this project, a maternity is one pregnancy entering maternity care through booking and/or delivery.** This includes live births, stillbirths and booked pregnancies without a recorded delivery.
 
 ### Core counting terms
 
-| Term | Plain-English meaning | Use in this analysis or pathway model |
+| Term | Meaning | Use in this analysis or pathway model |
 |---|---|---|
 | **Live birth** | One baby born showing signs of life. | The unit in the ONS birth projections used here. Two live-born twins count as two. |
 | **Stillbirth** | One baby born without signs of life at 24 or more completed weeks. | Excluded from live-birth counts; included in the definition of a maternity. |
 | **Total births** | Live births plus stillbirths: a count of babies. | Always specify “live births” or “total births”; the projected input here is live births. |
-| **Maternity — this project** | A woman entering the maternity pathway through booking and/or delivery, regardless of pregnancy outcome. | Counted once per pregnancy. A booking followed by a delivery is the same maternity; twins or triplets also count as one. |
+| **Maternity — this project** | One pregnancy entering maternity care through booking and/or delivery, regardless of pregnancy outcome. | Includes live births, stillbirths and booked pregnancies without a recorded delivery. Counted once per pregnancy: a booking followed by a delivery is the same maternity, and twins or triplets also count as one. |
 | **Maternity — ONS** | One pregnancy resulting in at least one live birth or stillbirth. | The source definition used in ONS maternity tables and conversion factors. |
+| **Delivery** | One pregnancy resulting in at least one live birth or stillbirth, counted once even when there are twins or triplets. | MSDS resident delivery totals include home deliveries and deliveries outside the cluster. Trust delivery totals require a recorded non-home delivery at that provider. Pregnancies without a recorded delivery are excluded from delivery counts. |
+| **Antenatal booking** | A pregnancy with recorded antenatal booking information, counted once rather than once per appointment. | Provider counts use the recorded booking provider, including pregnancies without a recorded delivery. Historical counts also need a booking date to identify the financial year. “Bookings” is used as a short form of “antenatal bookings”. |
 | **All pregnancies** | Pregnancies regardless of outcome or contact with maternity services. | The project cohort covers those entering the maternity pathway. |
 | **Unique women / mothers** | Individual people counted once during a defined period. | Not supplied by the maternity total: one woman can have more than one maternity during that period. |
 | **Singleton / multiple maternity** | One baby / two or more babies from one pregnancy. | “Multiplicity” describes how many babies are involved. It explains why baby and maternity counts differ. |
@@ -308,7 +328,7 @@ ONS source definitions follow the [birth statistics user guide](https://www.ons.
 
 | Term | Meaning here |
 |---|---|
-| **Observed / published count** | An ONS figure derived from registered events that have already happened. |
+| **Recorded / observed / published count** | MSDS recorded activity or ONS registered events that have already happened. The source and counting unit are identified alongside the figure. |
 | **Projected live births** | Future baby counts from the ONS demographic model, conditional on its assumptions. |
 | **Estimated / projected maternities** | Counts calculated from projected births (L), after all four modifiers: age distribution, stillbirth, multiplicity and Bookings uplift. |
 | **Maternity modifier** | [1 + S/L] × M/(L+S) × Bookings uplift, applied after the age split. S, L and M are national Table 5 counts pooled across 2023–2025. |

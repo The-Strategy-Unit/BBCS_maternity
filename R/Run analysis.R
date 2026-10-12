@@ -14,7 +14,7 @@ run_maternity_project <- function() {
   # Clear previous inspection objects before preparing this run's results.
   inspection_names <- c("projection_master", "projection_master_backtest",
     "projection_master_dictionary", "delivery_proportions", "booking_proportions",
-    "ons_modifications", "qa_results", "qa_details")
+    "ons_modifications", "booking_modifications", "qa_results", "qa_details")
   present <- intersect(inspection_names, ls(envir = .GlobalEnv))
   if (length(present)) rm(list = present, envir = .GlobalEnv)
 
@@ -95,6 +95,7 @@ run_maternity_project <- function() {
   delivery_proportions <<- projections$delivery_proportions
   booking_proportions <<- projections$booking_proportions
   ons_modifications <<- projections$ons_modifications
+  booking_modifications <<- projections$allocation_tables$calibration
   qa_results <<- checks$results
   qa_details <<- checks$details
   completed <- TRUE

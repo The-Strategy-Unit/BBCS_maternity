@@ -345,7 +345,7 @@ prepare_projection_age_factors <- function(counts = read_national_age_counts(), 
   factors$Stillbirth_ratio <- factors$Pooled_stillbirths / factors$Pooled_live_births
   factors$Stillbirth_factor <- 1 + factors$Stillbirth_ratio
   factors$Multiplicity_factor <- factors$Pooled_maternities / factors$Pooled_total_births
-  factors$Maternity_modifier <- factors$Stillbirth_factor * factors$Multiplicity_factor
+  factors$National_conversion_factor <- factors$Stillbirth_factor * factors$Multiplicity_factor
   parameters <- read_analysis_parameters()
   if (is.null(ages)) ages <- seq(parameters[["minimum_maternal_age"]], parameters[["maximum_maternal_age"]])
   modifications <- data.frame(Age = sort(unique(ages)))
@@ -361,7 +361,7 @@ prepare_projection_age_factors <- function(counts = read_national_age_counts(), 
   modifications <- modifications[c("Aggregation_level", "Time_period", "ONS_source_age",
     "Registration_age", "Age", "Age_application", "Pooled_live_births", "Pooled_stillbirths",
     "Pooled_total_births", "Pooled_maternities", "Stillbirth_ratio", "Stillbirth_factor",
-    "Multiplicity_factor", "Maternity_modifier", "Calculation_basis")]
+    "Multiplicity_factor", "National_conversion_factor", "Calculation_basis")]
   # Explicit fallback rows for a combined ONS age with no local age split.
   grouped <- counts |> filter(age != "Unknown") |>
     mutate(numeric_age = suppressWarnings(as.integer(age)),
@@ -379,7 +379,7 @@ prepare_projection_age_factors <- function(counts = read_national_age_counts(), 
     Stillbirth_ratio = grouped$S / grouped$L,
     Stillbirth_factor = 1 + grouped$S / grouped$L,
     Multiplicity_factor = grouped$M / (grouped$L + grouped$S),
-    Maternity_modifier = (1 + grouped$S / grouped$L) * grouped$M / (grouped$L + grouped$S),
+    National_conversion_factor = (1 + grouped$S / grouped$L) * grouped$M / (grouped$L + grouped$S),
     Calculation_basis = "Pool counts across 2023--2025, then divide")
   modifications <- dplyr::bind_rows(modifications, fallback)
   modifications$Source <- "ONS birth registrations, Table 5"
@@ -439,7 +439,7 @@ read_historic_live_births <- function(
 }
 
 # 6. Resident projection summaries: completed master values only ---------
-# No second conversion; Age (B) and LA totals only add finished Age (1) rows.
+# No second conversion; Age (B) and LA totals only add finished Age (SY) rows.
 summarise_resident_projections <- function(master, area_config = read_area_config()) {
   exact <- master |>
     filter(LA %in% area_config$area_code) |>
@@ -494,7 +494,7 @@ projection_plot <- function(data, caption, colours) {
     ggplot2::scale_y_continuous(labels = scales::label_comma(),
                               expand = ggplot2::expansion(mult = c(0.02, 0.08))) +
     ggplot2::scale_colour_manual(values = colours) +
-    ggplot2::labs(x = NULL, y = "Projected maternities", colour = NULL, caption = caption) +
+    ggplot2::labs(x = NULL, y = "Adjusted resident maternities", colour = NULL, caption = caption) +
     ons_plot_theme()
 }
 
@@ -617,11 +617,11 @@ multiplicity_table <- function(data, year = NULL) {
 maternity_modifier_table <- function(modifications) {
   modifications |>
     select(`ONS source age` = ONS_source_age, `Registration age` = Registration_age,
-      `Applied Age (1)` = Age, `Age treatment` = Age_application,
+      `Applied Age (SY)` = Age, `Age treatment` = Age_application,
       `Stillbirth factor` = Stillbirth_factor, `Multiplicity factor` = Multiplicity_factor,
-      `Combined modifier` = Maternity_modifier) |>
-    gt::gt() |> gt::fmt_number(columns = c("Stillbirth factor", "Multiplicity factor", "Combined modifier"), decimals = 5) |>
-    gt::tab_source_note("ONS Table 5, 2023-2025. Pool counts at each published age, then divide. Applied after the local age split in every projection. Unsplit fallback rows use pooled combined-age counts and remain unallocated.") |>
+      `National factor product` = National_conversion_factor) |>
+    gt::gt() |> gt::fmt_number(columns = c("Stillbirth factor", "Multiplicity factor", "National factor product"), decimals = 5) |>
+    gt::tab_source_note("ONS Table 5, 2023-2025: the two national factors only. Pool counts at each published age, then divide. The model applies these after the local age split and also applies the LA/age Bookings uplift. Unsplit boundary rows have grouped national factors but no exact-age Bookings uplift; positive projections remain unestimated.") |>
     ons_table_style()
 }
 

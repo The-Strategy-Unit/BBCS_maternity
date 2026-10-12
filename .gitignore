@@ -3,10 +3,16 @@
 *
 !/data/
 !/R/
-# Include current and future R scripts, including scripts in subfolders.
-!/R/**/
-!/R/**/*.R
-!/R/**/*.r
+# Share the report's runtime scripts and Sarah's standalone matrix script.
+# Other R scripts (including local checks) stay local unless added here.
+!/R/Run analysis.R
+!/R/Read parquet files from azure.R
+!/R/Maternity analysis.R
+!/R/ons_data.R
+!/R/report_cohort.R
+!/R/age_boundary_review.R
+!/R/QA.R
+!/R/matrix of booking appts and births.R
 !/assets/
 !/config/
 !/.gitignore

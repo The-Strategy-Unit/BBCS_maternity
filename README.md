@@ -1,7 +1,7 @@
 # BBCS maternity analysis
 
 `index.qmd` is the report. It converts ONS projected live births into maternities
-using individual-age stillbirth/multiplicity conversions, describes recorded patient flows and delivery activity,
+using age distribution, stillbirth, multiplicity and Bookings uplift modifiers, describes recorded patient flows and delivery activity,
 and makes first-draft projections for trusts, ICBs and the combined cluster.
 Method 1 is used throughout; section 3 explains the ONS boundary-age conversion and local age weights.
 
@@ -25,7 +25,7 @@ The console shows a short QA summary, details of items requiring review, and
 the finished report path; no separate QA script is needed.
 
 The completed `projection_master`, `projection_master_backtest`, `ons_modifications`,
-`delivery_proportions`, `booking_proportions`, column dictionary,
+`delivery_proportions`, `booking_proportions`, `booking_modifications`, column dictionary,
 `qa_results` and `qa_details` are returned to the RStudio session for inspection.
 Check `subset(qa_results, Result == "Check")` before using real results.
 The runner requires the existing Azure access and packages in the secure
@@ -56,7 +56,7 @@ scripts are consolidated in `R/Maternity analysis.R`. The report's existing view
 and saved-object names are retained.
 
 The terminology key is at the top of the main script. Search `MODEL_INPUT:` for
-data taken forward and `CONTEXT_ONLY` for exploration. `Age (1)` means individual
+data taken forward and `CONTEXT_ONLY` for exploration. `Age (SY)` means individual
 age and `Age (B)` a reporting band. ONS <=15 and 44+ remain explicit combined
 source boundaries. `LA(R)` means residence. Booking/delivery provider codes are
 `Trust(B/D)`; they are not booking/delivery LA codes. `LA(C)` denotes the set of
@@ -130,27 +130,73 @@ group delivered at that organisation. Home births stay in the LA totals but are
 not counted as hospital-location deliveries.
 
 Projections start with ONS births (L). The runner returns `projection_master`,
-`ons_modifications`, `delivery_proportions` and `booking_proportions` to RStudio.
-Use `View()` to inspect them. The master has one LA(R)/Age (1)/year row and separate
+`ons_modifications`, `booking_modifications`, `delivery_proportions` and `booking_proportions` to RStudio.
+Use `View()` to inspect them. The master has one LA(R)/Age (SY)/year row and separate
 destination proportion/count columns. An unsplit boundary remains an explicit
 source-group row where local age information is unavailable.
 
 Calculation steps:
 
-1. Pool 2023/24–2025/26 resident counts. Split combined ONS ages using each LA's maternity age mix; preserve each ONS births (L) total.
-2. Join `ons_modifications`: at each published age, pool 2023–2025 Table 5 counts, then divide stillbirths by live births; multiply births (L) by **1 + that ratio** to obtain births (L+S).
-3. Multiply by pooled maternities/pooled births (L+S), using the same Table 5 counts for 2023–2025. Ages below 14 share the under-14 factor; ages 50+ share its published factor. Other ages use their own factors.
-4. Delivery proportions = pooled destination deliveries / resident maternities. Booking proportions = pooled destination bookings / all bookings, including those without a recorded delivery. Both use LA(R)/Age (1) and remain fixed over future years.
-5. Multiply each starting-volume column by its own destination proportions. Aggregate completed delivery and booking counts separately into age bands, trusts, ICBs and cluster.
+1. Use pooled 2023/24–2025/26 resident-LA births to split the combined ONS ages;
+   preserve each source live-birth total.
+2. Apply the stillbirth factor, 1 + pooled S/L, from national Table 5 counts for
+   2023–2025 at each published age.
+3. Apply pooled M/(L+S) from the same national counts.
+4. Apply the Bookings uplift: all supplied cohort pregnancies / recorded cohort
+   births for each cluster LA/age. Outside LAs use the pooled same-age rate among
+   cluster residents as a proxy; use that proxy for missing local evidence too.
+5. Divide each delivery or booking category count by the shared denominator:
+   resident-LA births × Bookings uplift. Apply these independent proportions to
+   the same adjusted projection. Sum finished counts to age bands and providers.
 
-The master starts with LA, Age, Year and three review columns:
-`Exact_age_live_births` (births (L), age split only), `Delivery_projection_base`
-and `Booking_projection_base` (separate adjusted allocation volumes).
-The two allocation volumes currently equal adjusted maternities. No early-loss uplift is applied.
-A future agreed uplift would apply to the booking base before allocation; the delivery base would stay unchanged.
-The booking-projection section shows booking totals, age bands and change from the modelled reference year.
-Home, unknown, unrepresented and unallocated destinations remain explicit.
-ONS source counts repeat across split ages; `Exact_age_live_births` is additive.
+Use every supplied cohort row without an extra date filter. Only No recorded
+delivery drives the fourth modifier. Home birth and Delivery location unknown
+remain recorded births. Where no same-age cluster ratio exists, flag the
+projection as unestimated; do not substitute a ratio pooled across ages.
+
+The master retains `Exact_age_live_births`, `Bookings_uplift_modifier`, its
+source, the shared denominator, source counts and destination proportions/counts.
+`Delivery_projection_base` and `Booking_projection_base` both equal
+`Adjusted_maternities` after all four modifiers.
+
+`National_conversion_factor` is the product of the stillbirth and multiplicity
+factors. The master's `Maternity_modifier` also includes the Bookings uplift;
+it is applied to `Exact_age_live_births`, after the age split.
+
+**Booking Denominator Factor** is the shared denominator minus supplied cohort
+pregnancies. It is an estimated residual group whose size appears in the method
+and booking-projection tables. It remains separate from observed booking
+providers, No recorded booking (provider and date both absent), and Booking
+provider unknown. Resident births absent from the linked cohort remain a separate
+delivery category. Negative residuals and conflicting source counts are flagged
+and left unallocated, not silently clamped or assigned to a provider.
+
+Every configured or supplied MSDS LA is checked against the resident birth counts
+and ONS births. Missing source codes are QA issues: the console and report list
+the affected LAs and the source to review. `la_source_matching` in the projection
+outputs and QA details retains the complete check. An outside LA without linked
+cohort rows can use the agreed same-age cluster proxy; missing resident or ONS
+source data requires investigation.
+
+Provider coverage follows all supplied records, including rows without a usable
+LA, age or ONS match. If a known provider flow cannot be projected, its reported
+total and percentage change remain unavailable. Known-age gaps affect that age
+band; missing-age records can affect every band. `Available_projected` retains
+the successfully allocated portion for accounting, and `Projection_complete`
+identifies whether the reported estimate is usable. Unmatched provider flows are
+QA issues requiring investigation. Flow diagrams label partial
+allocations and do not present missing coverage as a fall in demand.
+
+Projected Booking Denominator Factor totals remain unavailable where a positive
+source contribution cannot be estimated or allocated. Zero source contributions
+remain zero. The detailed ONS growth tables use the source birth counts once per
+LA/source age/year, independently of the availability of individual-age modifiers.
+
+Review the method tables for differences between resident births and cohort
+births; check the Databricks processing when these differ. Cluster proxy rates
+are explicitly assumed for outside-LA flows. These are not national MSDS ratios.
+If available locally, `R/check_projection_cohort.R` provides additional aggregate
+checks in the secure R session. This optional script is not distributed in Git.
 
 `projection_master_backtest` applies the same pooled proportions to historical
 ONS counts. It is an in-sample retrospective comparison, not independent validation.
@@ -161,9 +207,9 @@ Under 20, 20–24, 25–29, 30–34, 35–39, 40–44 and 45+; grouping follows 
 Historical banded births (L) and published maternities are displayed directly,
 without a second estimated-maternity conversion.
 
-The report requires calculation version `ons-shared-age-calculations-v10`.
+The report requires calculation version `ons-shared-age-calculations-v15`.
 The three ONS registration workbooks were checked against the public downloads
-on 6 October 2026 and matched exactly. Table 5 supplies both modifiers; Table 7
+on 6 October 2026 and matched exactly. Table 5 supplies the two national modifiers; Table 7
 remains descriptive evidence about multiplicity.
 
 Sarah's supplied cohort is already deduplicated. The report counts each supplied
@@ -205,8 +251,12 @@ than skipping its section. Run preparation again to refresh the saved outputs;
 re-rendering alone will not refresh these files.
 
 Generated RDS files and HTML stay local and are ignored by Git. Prepare the RDS
-files on the data computer; they are not transferred with code changes. Current
-and future R scripts under `R/` are allowed by `.gitignore`.
+files on the data computer; they are not transferred with code changes.
+`.gitignore` explicitly includes the seven R scripts required by the report and
+Sarah's optional standalone matrix script. Other R scripts, including
+`R/test_report_consistency.R` and `R/check_projection_cohort.R`, stay local and are
+not needed to run the report. New checking scripts are ignored automatically;
+add any new runtime dependency to the `.gitignore` allowlist before sharing it.
 
 ## Review the QA results
 
@@ -227,9 +277,12 @@ modifiers, and chart percentages against incoming counts. These comparisons are 
 `qa_details`. To see only items needing attention, use
 `subset(qa_results, Result == "Check")`. The QA script does not deduplicate inputs.
 
-For a local check without MSDS or Azure, run `Rscript R/test_report_consistency.R`.
-It uses invented pregnancy records and public ONS files, keeps its outputs in
-memory, and does not read or overwrite the secure report's saved RDS files.
+If you have the optional local checking scripts, run
+`Rscript R/test_report_consistency.R` for a check without MSDS or Azure.
+It also requires the local `R/check_projection_cohort.R` script. These scripts
+are excluded from Git. The check uses invented pregnancy records and public ONS
+files, keeps its outputs in memory, and does not read or overwrite the secure
+report's saved RDS files.
 
 ## Terminology key
 
@@ -257,19 +310,21 @@ ONS source definitions follow the [birth statistics user guide](https://www.ons.
 |---|---|
 | **Observed / published count** | An ONS figure derived from registered events that have already happened. |
 | **Projected live births** | Future baby counts from the ONS demographic model, conditional on its assumptions. |
-| **Estimated / projected maternities** | Counts calculated from projected births (L), after the local age split and age-specific stillbirth/multiplicity adjustments. |
-| **Maternity modifier** | [1 + S/L] × M/(L+S), with S, L and M pooled from 2023–2025 Table 5 counts at each published age. Multiplies projected live births to estimate maternities. |
+| **Estimated / projected maternities** | Counts calculated from projected births (L), after all four modifiers: age distribution, stillbirth, multiplicity and Bookings uplift. |
+| **Maternity modifier** | [1 + S/L] × M/(L+S) × Bookings uplift, applied after the age split. S, L and M are national Table 5 counts pooled across 2023–2025. |
 | **General fertility rate (GFR)** | Live births per 1,000 women aged 15–44 in this report. It describes frequency relative to population size, not the number needing care. |
 | **Age-specific fertility rate (ASFR)** | Live births per 1,000 women in the relevant age group. |
 | **Total fertility rate (TFR)** | Children per woman if the year's age-specific fertility rates applied throughout childbearing life. Not an annual maternity count. |
 
-**The conversion in one line:** projected live-born babies × maternity modifier = estimated maternities. Split combined ONS ages first, apply each published-age factor, then add completed results. Birth rates are a separate contextual measure and are not used instead of this conversion.
+**The conversion in one line:** projected live-born babies × age weight × [1 + S/L] × M/(L+S) × Bookings uplift = adjusted maternities. Split combined ONS ages first, apply the factors at each LA/age, then add completed results. Birth rates are a separate contextual measure and are not used instead of this conversion.
 
-For illustration only, a modifier of **0.99** means an estimated **99 maternities for every 100 live-born babies**. A projection of 10,000 live births would therefore become 9,900 maternities if that modifier applied throughout. The actual analysis uses different age-specific modifiers. Method 1 includes both stillbirths and multiplicity. Its factors change the absolute ONS counts allocated to trusts. MSDS already includes live-birth and stillbirth maternities and supplies allocation rates without an uplift. Each factor uses pooled counts before division; their product is applied to births (L).
+For illustration, national factors with a product of 0.99 and a Bookings uplift
+of 1.25 give 123.75 adjusted maternities per 100 live births at an age with weight
+1. The model applies each LA/age's factors separately before aggregation.
 
 ### Using these figures for pathway demand and capacity
 
-Use **maternities as the starting volume for pathways associated with pregnancies reaching birth**. To turn that volume into service activity, specify the proportion using each pathway and the contacts per maternity. For baby-based services, retain baby counts. To model all antenatal or early-pregnancy demand, also account for pregnancies that do not reach an ONS-defined maternity.
+Use the shared adjusted maternity volume and the relevant booking or delivery allocation to estimate pathway demand. To turn that volume into service activity, specify the proportion using each pathway and the contacts per maternity. For baby-based services, retain baby counts. The Bookings uplift uses no recorded delivery as a proxy; it does not establish clinical outcomes or capture pregnancies absent from maternity services.
 
 Three further distinctions matter:
 

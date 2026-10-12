@@ -6,7 +6,10 @@
 # Final reporting bands; apply after the individual-age model calculations.
 report_age_bands <- c("Under 20", "20-24", "25-29", "30-34", "35-39", "40-44", "45+")
 
-report_number <- function(x) suppressWarnings(as.numeric(trimws(as.character(x))))
+report_number <- function(x) {
+  if (is.logical(x)) return(as.numeric(x))
+  suppressWarnings(as.numeric(trimws(as.character(x))))
+}
 
 # Exact maternal age for calculations; invalid ages share one explicit missing cell.
 report_age <- function(x) {
@@ -73,7 +76,41 @@ prepare_report_cohort <- function(cohort) {
     Home = report_number(cohort$home_birth),
     Resident_ICB = report_code(cohort$resident_icb),
     Booking_Trust = report_code(cohort$booking_provider),
+    Booking_provider_supplied = !is.na(cohort$booking_provider) &
+      nzchar(trimws(as.character(cohort$booking_provider))),
+    Booking_date_supplied = !is.na(cohort$antenatal_app_date) &
+      nzchar(trimws(as.character(cohort$antenatal_app_date))),
     Booking_date = booking_date,
     Booking_year = as.integer(format(booking_date, "%Y")) -
       as.integer(as.integer(format(booking_date, "%m")) < 4L))
+}
+
+# Keep the non-provider categories explicit in the projection allocations.
+projection_delivery_destination <- function(records) {
+  dplyr::case_when(
+    !records$Birth_recorded ~ "No_recorded_delivery",
+    records$Home %in% 1 ~ "Home",
+    records$Home %in% 0 & grepl("^R[A-Z0-9]{2}$", records$Trust) ~ records$Trust,
+    TRUE ~ "Unknown_location")
+}
+
+# Agreed recorded-evidence rule: both provider and date absent means no
+# recorded booking. A supplied date remains booking evidence even when it
+# cannot be parsed.
+projection_booking_destination <- function(records) {
+  dplyr::case_when(
+    !records$Booking_provider_supplied & !records$Booking_date_supplied ~ "No_recorded_booking",
+    grepl("^R[A-Z0-9]{2}$", records$Booking_Trust) ~ records$Booking_Trust,
+    TRUE ~ "Booking_provider_unknown")
+}
+
+projection_destination_label <- function(destination) {
+  labels <- c(Home = "Home birth", Unknown_location = "Delivery location unknown",
+    No_recorded_delivery = "No recorded delivery", No_recorded_booking = "No recorded booking",
+    Booking_provider_unknown = "Booking provider unknown",
+    Booking_Denominator_Factor = "Booking Denominator Factor",
+    Not_represented = "Not represented in linked cohort", Unallocated = "Unallocated")
+  result <- unname(labels[destination])
+  result[is.na(result)] <- destination[is.na(result)]
+  result
 }

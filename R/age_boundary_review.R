@@ -103,7 +103,7 @@ build_ons_age_review <- function(counts, historic, snpp, women, area_config) {
     multiplicity = review_line(history, "multiple_rate", "Multiple maternities: the longer age-band trend", "Multiple maternities per 1,000 maternities",
       "ONS Table 8, 2018-2025. Counts every multiple pregnancy once; 45+ remains combined."),
     babies_per_maternity = review_line(old, "babies_per_maternity", "Annual babies per maternity at older ages", "All babies per maternity",
-      "ONS Table 5: births (L+S) / maternities in each year.\nAnnual diagnostic only; model modifiers use pooled 2023-2025 counts.", "age"),
+      "ONS Table 5: births (L+S) / maternities in each year.\nAnnual diagnostic only; national model factors use pooled 2023-2025 counts.", "age"),
     women = review_line(population, "women", "Women living in the six selected LAs: projected counts", "Women",
       "ONS 2022-based migration-category population projections, 2023 geography.\n44 is one year of age; other groups span several years. These are women, not mothers."),
     women_change = review_line(population, "index", "Does the older female population grow at the same rate?", "Women: 2025 = 100",
@@ -183,11 +183,11 @@ build_older_outcome_review <- function(path, pooled, old) {
     ggplot2::geom_line() + ggplot2::geom_point() +
     ggplot2::labs(title = "Conversion to maternities: with and without the stillbirth allowance", x = "Maternal age",
       y = "Maternities per baby", colour = NULL,
-      caption = "ONS Table 5, 2025: annual diagnostic. Model modifiers use pooled 2023-2025 counts.\nThe chart compares conversions, not future clinical risk.") +
+      caption = "ONS Table 5, 2025: annual diagnostic. National model factors use pooled 2023-2025 counts.\nThe chart compares conversions, not future clinical risk.") +
     ggplot2::theme_minimal(base_family = "sans") + ggplot2::theme(legend.position = "bottom")
   uplift_plot <- review_line(conversion |> dplyr::mutate(extra_percent = (uplift - 1) * 100), "extra_percent",
     "Stillbirth allowance: extra total babies per 100 live births", "Additional babies (%)",
-    "ONS Table 5: annual diagnostic; model ratios use pooled 2023-2025 counts.\nAdditional babies (%) = stillbirths / live births x 100. MSDS counts are not uplifted.", "age")
+    "ONS Table 5: annual diagnostic; model ratios use pooled 2023-2025 counts.\nAdditional babies (%) = stillbirths / live births x 100. The stillbirth factor is not applied to MSDS recorded births.", "age")
   outcome_chart <- function(d, title, caption) {
     p <- ggplot2::ggplot(d, ggplot2::aes(age_band, rate, colour = measure, group = measure)) +
       ggplot2::geom_line() + ggplot2::geom_point(size = 2) +
@@ -244,13 +244,18 @@ build_msds_age_review <- function(cohort, projections, historical, trust_labels,
   share <- exact |> dplyr::group_by(Key, Organisation, year) |>
     dplyr::summarise(Known_age = sum(Observed), Older = sum(Observed[Age >= 44]), .groups = "drop") |>
     dplyr::mutate(Share = ifelse(Known_age > 0, Older / Known_age * 100, NA_real_))
-  # Reuse the retrospective model with pooled 2023/24--2025/26 proportions.
+  # Reuse the retrospective model with full-cohort proportions.
   # The observed comparison years are included in calibration; not held-out validation.
-  model <- historical$feeder_projections |> dplyr::filter(Key %in% orgs$Key, !is.na(Age)) |>
-    dplyr::group_by(Key, Year, Age) |> dplyr::summarise(Modelled = sum(Projected), .groups = "drop")
+  model <- historical$single_age_projections |> dplyr::filter(Key %in% orgs$Key, !is.na(Age)) |>
+    dplyr::transmute(Key, Year, Age, Modelled = Projected, In_model = TRUE)
   exact_model <- exact |>
     dplyr::left_join(model, by = c("Key", "year" = "Year", "Age")) |>
-    dplyr::mutate(Modelled = tidyr::replace_na(Modelled, 0))
+    dplyr::mutate(Modelled = dplyr::if_else(is.na(In_model), 0, Modelled))
+  gaps <- historical$provider_projection_gaps |>
+    dplyr::filter(Allocation == "Delivery", Level == "Trust")
+  incomplete <- paste(exact_model$Key, exact_model$Age) %in% paste(gaps$Key, gaps$Age) |
+    exact_model$Key %in% gaps$Key[is.na(gaps$Age)]
+  exact_model$Modelled[incomplete] <- NA_real_
   comparison <- exact_model |>
     dplyr::filter(Age >= 40) |>
     dplyr::group_by(Key, Organisation, year, series) |>
@@ -285,7 +290,7 @@ build_msds_age_review <- function(cohort, projections, historical, trust_labels,
     ggplot2::geom_line() + ggplot2::geom_point() + ggplot2::scale_x_continuous(breaks = 40:60) +
     ggplot2::labs(title = "2025/26 check at each exact age: where do differences sit?", x = "Exact maternal age",
       y = "Recorded / modelled non-home deliveries", colour = NULL,
-      caption = "Cluster trusts combined. Model uses ONS counts with pooled 2023/24--2025/26 allocation proportions.\nBoundary counts are split by local MSDS age mix; unmatched MSDS records are not projected.") +
+      caption = "Cluster trusts combined. ONS counts use all four modifiers and full-cohort allocation proportions.\nIncomplete provider/age estimates remain unavailable; unmatched records are not treated as zero demand.") +
     ggplot2::theme_minimal(base_family = "sans") + ggplot2::theme(legend.position = "bottom")
   age_mix <- counts |> dplyr::filter(series != "40-43") |> dplyr::group_by(year) |>
     dplyr::mutate(denominator = sum(Observed), share = ifelse(denominator > 0, Observed / denominator * 100, NA_real_)) |>

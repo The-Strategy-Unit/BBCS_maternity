@@ -108,8 +108,8 @@ if (is.null(delivery_geography$chart_grids)) stop(
 #| include: false
 
 first_draft_projections <- readRDS(".projections.rds")
-if (!identical(first_draft_projections$calculation_version, "ons-shared-age-calculations-v10")) stop(
-  "Section 3 needs refreshed outputs using pooled ONS modifiers. Run Run analysis.R again in UDAL.")
+if (!identical(first_draft_projections$calculation_version, "ons-shared-age-calculations-v15")) stop(
+  "Section 3 needs refreshed outputs using all four modifiers and the shared denominator. Run Run analysis.R again in UDAL.")
 if (is.null(first_draft_projections$sankey_comparison) || is.null(first_draft_projections$input_variation)) stop(
   "Run Run analysis.R again to prepare the delivery flow comparison and input variation charts.")
 ```
@@ -125,9 +125,9 @@ trust_example <- data.frame(
   Stillbirth_allowance = c(1.02, 1.01, 1.02, 1.01),
   Multiplicity_conversion = c(.95, .98, .95, .98))
 trust_example$Modifier <-
-  trust_example$Stillbirth_allowance * trust_example$Multiplicity_conversion
+  trust_example$Stillbirth_allowance * trust_example$Multiplicity_conversion * 1.25
 trust_example$Share_at_A <-
-  trust_example$Recorded_at_A / trust_example$Resident_maternities
+  trust_example$Recorded_at_A / (trust_example$Resident_maternities * 1.25)
 trust_example$Modelled_2025 <-
   trust_example$ONS_births_L_2025 * trust_example$Modifier * trust_example$Share_at_A
 trust_example$Modelled_2047 <-
@@ -150,11 +150,11 @@ if (is.null(ons_exploration$resident_comparison)) stop(
 
 **How might demand for deliveries and bookings at BBCS trusts change in future?** The report explores ONS and MSDS, explains the agreed calculation, and presents projections by trust, ICB, combined cluster and age band.
 
-Delivery and booking projections use separate allocation proportions. Both currently start from adjusted maternities; an uplift for bookings that do not reach a live birth or stillbirth has not yet been applied.
+Four modifiers adjust the ONS projections: age distribution, stillbirths, multiplicity and the Bookings uplift. One adjusted maternity total feeds independent booking and delivery allocations, retaining home births, no recorded delivery, no recorded booking and unknown providers or locations.
 
 ## 1.2 The BBCS cohort and cluster {#bbcs-cohort}
 
-The supplied MSDS pregnancy cohort has one row per pregnancy. Delivery views use the delivery financial year; booking-cohort views use the booking financial year and follow the recorded outcome. The report uses the complete 2023/24, 2024/25 and 2025/26 source years.
+The supplied MSDS pregnancy cohort has one row per pregnancy. Delivery views use the delivery financial year; booking-cohort views use the booking financial year and follow the recorded outcome. The model pools every supplied pregnancy row without a further date filter. The resident-LA birth totals pool 2023/24, 2024/25 and 2025/26; the method tables check their agreement with the cohort.
 
 | Cluster group | Resident LAs | Named acute trusts |
 |----|----|----|
@@ -189,17 +189,19 @@ ONS source definitions follow the [birth statistics user guide](https://www.ons.
 |----|----|
 | **Observed / published count** | An ONS figure derived from registered events that have already happened. |
 | **Projected live births** | [Future baby counts from the [ONS subnational population projection model](#method-1-ref-snpp-method), conditional on its assumptions. (LM edit)]{.lm-edit} |
-| **Estimated / projected maternities** | Counts calculated from ONS projected births (L), after the local age split and pooled age-specific stillbirth/multiplicity adjustments. |
-| **MSDS-recorded resident maternities** | Delivery pregnancies recorded in the resident-LA MSDS extract, including acute and home births. National geographic coverage does not make this a complete population-wide birth count. This is the denominator for the section 3 destination shares. |
+| **Estimated / projected maternities** | Counts calculated from ONS projected births (L), after the age distribution, stillbirth, multiplicity and Bookings uplift modifiers. |
+| **MSDS-recorded resident maternities** | Delivery pregnancies recorded in the resident-LA MSDS extract, including acute and home births. National geographic coverage does not make this a complete population-wide birth count. These counts supply the age weights and the resident birth denominator used to estimate the shared maternity denominator. |
 | **Trust delivery projection** | Adjusted ONS maternities × pooled LA(R)/Age (SY) delivery proportions, summed to the trust. |
+| **Bookings uplift modifier** | All cohort pregnancies divided by recorded cohort births at each cluster LA/age. Outside LAs use the pooled same-age cluster-resident rate as a proxy. |
+| **Booking Denominator Factor** | Estimated resident maternity denominator minus supplied cohort pregnancies. A residual allocation group whose size is reviewed; it is not a count of observed bookings. |
 | **Multiplicity modifier** | Pooled maternities ÷ pooled births (L+S), using Table 5 counts for 2023–2025 at each published age. Converts babies to maternities. |
 | **General fertility rate (GFR)** | Live births per 1,000 women aged 15–44. It describes frequency relative to population size. |
 | **Age-specific fertility rate (ASFR)** | Live births per 1,000 women in the relevant age group. |
 | **Total fertility rate (TFR)** | Children per woman if the year's age-specific fertility rates applied throughout childbearing life. Not an annual maternity count. |
 
-**The conversion in one line:** projected births (L) × \[1 + S/L\] × \[M/(L+S)\] = estimated maternities. S, L and M are Table 5 counts pooled across 2023–2025 at each published age. Split the combined ONS ages first in the main model, then calculate at Age (SY). [The displayed birth rates provide context and are not applied within this conversion. (LM edit)]{.lm-edit}
+**The conversion in one line:** projected births (L) × age weight × \[1 + S/L\] × \[M/(L+S)\] × Bookings uplift = adjusted maternities. S, L and M are Table 5 counts pooled across 2023–2025 at each published age. Split the combined ONS ages first in the main model, then calculate at Age (SY). [The displayed birth rates provide context and are not applied within this conversion. (LM edit)]{.lm-edit}
 
-For illustration only, a combined modifier of **0.99** means an estimated **99 ONS-defined maternities for every 100 live-born babies**. A projection of 10,000 live births would therefore become 9,900 maternities if that modifier applied throughout. The actual analysis uses different age-specific modifiers, including both stillbirths and multiplicity, without separately forecasting each birth-outcome type.
+For illustration only, national factors with a product of **0.99** and a Bookings uplift of **1.25** give **123.75 adjusted maternities per 100 live-born babies** at an age with weight 1. The model applies each LA/age's factors before adding the completed counts.
 
 | Shorthand | Meaning here |
 |----|----|
@@ -212,9 +214,9 @@ For illustration only, a combined modifier of **0.99** means an estimated **99 O
 
 ## 1.4 Overview of the approach {#approach-overview}
 
-Start with ONS births (L), split combined ages using local MSDS shares, then allow for stillbirths and multiplicity. Apply separate delivery and booking proportions at LA(R) × Age (SY). Add the completed contributions into the reporting groups.
+Start with ONS births (L), split combined ages using the resident-LA MSDS age mix, and apply the stillbirth, multiplicity and Bookings uplift modifiers. Allocate the shared adjusted maternity total independently to booking and delivery categories at LA(R) × Age (SY), then sum the completed contributions.
 
-![Current projection process](assets/projection_process_current.svg){fig-alt="2022-based ONS births (L), split at combined ages using pooled local MSDS shares, adjusted for stillbirths and multiplicity, then separated into delivery and booking starting volumes and independently allocated before aggregation."}
+![Current projection process](assets/projection_process_current.svg){fig-alt="ONS live births adjusted for local age distribution, stillbirths, multiplicity and the Bookings uplift; one shared maternity total feeds independent delivery and booking allocations, including the Booking Denominator Factor residual group."}
 
 ```{r}
 #| label: data-source-banner
@@ -361,7 +363,7 @@ multiplicity_table(multiplicity_data, 2025) |>
 
 #### Stillbirth and multiplicity modifiers {#method-1-maternity-conversion-ratios}
 
-The table is drawn from **`ons_modifications`**, the object joined into the master. It shows the original ONS age, the applied Age (SY), both factors and their combined modifier. Under-14 and 50+ factors are shared within those published groups. Unsplit fallback rows apply only where no local age distribution is available.
+The table is drawn from **`ons_modifications`**, the object joined into the master. It shows the original ONS age, the applied Age (SY), the two national factors and their product. The [Bookings uplift](#bookings-uplift-adjustment) is also applied in the full model. Under-14 and 50+ national factors are shared within those published groups. Unsplit rows have grouped national factors but no exact-age Bookings uplift, so positive adjusted projections remain unestimated.
 
 ```{r}
 #| label: method-1-maternity-modifier
@@ -417,7 +419,7 @@ Source: Office for National Statistics, *Methodology used to produce the 2022-ba
 
 Source: [ONS methodology, section 2: Overview of methodology](https://www.ons.gov.uk/peoplepopulationandcommunity/populationandmigration/populationprojections/methodologies/methodologyusedtoproducethe2022basedsubnationalpopulationsprojectionsforengland#overview-of-methodology).
 
-**Implications for our calculations:** the ONS birth input already reflects its fertility assumptions, projected population and national scaling. We therefore do not multiply it by female population or fertility rates again. Our subsequent steps convert babies into maternities and allocate those maternities to delivery trusts using MSDS shares. ONS's 2022 demographic base, our 2023–2025 registration modifier period, and our 2023/24–2025/26 MSDS allocation period serve different purposes.
+**Implications for our calculations:** the ONS birth input already reflects its fertility assumptions, projected population and national scaling. We therefore do not multiply it by female population or fertility rates again. Our subsequent modifiers adjust age distribution, stillbirths, multiplicity and bookings, then allocate maternities using MSDS shares and the shared denominator. ONS's 2022 demographic base, the 2023–2025 registration counts and the 2023/24–2025/26 resident birth totals serve different purposes. The Bookings uplift and observed destination counts use every row of the supplied cohort, without an additional date filter.
 
 ### 2.1.6 Birth rates: demographic context {#method-1-birth-rates-secondary-demographic-context}
 
@@ -597,9 +599,11 @@ population_plot(
 | Input | Unit and detail | Use |
 |----|----|----|
 | Supplied pregnancy cohort | One pregnancy row; resident LA, maternal age, booking provider/date and recorded delivery details | Recorded activity, patient flows and provider numerators |
-| Resident-LA totals | Recorded resident maternities by delivery financial year and maternal age | Resident comparisons, age shares and delivery denominators; includes residents delivering outside cluster trusts |
+| Resident-LA totals | Recorded resident maternities by delivery financial year and maternal age | Resident comparisons, age shares and the birth denominator for the shared maternity estimate; includes residents delivering outside cluster trusts |
 
 The report uses the parquet files with prepared inputs. Detailed counting rules accompany the relevant delivery and booking views.
+
+**Booking coverage assumption.** The resident-LA totals contain recorded births but no booking totals. The supplied cohort provides the booking evidence. Outside LAs use the cluster-resident Bookings uplift at the same age as a proxy. The [method review tables](#booking-denominator-review) show the difference between resident and cohort counts and the estimated Booking Denominator Factor group.
 
 ### 2.2.2 Cluster deliveries and antenatal starts {#cluster-activity}
 
@@ -762,7 +766,7 @@ delivery_geography$matrix_values_table
 
 #### 2.2.3.2 Hospital deliveries by resident LA and age, 2025/26 {#delivery-la-age-mapping}
 
-The first grids show **what proportion of an organisation's deliveries came from each LA**. The second show the **age mix within each LA's deliveries at that organisation**. These are different denominators. Both describe 2025/26 non-home deliveries. Projection allocation proportions separately pool all three years, including home births in the resident denominator.
+The first grids show **what proportion of an organisation's deliveries came from each LA**. The second show the **age mix within each LA's deliveries at that organisation**. These are different denominators. Both describe 2025/26 non-home deliveries. Projection allocation proportions use all supplied cohort rows and the shared estimated resident maternity denominator, including home births and the no-recorded-delivery allowance.
 
 ##### LA contributions
 
@@ -1295,7 +1299,7 @@ booking_icb_delivery_over_time$change_table
 
 ### 2.2.8 Pooled delivery allocation proportions {#projection-feeder-mapping}
 
-Each dot summarises the **share of an LA/age band's MSDS-recorded maternities delivered at this organisation** across 2023/24–2025/26. Chart shares sum the individual-age numerators and denominators before division. These displayed pooled shares are fixed. The forecast holds the underlying **individual-age shares** fixed too; its resulting band-level shares may vary as the projected age mix changes. Unlike section 2.2.3's incoming-contribution charts, the denominator is the resident LA/age total, including home births.
+Each dot summarises the **share of an LA/age band's estimated resident maternity denominator allocated to this delivery organisation**, using all supplied cohort rows. Chart shares sum the individual-age numerators and denominators before division. These displayed pooled shares are fixed. The forecast holds the underlying **individual-age shares** fixed too; its resulting band-level shares may vary as the projected age mix changes. Unlike section 2.2.3's incoming-contribution charts, the denominator is the shared resident LA/age estimate, including home births and the no-recorded-delivery allowance. Counts with a calibration issue remain in the tables, with the reason shown and no allocation percentage.
 
 Charts retain cluster LAs and the ten largest additional feeders, grouping the remainder. Tables retain the pooled recorded feeder LAs and individual ages, including LAs without matching ONS coverage. Those LAs inform the descriptive shares but have no projected contribution; coverage lists unmatched baseline records. A missing or zero resident denominator means the destination share cannot be interpreted.
 
@@ -1332,7 +1336,7 @@ htmltools::browsable(htmltools::tagList(first_draft_projections$mapping_tables))
 ::: panel-tabset
 #### Delivery proportions
 
-For each **LA(R) × Age (SY) × delivery trust**, compare its annual proportion with its own pooled three-year proportion. Each box shows the spread of those differences across cells for that trust and year. **Zero = the pooled value; +5 means 5 percentage points higher.** The denominator is all resident maternities, including home births.
+For each **LA(R) × Age (SY) × delivery trust**, compare its annual proportion with its full-cohort proportion. Each box shows the spread of those differences across cells for that trust and year. **Zero = the pooled value; +5 means 5 percentage points higher.** This descriptive comparison uses recorded resident births, including home births; the model allocation additionally includes the Bookings uplift in its denominator. Annual counts use delivery financial years; the pooled numerator uses every supplied cohort row with a recorded birth. Review differences in their periods in the method tables.
 
 ```{r}
 #| label: variation-msds-delivery
@@ -1341,7 +1345,7 @@ htmltools::browsable(first_draft_projections$input_variation$delivery_chart)
 
 #### Booking proportions
 
-The same comparison for **LA(R) × Age (SY) × booking trust**, using all recorded bookings and the booking year. These are allocation proportions, independent of any future booking uplift.
+For **LA(R) × Age (SY) × booking trust**, annual shares use records with a booking date in that financial year. The pooled comparator uses every supplied cohort row, including records with no recorded booking or an unknown provider. This is a descriptive check of provider shares, with different date coverage in the annual and pooled denominators. It excludes the estimated Booking Denominator Factor and is not the final model allocation denominator.
 
 ```{r}
 #| label: variation-msds-booking
@@ -1537,7 +1541,7 @@ older_age_review$plots$conversion
 older_age_review$plots$stillbirth_uplift
 ```
 
-For the **ONS-count service projection**, both adjustments are applied to ONS live births before MSDS allocation. The supplied MSDS counts already include live-birth and stillbirth maternities; they supply proportions and are not uplifted. Changing stillbirth, multiplicity or home-birth relationships over time would require an explicit scenario, rather than a fixed adjustment.
+For the **ONS-count service projection**, both adjustments are applied to ONS live births before MSDS allocation. The supplied MSDS recorded births already include live-birth and stillbirth maternities; they receive no additional national conversion. The Bookings uplift separately estimates the shared resident maternity denominator used for allocation. Changing stillbirth, multiplicity or home-birth relationships over time would require an explicit scenario, rather than a fixed adjustment.
 
 The supplied **Table 2** has age-specific stillbirth information at country level; its regional and LA rows are all-age only. **Table 3** has all-age maternities and home maternities. This age-focused review therefore uses finer national Table 5 counts and Table 4 home-birth age groups; it does not present all-age regional rates as older-mother rates. Sources: [ONS projection fertility assumptions](https://www.ons.gov.uk/peoplepopulationandcommunity/populationandmigration/populationprojections/methodologies/nationalpopulationprojectionsfertilityassumptions2022based) and [ONS birth definitions](https://www.ons.gov.uk/peoplepopulationandcommunity/birthsdeathsandmarriages/livebirths/methodologies/userguidetobirthstatistics).
 
@@ -1662,7 +1666,7 @@ if (!is.null(msds_age_review)) msds_age_review$coverage |> gt() |>
 
 #### MSDS retrospective check
 
-The retrospective model uses **pooled 2023/24–2025/26 allocation proportions** with ONS 2023–2025 counts, then compares estimates with observed MSDS activity. Separate 40–43, 44, 45–49 and 50+ panels expose differences hidden in an overall 44+ total; the trust panels show whether opposite local changes cancel at cluster level. The first modelled count can differ from recorded 2023/24 activity; that gap is part of the assessment. This is an internal retrospective diagnostic using the existing inputs, not an independent out-of-sample validation.
+The retrospective model uses **full-cohort allocation proportions** with ONS 2023–2025 counts, then compares estimates with observed MSDS activity. Separate 40–43, 44, 45–49 and 50+ panels expose differences hidden in an overall 44+ total; the trust panels show whether opposite local changes cancel at cluster level. The first modelled count can differ from recorded 2023/24 activity; that gap is part of the assessment. This is an internal retrospective diagnostic using the existing inputs, not an independent out-of-sample validation.
 
 ```{r}
 #| label: review-msds-backtest
@@ -1714,11 +1718,21 @@ Each LA(R) keeps one colour. **Circles and solid lines:** ONS published maternit
 ons_exploration$resident_comparison$chart
 ```
 
-MSDS uses the supplied resident-LA totals, including residents delivering outside cluster trusts and all supplied ages. The vertical line marks 2025.
+MSDS uses the supplied resident-LA totals, including residents delivering outside cluster trusts and all supplied ages. The adjusted projections also include the Bookings uplift allowance for pregnancies without a recorded delivery, so their scope is wider than the recorded maternity series. The vertical line marks 2025.
 
 # 3. Projections: Delivery and Booking {#first-draft-projections}
 
-Derived from ONS and MSDS. Calculations retain LA(R) and Age (SY) until each provider contribution is complete; charts then show reporting age bands and organisation totals.
+The model projects resident maternities, deliveries at providers and bookings at providers. It applies four modifiers to ONS births, then allocates the shared total separately to delivery and booking categories. Calculations retain LA(R) and Age (SY) until each contribution is complete; charts then show age bands and organisation totals. The modifiers and allocation proportions stay fixed, so future changes follow the ONS birth projections.
+
+```{r}
+#| label: projection-la-match-alert
+#| results: asis
+if (nrow(first_draft_projections$la_source_mismatches)) {
+  cat("**LA source mismatch requiring review:** ",
+    paste(first_draft_projections$la_source_mismatches$LA, collapse = ", "),
+    ". See the [LA source matching check](#booking-denominator-review) before using the projections.\n\n", sep = "")
+}
+```
 
 ## 3.1 How the projections are calculated {#projection-method}
 
@@ -1736,22 +1750,95 @@ At each published age, pool the 2023–2025 Table 5 stillbirth and live-birth co
 
 At the same published age, calculate **pooled maternities ÷ pooled births (L+S)** from the same three years of Table 5 counts. Apply this factor after the stillbirth adjustment to convert babies into maternities. Both national factors remain fixed across future years.
 
+#### Bookings uplift adjustment {#bookings-uplift-adjustment}
+
+For each cluster LA(R)/Age (SY), divide **all supplied cohort pregnancy records by records with `birth_flag = 1`**. Equivalently, if *p* is the proportion with **No recorded delivery**, the multiplier is **1 ÷ (1 − p)**. Pool counts before dividing and use every supplied cohort row, without an additional date filter. Home births and **Delivery location unknown** are recorded births; neither counts as **No recorded delivery**.
+
+Rows without a usable resident LA or maternal age remain in the source review but cannot inform an LA/age calculation.
+
+**Proxy for outside LAs.** Pool the cohort counts for residents of the configured cluster LAs at each age. Apply that age's ratio to outside LAs, assuming their maternity pathways are sufficiently similar. Use the same-age cluster ratio where a cluster LA has no recorded-birth evidence of its own. No ratio is borrowed from another age; a missing same-age ratio leaves the projection explicitly unestimated.
+
+Multiply the ONS maternity calculation by this fourth modifier. For the MSDS allocation denominator, multiply **resident births from `total_births_by_LA_2326` by the same Bookings uplift**. Both allocation views use this shared estimated resident maternity denominator.
+
+**Booking Denominator Factor = shared maternity denominator − supplied cohort pregnancy count.** Keep this residual group separate from observed booking providers, **No recorded booking** and **Booking provider unknown**. It is an estimated volume without linked booking detail. On the delivery side, retain resident births missing from the cohort as **Not represented in linked cohort** and estimate **No recorded delivery** as the shared denominator minus resident births.
+
+#### Resident and cohort reconciliation {#booking-denominator-review}
+
+The two files are expected to follow the same source processing. Review any difference between resident births and recorded cohort births before interpreting it as missing pathway coverage. The tables show the size and location of each gap, the modifier used, and the resulting booking residual. They cover configured cluster LAs and LAs represented in the supplied cohort. Proxy rates and residual counts are modelling assumptions, not additional observed patients.
+
+Every configured LA and every LA supplied in either MSDS file is expected to match both the resident birth counts and ONS births. The **LA source matching** check lists any missing code and identifies the source to review. An outside LA can lack linked cohort rows and use the agreed same-age cluster proxy; that is separate from a missing resident or ONS source. The full LA check is saved in the projection outputs and QA details.
+
+A negative residual or a proxy no-delivery estimate below the supplied count is flagged. That cell's provider allocations remain **Unallocated** while the source counts are checked. Missing uplift evidence remains missing in the projected total; it is not replaced with zero.
+
+Unmatched provider flows are QA issues requiring investigation. The provider coverage table identifies their LA, Age (SY) and reason. Affected provider totals and percentage changes remain unavailable until those issues are resolved; known-age gaps affect their band and missing-age gaps can affect any band. Available allocations remain in the master and accounting tables for checking.
+
+::: panel-tabset
+#### LA source matching
+
+```{r}
+#| label: projection-la-source-matching
+#| results: asis
+if (nrow(first_draft_projections$la_source_mismatches)) {
+  first_draft_projections$la_source_mismatches_table
+} else {
+  cat("All ", nrow(first_draft_projections$la_source_matching),
+    " configured or supplied MSDS LA codes match the resident birth counts and ONS births.\n\n", sep = "")
+}
+```
+
+#### By LA
+
+```{r}
+#| label: booking-denominator-summary
+first_draft_projections$booking_denominator_summary_table
+```
+
+#### By LA and age
+
+```{r}
+#| label: booking-denominator-age-review
+first_draft_projections$booking_calibration_table
+```
+
+#### Source periods
+
+```{r}
+#| label: booking-denominator-period-review
+first_draft_projections$booking_period_table
+first_draft_projections$booking_exclusions_table
+```
+
+#### Missing uplift evidence
+
+```{r}
+#| label: booking-uplift-unestimated
+first_draft_projections$unestimated_cells_table
+```
+
+#### Provider coverage
+
+```{r}
+#| label: provider-projection-gaps
+first_draft_projections$provider_projection_gaps_table
+```
+:::
+
 #### Example: from ONS births to adjusted maternities
 
-**Fictional counts and factors.** One LA has 200 projected births (L) in its combined ≤15 source row. The local age shares split that count before the two national adjustments:
+**Fictional counts and factors.** One LA has 200 projected births (L) in its combined ≤15 source row. The local age shares split that count before the remaining modifiers. This illustration uses a Bookings uplift of **1.25** at each displayed age:
 
-| Age (SY) | Local age share | Births (L) after split | Stillbirth factor | Births (L+S) | Multiplicity factor | Adjusted maternities |
-|---:|---:|---:|---:|---:|---:|---:|
-| 13 | 10% | 20 | 1.05 | 21 | 0.98 | 20.58 |
-| 14 | 20% | 40 | 1.025 | 41 | 0.98 | 40.18 |
-| 15 | 70% | 140 | 1.00 | 140 | 0.99 | 138.60 |
-| **Total** | **100%** | **200** |  | **202** |  | **199.36** |
+| Age (SY) | Local age share | Births (L) after split | Stillbirth factor | Births (L+S) | Multiplicity factor | Bookings uplift | Adjusted maternities |
+|---:|---:|---:|---:|---:|---:|---:|---:|
+| 13 | 10% | 20 | 1.05 | 21 | 0.98 | 1.25 | 25.725 |
+| 14 | 20% | 40 | 1.025 | 41 | 0.98 | 1.25 | 50.225 |
+| 15 | 70% | 140 | 1.00 | 140 | 0.99 | 1.25 | 173.25 |
+| **Total** | **100%** | **200** |  | **202** |  |  | **249.20** |
 
 ### 3.1.2 Allocating maternities to providers {#provider-allocation}
 
-Pool MSDS counts across 2023/24–2025/26, then divide. A delivery proportion is destination deliveries ÷ all resident maternities in the same LA(R)/Age (SY). A booking proportion is destination bookings ÷ all bookings in that LA(R)/Age (SY), using booking years. Apply the two sets of proportions independently and hold them fixed across future years.
+Each destination count is divided by the **same estimated resident maternity denominator** for that LA(R)/Age (SY). Delivery counts retain each trust, home births, delivery location unknown, no recorded delivery and births not represented in the linked cohort. Booking counts retain each provider, no recorded booking, booking provider unknown and the Booking Denominator Factor.
 
-Delivery and booking starting volumes both currently equal adjusted maternities. A booking uplift has not yet been applied.
+**No recorded booking** means both booking provider and booking date are absent. A supplied date without a usable provider remains **Booking provider unknown**; a supplied provider identifies its trust even where the date is missing. Apply both sets of proportions independently to the same adjusted maternity total and hold them fixed across projection years. Do not add the two views together.
 
 #### Example: from resident maternities to trust deliveries {#allocation-worked-example}
 
@@ -1763,25 +1850,25 @@ Delivery and booking starting volumes both currently equal adjusted maternities.
 
 | LA(R) / Age (SY) | Births (L), 2047 | Combined modifier | Adjusted maternities |
 |------------------|-----------------:|------------------:|---------------------:|
-| B / 25           |              110 |             0.969 |               106.59 |
-| B / 30           |              120 |            0.9898 |              118.776 |
-| C / 25           |               90 |             0.969 |                87.21 |
-| C / 30           |              130 |            0.9898 |              128.674 |
+| B / 25           |              110 |             1.21125 |               133.2375 |
+| B / 30           |              120 |            1.23725 |              148.47 |
+| C / 25           |               90 |             1.21125 |                109.0125 |
+| C / 30           |              130 |            1.23725 |              160.8425 |
 
-The modifier combines the stillbirth and multiplicity factors described above.
+The modifier combines stillbirth, multiplicity and an illustrative Bookings uplift of 1.25; these ages have age weight 1.
 :::
 
 ::: example-step
 ##### 2. Use pooled delivery proportions
 
-| LA(R) / Age (SY) | Resident maternities | Delivered at Trust A | Proportion |
+| LA(R) / Age (SY) | Shared denominator | Delivered at Trust A | Proportion |
 |------------------|---------------------:|---------------------:|-----------:|
-| B / 25           |                  285 |                  171 |        60% |
-| B / 30           |                  285 |                  228 |        80% |
-| C / 25           |                  285 |                  114 |        40% |
-| C / 30           |                  285 |                   57 |        20% |
+| B / 25           | 356.25 | 171 | 48% |
+| B / 30           | 356.25 | 228 | 64% |
+| C / 25           | 356.25 | 114 | 32% |
+| C / 30           | 356.25 | 57 | 16% |
 
-These are three-year counts. Other trusts, home and other destinations remain in the resident denominator.
+The 285 resident births and illustrative uplift of 1.25 give a shared denominator of 356.25. Other trusts, home births, unknown locations and no recorded delivery all remain in that denominator.
 :::
 
 ::: example-step
@@ -1789,18 +1876,18 @@ These are three-year counts. Other trusts, home and other destinations remain in
 
 | LA(R) / Age (SY) | Adjusted maternities | Trust A proportion | Trust A projection |
 |----|---:|---:|---:|
-| B / 25 | 106.59 | 60% | `r round(trust_example$Modelled_2047[1], 2)` |
-| B / 30 | 118.776 | 80% | `r round(trust_example$Modelled_2047[2], 2)` |
-| C / 25 | 87.21 | 40% | `r round(trust_example$Modelled_2047[3], 2)` |
-| C / 30 | 128.674 | 20% | `r round(trust_example$Modelled_2047[4], 2)` |
+| B / 25 | 133.2375 | 48% | `r round(trust_example$Modelled_2047[1], 2)` |
+| B / 30 | 148.47 | 64% | `r round(trust_example$Modelled_2047[2], 2)` |
+| C / 25 | 109.0125 | 32% | `r round(trust_example$Modelled_2047[3], 2)` |
+| C / 30 | 160.8425 | 16% | `r round(trust_example$Modelled_2047[4], 2)` |
 
-For B, age 25: **106.59 × 60% = 63.954** deliveries at Trust A.
+For B, age 25: **133.2375 × 48% = 63.954** deliveries at Trust A.
 :::
 
 :::: example-step
 ##### 4. Add the completed contributions
 
-| Trust A       |                               Maternities |
+| Trust A       |                      Projected deliveries |
 |---------------|------------------------------------------:|
 | Modelled 2025 |      `r round(example_modelled_start, 1)` |
 | Modelled 2047 | **`r round(example_modelled_finish, 1)`** |
@@ -1815,11 +1902,13 @@ Sum unrounded contributions, then display age bands and trust/ICB/cluster totals
 
 ## 3.2 Adjusted resident maternity projections {#method-1-estimated-maternities-from-projected-births}
 
+These resident totals include the Bookings uplift. The method tables identify local rates, same-age cluster proxies and any unestimated cells.
+
 These charts show estimated resident maternities through 2047, in total and by maternal age. All years, including 2023–2025, are calculated from the [2022-based ONS migration-category birth projection](#method-1-ref-birth-projections) on 2023 LA geography. They are not published maternity counts.
 
-ONS model ages 15 and 44 already include births below 15 and above 44. **Splitting these rows adds no births.** The shared master retains the source ONS age and the estimated Age (SY), applies stillbirth and multiplicity factors, and then sums adjusted maternities by resident LA.
+ONS model ages 15 and 44 already include births below 15 and above 44. **Splitting these rows adds no births.** The shared master retains the source ONS age and the estimated Age (SY), applies stillbirth, multiplicity and Bookings uplift factors, then sums adjusted maternities by resident LA.
 
-All seven reporting bands use the same completed individual-age values as section 3: **Under 20, 20–24, 25–29, 30–34, 35–39, 40–44 and 45+**. These resident counts are taken before delivery or booking allocation. Rows without a local boundary-age split remain in the total and are shown separately as unsplit ages. Small differences from published all-age birth totals can arise from source rounding.
+All seven reporting bands use the same completed individual-age values as section 3: **Under 20, 20–24, 25–29, 30–34, 35–39, 40–44 and 45+**. These resident counts are taken before delivery or booking allocation. Rows without a local boundary-age split retain their ONS source counts for review, but have no exact-age Bookings uplift. Their adjusted projections and affected totals remain unestimated. Small differences from published all-age birth totals can arise from source rounding.
 
 ::: panel-tabset
 ### Total {#method-1-total}
@@ -1831,7 +1920,7 @@ All seven reporting bands use the same completed individual-age values as sectio
 #| fig-height: 6
 projection_plot(
   total_maternity_projections,
-  "Source: ONS 2022-based migration-category projected live births, 2023 geography; age-specific stillbirth/multiplicity modifiers calculated from pooled 2023-2025 Table 5 counts.",
+  "Source: ONS 2022-based migration-category projected live births, 2023 geography; age-specific national modifiers from pooled 2023-2025 Table 5 counts and the MSDS Bookings uplift.",
   area_colours
 )
 ```
@@ -1844,7 +1933,7 @@ projection_plot(
 #| fig-height: 6
 projection_plot(
   age_band_projections |> filter(age_band == "Under 20"),
-  "Under 20. ONS source births split with local MSDS age shares, then adjusted at individual age; same master as section 10.",
+  "Under 20: local age shares, stillbirth, multiplicity and Bookings uplift modifiers applied; same shared master as the provider projections.",
   area_colours
 )
 ```
@@ -1857,7 +1946,7 @@ projection_plot(
 #| fig-height: 6
 projection_plot(
   age_band_projections |> filter(age_band == "20-24"),
-  "Maternal ages 20-24. Source: ONS 2022-based SNPP; age-specific maternity modifier applied.",
+  "Ages 20-24: ONS live births with stillbirth, multiplicity and Bookings uplift modifiers at each age.",
   area_colours
 )
 ```
@@ -1870,7 +1959,7 @@ projection_plot(
 #| fig-height: 6
 projection_plot(
   age_band_projections |> filter(age_band == "25-29"),
-  "Maternal ages 25-29. Source: ONS 2022-based SNPP; age-specific maternity modifier applied.",
+  "Ages 25-29: ONS live births with stillbirth, multiplicity and Bookings uplift modifiers at each age.",
   area_colours
 )
 ```
@@ -1883,7 +1972,7 @@ projection_plot(
 #| fig-height: 6
 projection_plot(
   age_band_projections |> filter(age_band == "30-34"),
-  "Maternal ages 30-34. Source: ONS 2022-based SNPP; age-specific maternity modifier applied.",
+  "Ages 30-34: ONS live births with stillbirth, multiplicity and Bookings uplift modifiers at each age.",
   area_colours
 )
 ```
@@ -1896,7 +1985,7 @@ projection_plot(
 #| fig-height: 6
 projection_plot(
   age_band_projections |> filter(age_band == "35-39"),
-  "Maternal ages 35-39. Source: ONS 2022-based SNPP; age-specific maternity modifier applied.",
+  "Ages 35-39: ONS live births with stillbirth, multiplicity and Bookings uplift modifiers at each age.",
   area_colours
 )
 ```
@@ -1909,7 +1998,7 @@ projection_plot(
 #| fig-height: 6
 projection_plot(
   age_band_projections |> filter(age_band == "40-44"),
-  "Ages 40-44: completed individual-age master counts; age 44 comes from the local split of ONS 44+ births (L).",
+  "Ages 40-44: stillbirth, multiplicity and Bookings uplift modifiers applied; age 44 uses the local split of ONS 44+ births.",
   area_colours
 )
 ```
@@ -1922,7 +2011,7 @@ projection_plot(
 #| fig-height: 6
 projection_plot(
   age_band_projections |> filter(age_band == "45+"),
-  "Ages 45+: local split of ONS 44+ births (L), then individual-age factors. Completed master counts summed for reporting.",
+  "Ages 45+: local split of ONS 44+ births, then stillbirth, multiplicity and Bookings uplift modifiers at each age.",
   area_colours)
 ```
 
@@ -1931,13 +2020,14 @@ projection_plot(
 ```{r}
 #| label: method-1-projected-maternities-unsplit
 #| results: asis
-unsplit_projection <- age_band_projections |> filter(age_band == "Unsplit ages", projected_maternities > 0)
+unsplit_projection <- age_band_projections |>
+  filter(age_band == "Unsplit ages", is.na(projected_maternities) | projected_maternities > 0)
 if (nrow(unsplit_projection)) {
-  cat("No local age distribution for these boundary counts. Included in resident totals, but not assigned to an age band or provider.\n\n")
+  cat("These boundary rows have no local exact-age split. Their age-specific Bookings uplift and adjusted projections are unestimated; the missing-evidence table identifies the source cells.\n\n")
   print(ons_year_table(unsplit_projection |> rename(local_authority = area_name), projected_maternities,
-    "Shared master: explicitly unsplit boundary rows only."))
+    "Unsplit boundary rows: missing estimates also leave affected resident totals unestimated."))
 } else {
-  cat("All resident projection counts have an individual-age split.\n")
+  cat("All positive resident projection source counts have an individual-age split.\n")
 }
 ```
 :::
@@ -1946,7 +2036,7 @@ if (nrow(unsplit_projection)) {
 
 ### 3.3.1 Total deliveries and patient flows {#projection-total-maternities}
 
-Each line sums completed delivery contributions across resident LAs and exact ages. All modelled points use the fixed pooled three-year MSDS proportions. The flow comparison also shows recorded 2025/26 deliveries; section 3.3.3 compares each projected year with that observed total.
+Each line sums completed delivery contributions across resident LAs and exact ages. All modelled points use the fixed full-cohort MSDS proportions. The flow comparison also shows recorded 2025/26 deliveries; section 3.3.3 compares each projected year with that observed total.
 
 ::: panel-tabset
 #### Trusts
@@ -1971,6 +2061,8 @@ htmltools::browsable(htmltools::tagList(first_draft_projections$total_charts$ICB
 
 Both panels retain the main cluster LAs and the ten largest additional feeders across the two years; remaining LAs share an **All other feeder LAs** group. Unknown residence stays separate. Home births and destinations outside the cluster are excluded, matching the trust totals above.
 
+The projected panel shows available allocations. Where coverage is incomplete, the displayed volume is only the allocated portion and no percentage change is calculated; grey also marks flows with no recorded starting count.
+
 ```{r}
 #| label: projection-delivery-sankey-comparison
 htmltools::browsable(first_draft_projections$sankey_comparison$display)
@@ -1987,17 +2079,17 @@ first_draft_projections$all_totals_table
 
 ### 3.3.2 Projected deliveries and change by age {#projection-age-specific-flows}
 
-The incoming-maternity charts sum completed master-table counts. Their change charts compare each summed age band with its **modelled 2025** total. These percentages describe the resulting trajectory; they are not multipliers applied to observed MSDS counts.
+The delivery charts sum completed LA/age contributions. Their change charts compare each age band with its **modelled 2025 delivery total**. The separate ONS growth tables show the source birth growth for each LA and individual age; ages split from a combined boundary share that source row's growth.
 
-**Each row:** ONS births (L) × local exact-age weight × stillbirth factor × multiplicity factor × direct delivery proportion. Sum completed LA/age contributions into reporting bands. Band change = summed future modelled maternities ÷ summed reference modelled maternities − 1; a zero reference has no percentage change.
+**Each row:** ONS births (L) × local exact-age weight × stillbirth factor × multiplicity factor × Bookings uplift × direct delivery proportion. **Age-band change = projected deliveries in that band ÷ modelled 2025 deliveries in that band − 1.** A zero reference or incomplete allocation has no percentage change.
 
-Tables retain exact ages and label the combined ONS boundary used. Missing occupied resident denominators stop preparation for correction; ONS cells with no recorded age allocation stay unallocated rather than being assigned to a trust.
+Tables retain individual ages and identify their ONS source age. The [method tables](#booking-denominator-review) identify any unavailable estimates.
 
 ::::: panel-tabset
 #### Trusts
 
 ::: panel-tabset
-##### Change in modelled counts
+##### Change from modelled 2025
 
 ```{r}
 #| label: projection-age-trusts-growth-grid
@@ -2005,7 +2097,7 @@ Tables retain exact ages and label the combined ONS boundary used. Missing occup
 htmltools::browsable(htmltools::tagList(first_draft_projections$age_grids$Trust$growth_chart))
 ```
 
-##### Incoming maternities
+##### Projected deliveries
 
 ```{r}
 #| label: projection-age-trusts-incoming-grid
@@ -2017,7 +2109,7 @@ htmltools::browsable(htmltools::tagList(first_draft_projections$age_grids$Trust$
 #### ICBs and whole cluster
 
 ::: panel-tabset
-##### Change in modelled counts
+##### Change from modelled 2025
 
 ```{r}
 #| label: projection-age-icbs-cluster-growth-grid
@@ -2025,7 +2117,7 @@ htmltools::browsable(htmltools::tagList(first_draft_projections$age_grids$Trust$
 htmltools::browsable(htmltools::tagList(first_draft_projections$age_grids$ICB_Cluster$growth_chart))
 ```
 
-##### Incoming maternities
+##### Projected deliveries
 
 ```{r}
 #| label: projection-age-icbs-cluster-incoming-grid
@@ -2034,7 +2126,7 @@ htmltools::browsable(htmltools::tagList(first_draft_projections$age_grids$ICB_Cl
 ```
 :::
 
-#### ONS growth by individual LA/age — tables
+#### ONS birth growth by individual LA/age — tables
 
 ```{r}
 #| label: projection-age-all-growth-tables
@@ -2042,7 +2134,7 @@ htmltools::browsable(htmltools::tagList(first_draft_projections$age_grids$ICB_Cl
 htmltools::browsable(first_draft_projections$age_tables$growth_table)
 ```
 
-#### Incoming maternities — tables
+#### Projected deliveries — tables
 
 ```{r}
 #| label: projection-age-all-incoming-tables
@@ -2053,7 +2145,7 @@ htmltools::browsable(first_draft_projections$age_tables$incoming_table)
 
 ### 3.3.3 Change from recorded 2025/26 deliveries {#projection-percentage-change}
 
-Compare modelled totals with each organisation's **observed 2025/26** count. The 2025 point can be above or below zero because it includes the model-versus-observed level difference. Later values combine that level difference and subsequent modelled change. A zero observed count has no calculable percentage change.
+Compare modelled totals with each organisation's **observed 2025/26** count. The 2025 point can be above or below zero because it includes the model-versus-observed level difference. Later values combine that level difference and subsequent modelled change. A zero observed count or incomplete provider projection has no calculable percentage change.
 
 ::: panel-tabset
 #### Trusts
@@ -2083,9 +2175,13 @@ first_draft_projections$all_changes_table
 
 ## 3.4 Booking projections {#booking-projections}
 
-Booking proportions use **all recorded bookings**, including pregnancies without a recorded delivery. For now, `Booking_projection_base` equals adjusted maternities. A later agreed uplift can increase this base before allocation; it does not change the delivery base. These charts therefore show booking allocations **without an allowance for additional pregnancies that do not reach birth**.
+Booking projections allocate the shared adjusted maternity total to booking providers. A booking counts a pregnancy with recorded booking evidence, rather than the number of appointments. The total includes the Bookings uplift; outside LAs use the same-age cluster-resident proxy described in the method.
+
+**No recorded booking**, **Booking provider unknown** and **Booking Denominator Factor** remain separate. The residual group represents the estimated resident volume without linked booking detail; it is not assigned to a trust or counted as observed no-booking activity.
 
 Completed counts are summed into Age (B), booking trust, booking-provider ICB and cluster. Percentage changes use the **modelled 2025 booking total**, not observed bookings. Do not add these counts to the delivery projections.
+
+The [method tables](#booking-denominator-review) identify any unavailable estimates.
 
 ::::: panel-tabset
 ### Trusts
@@ -2105,7 +2201,7 @@ htmltools::browsable(first_draft_projections$booking_grids$total$Trust)
 htmltools::browsable(first_draft_projections$booking_grids$age$Trust)
 ```
 
-#### Change from modelled reference
+#### Change from modelled 2025
 
 ```{r}
 #| label: booking-projection-trust-change
@@ -2130,7 +2226,7 @@ htmltools::browsable(first_draft_projections$booking_grids$total$ICB_Cluster)
 htmltools::browsable(first_draft_projections$booking_grids$age$ICB_Cluster)
 ```
 
-#### Change from modelled reference
+#### Change from modelled 2025
 
 ```{r}
 #| label: booking-projection-icb_cluster-change
@@ -2151,11 +2247,33 @@ first_draft_projections$booking_age_table
 ```
 :::::
 
+### Booking Denominator Factor: size of the gap {#booking-denominator-projections}
+
+These tables show the projected residual volume and its share of adjusted maternities in 2025 and the final projection year, for configured cluster LAs and supplied feeder LAs. They describe the same master total; they are not extra bookings to add to it. Unresolved estimates display as **Unavailable**, with unallocated volumes shown separately.
+
+::: panel-tabset
+#### By LA
+
+```{r}
+#| label: booking-gap-projected-la
+first_draft_projections$booking_gap_table
+```
+
+#### By LA and age band
+
+```{r}
+#| label: booking-gap-projected-age
+first_draft_projections$booking_gap_age_table
+```
+:::
+
 ## 3.5 Compare modelled and recorded activity {#projection-comparisons}
 
 The [combined resident chart](#resident-source-comparison) compares ONS, MSDS and adjusted estimates by LA(R). The checks below examine the resident starting level and recorded provider activity.
 
 ### 3.5.1 Resident starting level versus published ONS maternities {#method-1-resident-level-check}
+
+The adjusted totals include the Bookings uplift allowance for pathways without a recorded delivery. Published ONS maternities require a live birth or stillbirth, so differences also reflect this wider scope.
 
 This table compares the shared master’s 2025 resident estimate with published ONS maternities for 2025, covering all ages in the same six LAs.
 
@@ -2188,7 +2306,7 @@ Differences from the published count are **`r scales::percent(resident_level_che
 
 ### 3.5.2 Retrospective delivery comparison, 2023/24–2025/26 {#projection-retrospective-check}
 
-This applies the same pooled 2023/24–2025/26 proportions to ONS 2023–2025 counts. It is an in-sample retrospective comparison, not an independent forecast or held-out test: the calibration period includes the observed years. Positive differences mean the modelled count exceeds the observation.
+This applies the same full-cohort proportions to ONS 2023–2025 counts. It is an in-sample retrospective comparison, not an independent forecast or held-out test: the calibration cohort includes the observed years. Positive differences mean the modelled count exceeds the observation.
 
 ```{r}
 #| label: first-draft-backtest-notes
@@ -2238,9 +2356,9 @@ first_draft_projections$backtest$all_table
 
 Material retained for review while the main report is reorganised. These detailed examples, audit tables and previous explanations remain available here.
 
-## Detailed maternity modifier example {#modifier-worked-comparison}
+## Detailed national conversion example {#modifier-worked-comparison}
 
-**Fictional numbers, following Method 1's calculation.** Follow the four steps in reading order. They start from pregnancies at one individual maternal age, for example age 25. The unusual outcomes are exaggerated to make the caveats visible.
+**Fictional numbers illustrating the national conversion within the model.** The four panels start from pregnancies at one individual maternal age, for example age 25. They explain the two national factors; the final note also applies the Bookings uplift. The unusual outcomes are exaggerated to make the counting rules visible.
 
 For the first year, imagine these **100 maternities**:
 
@@ -2311,14 +2429,14 @@ For **111 projected live-born babies**:
 ::::::::::::
 
 ::: example-method-note
-<strong>What the modifier carries forward:</strong> a fixed national relationship, applied locally and to each future year. The modifier does not remove home or private births. It estimates maternities reaching a live birth or stillbirth, not all pregnancies or unique women. In the trust projection these factors remain in the count calculation: adjusted ONS maternities are multiplied by MSDS allocation rates. There is no future/reference division to cancel them.
+<strong>What the modifier carries forward:</strong> a fixed national relationship, applied locally and to each future year. These two national factors retain home and private births. The full model then applies the Bookings uplift and independent destination proportions. For an illustrative uplift of 1.25, the 100 maternities above give a shared adjusted total of 125. There is no future/reference division to cancel them.
 :::
 
-**Age detail:** Table 5 supplies individual ages 14–49, under-14, 50+ and unknown age. The combined model retains individual ages, using under-14 for ages below 14 and 50+ for ages 50 and above. Every adjusted projection uses these same master-table calculations. Grouped factors are reserved for explicitly unsplit rows with no local MSDS age evidence.
+**Age detail:** Table 5 supplies individual ages 14–49, under-14, 50+ and unknown age. The combined model retains individual ages, using under-14 for ages below 14 and 50+ for ages 50 and above. The full model also applies the Bookings uplift. An unsplit row has no exact age for that modifier and remains explicitly unestimated until age evidence is available.
 
 **Historical charts are context, not projection inputs.** Banded historical births (L) are displayed as published, without estimating individual ages or converting them into maternities. Directly published maternities provide the observed maternity comparison. All adjusted projections split combined ages first and group completed results last. Table 7's banded multiplicity breakdown is descriptive context only. [ONS birth-registration tables](https://www.ons.gov.uk/peoplepopulationandcommunity/birthsdeathsandmarriages/livebirths/datasets/birthsinenglandandwalesbirthregistrations).
 
-**Assumptions carried forward:** each national age-specific factor is calculated from pooled 2023–2025 counts, held fixed across areas and future years. These estimate maternities reaching a live birth or stillbirth, not all pregnancies, unique women or contacts.
+**Assumptions carried forward:** each national age-specific factor is calculated from pooled 2023–2025 counts and held fixed across areas and future years. The national conversion estimates maternities reaching a live birth or stillbirth. The Bookings uplift adds the allowance for pathways without recorded delivery; the result still does not count pregnancies absent from maternity services, unique women or contacts.
 
 ## Detailed age-splitting example {#age-distribution-modifier}
 
@@ -2365,7 +2483,7 @@ Create separate rows for ages 13, 14 and 15. Each row refers to this **same sour
 ::: example-step
 ### Step 4: retain Age (SY) for the next calculations
 
-Apply the relevant stillbirth and multiplicity factors, then the separate delivery and booking proportions, before grouping results into Age (B).
+Apply the relevant stillbirth, multiplicity and Bookings uplift factors, then the independent delivery and booking proportions, before grouping results into Age (B).
 
 **Ages 16–43 already have their own ONS rows:** age weight = 1, so 100 × 1 remains 100. The combined 44+ row needs the same splitting approach as ≤15.
 
@@ -2415,7 +2533,7 @@ For **500 projected births (L)** at this LA(R), age and year:
 <strong>500 × 1.02 = 510 births (L+S)</strong>500 live-born babies plus an allowance of 10 stillborn babies.
 :::
 
-**510 is still a baby count.** It is not yet 510 maternities. MSDS recorded maternities already include stillbirth outcomes; do not uplift those counts again.
+**510 is still a baby count.** It is not yet 510 maternities. MSDS recorded births already include stillbirth outcomes; do not apply the stillbirth factor to those counts again.
 ::::
 
 :::: example-step
@@ -2424,7 +2542,7 @@ For **500 projected births (L)** at this LA(R), age and year:
 Suppose the same three years contain **5,880 maternities** at this age. The multiplicity factor is **5,880 ÷ 6,120 births (L+S)**.
 
 ::: example-calculation
-<strong>510 × (5,880 ÷ 6,120) = 490 maternities</strong>Use these adjusted maternities as the current starting volume for each delivery and booking allocation.
+<strong>510 × (5,880 ÷ 6,120) = 490 maternities</strong>An illustrative Bookings uplift of 1.25 gives **612.5 adjusted maternities** for both allocation views.
 :::
 
 A pregnancy with one live-born and one stillborn twin contributes **two babies but one maternity**. The two factors keep those units distinct.
@@ -2445,9 +2563,9 @@ A pregnancy with one live-born and one stillborn twin contributes **two babies b
 | Each age 16–43 | Weight 1; own ONS count | Own individual-age factors |
 | 44 and older | Split births (L) using pooled local MSDS shares | Own factor at 44–49; shared 50+ factor at ages 50+ |
 
-**Split first, convert second, allocate third.** Age weights use resident maternity counts pooled across 2023/24–2025/26. National factors then apply at Age (SY). Delivery and booking proportions each multiply their own starting-volume column; both currently equal adjusted maternities. Grouping into reporting bands happens afterwards.
+**Split first, convert second, allocate third.** Age weights use resident maternity counts pooled across 2023/24–2025/26. National factors then apply at Age (SY). The Bookings uplift follows the national factors. Both allocation views then use the shared adjusted maternity total. Grouping into reporting bands happens afterwards.
 
-**Keep the source total once.** Ages 13–55 are included by the current settings, with additional valid supplied ages retained. A combined group with no usable local age distribution remains unsplit and unallocated; only that exceptional row uses matching grouped registration factors. Missing ages cannot inform the split. Using a maternity age mix to split births (L) is an explicit approximation.
+**Keep the source total once.** Ages 13–55 are included by the current settings, with additional valid supplied ages retained. A combined group with no usable local age distribution remains unsplit and unallocated; only that exceptional row uses matching grouped registration factors. Its Bookings uplift cannot be estimated without an exact age; this remains visible in the missing-evidence table. Missing ages cannot inform the split. Using a maternity age mix to split births (L) is an explicit approximation.
 
 ### Worked example: extreme ages, one LA and one trust {#boundary-age-example}
 
@@ -2458,9 +2576,9 @@ A pregnancy with one live-born and one stillborn twin contributes **two babies b
 ::: example-step
 #### Step 1: make the matching modifiers
 
-For this compact example only, suppose every exact age within each displayed group has the same two national factors, repeated in all three years. The counts below illustrate those factors; the real code uses each exact age’s own published factors:
+For this compact example only, suppose every exact age within each displayed group has the same two national factors, repeated in all three years. The counts below illustrate those factors; the real code uses each exact age’s own published factors. Also assume a Bookings uplift of 1.25 at every displayed age:
 
-| Conversion group | Maternities | Live births | Stillbirths | Combined modifier |
+| Conversion group | Maternities | Live births | Stillbirths | National factor product |
 |----|---:|---:|---:|---:|
 | 15 and younger | 100 | 102 | 1 | (103/102) × (100/103) = 100/102 |
 | Exactly 16 | 100 | 104 | 1 | (105/104) × (100/105) = 100/104 |
@@ -2475,44 +2593,44 @@ For this compact example only, suppose every exact age within each displayed gro
 
 The following totals reconcile the example. In the code, births (L) are split into Age (SY) first and then converted; the identical factors assumed here make these grouped totals equivalent:
 
-| ONS row | Live births, 2025 → 2047 | Maternities, 2025 → 2047 | Growth |
+| ONS row | Live births, 2025 → 2047 | Adjusted maternities, 2025 → 2047 | Growth |
 |----|---:|---:|---:|
-| 15 (includes younger) | 102 → 112.2 | 100 → 110 | ×1.10 |
-| 16 | 104 → 83.2 | 100 → 80 | ×0.80 |
-| 43 | 110 → 121 | 100 → 110 | ×1.10 |
-| 44 (includes older) | 120 → 144 | 100 → 120 | ×1.20 |
+| 15 (includes younger) | 102 → 112.2 | 125 → 137.5 | ×1.10 |
+| 16 | 104 → 83.2 | 125 → 100 | ×0.80 |
+| 43 | 110 → 121 | 125 → 137.5 | ×1.10 |
+| 44 (includes older) | 120 → 144 | 125 → 150 | ×1.20 |
 
-For 44+: **120 × 100/120 = 100**; **144 × 100/120 = 120**. Growth = **120 ÷ 100 = 1.20**. This is one combined ONS count, not a count for each older age.
+For 44+: **120 × 100/120 × 1.25 = 125**; **144 × 100/120 × 1.25 = 150**. Growth = **150 ÷ 125 = 1.20**. This is one combined ONS count, not a count for each older age.
 :::
 :::::
 
 :::: example-step
 #### Step 3: split once, then allocate the exact ages
 
-**Fictional MSDS inputs:** each source group has 100 resident maternities. Only the displayed ages contribute. The direct delivery proportion at Trust A is 50% for the boundary groups and 20% at ages 16 and 43. The remainder stays at other destinations. The identical within-group factors make splitting the displayed maternity total equivalent in this example; the actual code splits births (L) first.
+**Fictional MSDS inputs:** each source group has 100 resident maternities. Only the displayed ages contribute. The shared denominator is 125 after the uplift. Trust A therefore receives 40% for the boundary groups and 16% at ages 16 and 43 (50 and 20 recorded deliveries respectively). The remainder stays at other destinations. The identical within-group factors make splitting the displayed maternity total equivalent in this example; the actual code splits births (L) first.
 
 ::: boundary-age-table
 | Exact age | ONS source group | MSDS resident count | Age weight | Direct delivery A share | Trust A, 2047 |
 |---:|----|---:|---:|---:|---:|
-| 13 | ≤15 | 10 | 10% | 50% | 110 × 0.1 × 0.5 = **5.5** |
-| 14 | ≤15 | 20 | 20% | 50% | 110 × 0.2 × 0.5 = **11** |
-| 15 | ≤15 | 70 | 70% | 50% | 110 × 0.7 × 0.5 = **38.5** |
-| 16 | 16 | 100 | 100% | 20% | 80 × 1 × 0.2 = **16** |
-| 43 | 43 | 100 | 100% | 20% | 110 × 1 × 0.2 = **22** |
-| 44 | 44+ | 40 | 40% | 50% | 120 × 0.4 × 0.5 = **24** |
-| 45 | 44+ | 20 | 20% | 50% | 120 × 0.2 × 0.5 = **12** |
-| 46 | 44+ | 10 | 10% | 50% | 120 × 0.1 × 0.5 = **6** |
-| 47 | 44+ | 8 | 8% | 50% | 120 × 0.08 × 0.5 = **4.8** |
-| 48 | 44+ | 6 | 6% | 50% | 120 × 0.06 × 0.5 = **3.6** |
-| 49 | 44+ | 4 | 4% | 50% | 120 × 0.04 × 0.5 = **2.4** |
-| 50 | 44+ | 4 | 4% | 50% | 120 × 0.04 × 0.5 = **2.4** |
-| 51 | 44+ | 2 | 2% | 50% | 120 × 0.02 × 0.5 = **1.2** |
-| 52 | 44+ | 2 | 2% | 50% | 120 × 0.02 × 0.5 = **1.2** |
-| 53 | 44+ | 2 | 2% | 50% | 120 × 0.02 × 0.5 = **1.2** |
-| 54 | 44+ | 2 | 2% | 50% | 120 × 0.02 × 0.5 = **1.2** |
+| 13 | ≤15 | 10 | 10% | 40% | 137.5 × 0.1 × 0.4 = **5.5** |
+| 14 | ≤15 | 20 | 20% | 40% | 137.5 × 0.2 × 0.4 = **11** |
+| 15 | ≤15 | 70 | 70% | 40% | 137.5 × 0.7 × 0.4 = **38.5** |
+| 16 | 16 | 100 | 100% | 16% | 100 × 1 × 0.16 = **16** |
+| 43 | 43 | 100 | 100% | 16% | 137.5 × 1 × 0.16 = **22** |
+| 44 | 44+ | 40 | 40% | 40% | 150 × 0.4 × 0.4 = **24** |
+| 45 | 44+ | 20 | 20% | 40% | 150 × 0.2 × 0.4 = **12** |
+| 46 | 44+ | 10 | 10% | 40% | 150 × 0.1 × 0.4 = **6** |
+| 47 | 44+ | 8 | 8% | 40% | 150 × 0.08 × 0.4 = **4.8** |
+| 48 | 44+ | 6 | 6% | 40% | 150 × 0.06 × 0.4 = **3.6** |
+| 49 | 44+ | 4 | 4% | 40% | 150 × 0.04 × 0.4 = **2.4** |
+| 50 | 44+ | 4 | 4% | 40% | 150 × 0.04 × 0.4 = **2.4** |
+| 51 | 44+ | 2 | 2% | 40% | 150 × 0.02 × 0.4 = **1.2** |
+| 52 | 44+ | 2 | 2% | 40% | 150 × 0.02 × 0.4 = **1.2** |
+| 53 | 44+ | 2 | 2% | 40% | 150 × 0.02 × 0.4 = **1.2** |
+| 54 | 44+ | 2 | 2% | 40% | 150 × 0.02 × 0.4 = **1.2** |
 :::
 
-For age 44: **144 ONS births (L) × 40/100 age weight × 100/120 combined modifier × 20/40 direct delivery share = 24**. Ages 50–54 use local MSDS age shares and the shared national 50+ factor.
+For age 44: **144 ONS births (L) × 40/100 age weight × 100/120 national conversion × 1.25 Bookings uplift × 20/50 delivery share = 24**. Ages 50–54 use local MSDS age shares and the shared national 50+ factor.
 ::::
 
 ::: example-step
@@ -2525,153 +2643,68 @@ For age 44: **144 ONS births (L) × 40/100 age weight × 100/120 combined modifi
 | 45+ | 12 + 6 + 4.8 + 3.6 + 2.4 + 2.4 + 1.2 + 1.2 + 1.2 + 1.2 | **36** |
 | **Total** | All three displayed bands | **153** |
 
-Chart bands only add completed exact-age destination counts. A combined 40+ allocation rate would lose the difference between age 43's 20% share and the older ages' 50% share.
+Chart bands only add completed exact-age destination counts. A combined 40+ allocation rate would lose the difference between age 43's 16% share and the older ages' 40% share.
 :::
 :::::::::
 
-## Previous full worked examples {#imaginary-example}
+## Detailed booking and delivery example {#imaginary-example}
 
-### Whole-trust overview: recorded activity, rates and projected counts
+**Fictional LA B, age 25.** Age weight is 1. The supplied resident file has 100 recorded births. The cohort has 60 recorded births and 15 pregnancies without a recorded delivery. Use every supplied cohort row.
 
-**Fictional numbers; read across each row of steps.** Two LA(R)s and two individual maternal ages, **Age (SY) 25 and 30**. Only these four cells contribute in this example. The independent booking calculation follows below.
-
-::::::::: {.projection-example-grid .whole-trust-example-grid}
+:::::::: {.projection-example-grid .allocation-example-grid}
 ::: example-step
-#### Step 1: keep the recorded counts
+### 1. Calculate the fourth modifier and shared denominator
 
-Trust A's recorded non-home deliveries:
+**Bookings uplift = (60 + 15) ÷ 60 = 1.25.**
 
-| 2023/24 | 2024/25 | 2025/26 |
-|--------:|--------:|--------:|
-|     180 |     190 | **200** |
+**Shared resident maternity denominator = 100 × 1.25 = 125.**
 
-Where the resident maternities went in 2025/26:
-
-| LA(R) | Resident total | Trust A | Home | Other trusts |
-|:------|---------------:|--------:|-----:|-------------:|
-| B     |            200 |     140 |   10 |           50 |
-| C     |            200 |      60 |   10 |          130 |
-
-**Trust A: 140 + 60 = 200 recorded deliveries.** These latest-year counts are the comparison; the shares below use all three years.
+The resident birth gap is **100 − 60 = 40**. The **Booking Denominator Factor is 125 − 75 = 50**. These are different gaps: the latter includes the proxy allowance for pregnancies without recorded delivery. Both require review against the source processing.
 :::
 
 ::: example-step
-#### Step 2: calculate each LA / individual-age share
+### 2. Apply all four modifiers
 
-Pool the three years of resident maternities and Trust A deliveries:
+| Calculation | 2025 | 2047 |
+|----|---:|---:|
+| ONS live births | 100 | 110 |
+| Age weight | 1 | 1 |
+| Stillbirth factor | 1.02 | 1.02 |
+| Multiplicity factor | 0.95 | 0.95 |
+| Bookings uplift | 1.25 | 1.25 |
+| **Adjusted maternities** | **121.125** | **133.2375** |
 
-| LA(R) | Age (SY) | Resident total | Trust A |   Share |
-|:------|---------:|---------------:|--------:|--------:|
-| B     |       25 |            285 |     171 | **60%** |
-| B     |       30 |            285 |     228 | **80%** |
-| C     |       25 |            285 |     114 | **40%** |
-| C     |       30 |            285 |      57 | **20%** |
-
-For B, age 25: **171 ÷ 285 = 60%**. The four destination counts sum to **570**, matching 180 + 190 + 200 across the three observed years.
-
-Keep these **LA(R) × Age (SY) shares** fixed. Each age and LA retains its own rate; age bands are formed afterwards.
-:::
-
-:::: example-step
-#### Step 3: convert the ONS counts, then allocate
-
-Follow **B, age 25**. Births (L) × stillbirth allowance **1.02** × multiplicity conversion **0.95**:
-
-| Count / calculation     |     2025 |       2047 |
-|:------------------------|---------:|-----------:|
-| ONS births (L)          |      100 |        110 |
-| Births (L+S): × 1.02    |      102 |      112.2 |
-| **Maternities: × 0.95** | **96.9** | **106.59** |
-| At Trust A: × 60%       |    58.14 |     63.954 |
-
-::: example-calculation
-<strong>110 × 1.02 × 0.95 × 60% = 63.954 maternities at Trust A</strong>
-:::
-
-The modelled reference is **58.14**, compared with **60 recorded in 2025/26**. The ONS count determines the projected volume.
-
-For age 30, use **1.01 × 0.98 = 0.9898**. These illustrative factors represent ratios calculated from pooled three-year counts, as in the model. Both individual ages have age weight 1.
-::::
-
-:::: example-step
-#### Step 4: calculate every contribution, then add
-
-Apply each cell's modifier and share to its own future ONS count:
-
-| LA(R) / Age (SY) | Births (L), 2047 | Modifier | Share | Trust A, 2047 |
-|:---|---:|---:|---:|---:|
-| B / 25 | 110 | 0.969 | 60% | `r round(trust_example$Modelled_2047[1], 1)` |
-| B / 30 | 120 | 0.9898 | 80% | `r round(trust_example$Modelled_2047[2], 1)` |
-| C / 25 | 90 | 0.969 | 40% | `r round(trust_example$Modelled_2047[3], 1)` |
-| C / 30 | 130 | 0.9898 | 20% | `r round(trust_example$Modelled_2047[4], 1)` |
-| **Total** |  |  |  | **`r round(example_modelled_finish, 1)`** |
-
-::: example-calculation
-<strong>Modelled: `r round(example_modelled_start, 1)` → `r round(example_modelled_finish, 1)` maternities: a `r round(example_modelled_change, 1)`% increase</strong> Recorded 2025/26 comparison: 200 deliveries.
-:::
-
-Repeat with **each year's ONS counts**. Sum unrounded contributions to trusts, then ICBs and cluster. Round only for display.
-::::
-:::::::::
-
-### Detailed calculation: LA B, Age (SY) 25, booking and delivery separately
-
-**Fictional numbers, following the active calculation.** Age 25 has its own ONS row, so age weight = 1. All MSDS counts below pool 2023/24–2025/26.
-
-:::::::: projection-example-grid
-::: example-step
-### Step 1: start with ONS births (L)
-
-| LA B, age 25         |    2025 |    2047 |
-|----------------------|--------:|--------:|
-| Projected births (L) | **100** | **110** |
-
-These are babies, not maternities. The ONS volume is not replaced by the recorded MSDS count.
+Both allocation views start from this same adjusted total.
 :::
 
 ::: example-step
-### Step 2: adjust births, then convert to maternities
+### 3. Allocate delivery categories
 
-Suppose pooled three-year counts give a stillbirth ratio of **0.02** and a multiplicity factor of **0.95**.
-
-| Calculation                |     2025 |       2047 |
-|----------------------------|---------:|-----------:|
-| Births (L)                 |      100 |        110 |
-| Births (L+S): × (1 + 0.02) |      102 |      112.2 |
-| **Maternities: × 0.95**    | **96.9** | **106.59** |
-
-The stillbirth step increases the baby count. Multiplicity then converts babies to pregnancies reaching birth. MSDS counts receive neither adjustment.
-:::
-
-::: example-step
-### Step 3: keep the two MSDS denominators distinct
-
-| Allocation | Destination count | LA B, age 25 total | Proportion |
+| Category | Calibration count | Share of 125 | 2047 projection |
 |----|---:|---:|---:|
-| Delivery at A | 171 | 285 resident maternities | **60%** |
-| Delivery elsewhere / home | 114 | 285 resident maternities | **40%** |
-| Booking at B | 210 | 350 bookings | **60%** |
-| Booking at C | 140 | 350 bookings | **40%** |
+| Trust A | 45 | 36% | 47.9655 |
+| Home birth | 10 | 8% | 10.659 |
+| Delivery location unknown | 5 | 4% | 5.3295 |
+| Not represented in linked cohort | 40 | 32% | 42.636 |
+| No recorded delivery | 25 | 20% | 26.6475 |
+| **Total** | **125** | **100%** | **133.2375** |
 
-Booking totals include pregnancies without a recorded delivery. Delivery and booking each sum to 100% within their own denominator.
+The no-recorded-delivery count is **125 − 100 = 25**, including the proxy allowance beyond the 15 supplied records. Unknown delivery location remains a recorded birth.
 :::
 
-:::: example-step
-### Step 4: apply each proportion independently
+::: example-step
+### 4. Independently allocate booking categories
 
-| Output                       |      2025 |       2047 |
-|------------------------------|----------:|-----------:|
-| Delivery A: × 60%            | **58.14** | **63.954** |
-| Other/home deliveries: × 40% |     38.76 |     42.636 |
-| Booking B: × 60%             | **58.14** | **63.954** |
-| Booking C: × 40%             |     38.76 |     42.636 |
+| Category | Calibration count | Share of 125 | 2047 projection |
+|----|---:|---:|---:|
+| Booking provider B | 45 | 36% | 47.9655 |
+| Booking provider C | 20 | 16% | 21.318 |
+| No recorded booking | 10 | 8% | 10.659 |
+| Booking Denominator Factor | 50 | 40% | 53.295 |
+| **Total** | **125** | **100%** | **133.2375** |
 
-::: example-calculation
-<strong>Delivery A = 106.59 × (171/285) = 63.954</strong>Booking B independently = 106.59 × (210/350) = 63.954.
+The 75 supplied records are counted once in this view. The residual group remains separate from known no-booking records. A booking with an unknown provider would retain its own category too. Do not add the booking and delivery totals together.
 :::
-
-These happen to match because the example shares and starting volumes match. Delivery and booking bases both equal 106.59 here. A future agreed booking uplift would change only the booking base, before allocation. Do not multiply the booking share by the delivery share or add the two views together.
-::::
 ::::::::
 
 ## Detailed conversion explanation {#review-conversion-details}
@@ -2684,9 +2717,9 @@ At each published age, pool the 2023–2025 counts of live births, stillbirths a
 
 **Multiplicity conversion = maternities ÷ (live births + stillbirths).**
 
-**Method 1 modifier = stillbirth allowance × multiplicity conversion = pooled maternities ÷ pooled live births.**
+**Combined modifier after the age split = stillbirth allowance × multiplicity conversion × Bookings uplift.**
 
-**Estimated maternities = projected live births at that age × its modifier.**
+**Adjusted maternities = projected live births at that age × its combined modifier.**
 
 Counts are pooled before either division. All actual babies are counted, including higher-order multiples; there is no four-plus-as-four approximation. This captures multiplicity directly from counts without requiring a singleton/twin/triplet breakdown at each age. The national relationship is assumed to apply locally and remain constant.
 
@@ -2717,6 +2750,8 @@ first_draft_projections$input_variation$coverage |>
 
 ## Allocation accounting and coverage {#allocation-audit}
 
+The [denominator review](#booking-denominator-review) checks source coverage as well as arithmetic. Keep the Booking Denominator Factor, births not represented in the cohort, no recorded delivery and no recorded booking separate. Allocations summing to 100% alone do not establish complete source coverage.
+
 ### All destinations — accounting
 
 ```{r}
@@ -2724,11 +2759,12 @@ first_draft_projections$input_variation$coverage |>
 
 first_draft_projections$accounting_table
 first_draft_projections$allocation_accounting_table
+first_draft_projections$booking_allocation_accounting_table
 ```
 
 ### Direct delivery allocation rows
 
-These reference-year rows show the direct delivery proportion and resulting count. `projection_master` has one LA(R)/Age (SY)/year row, with separate delivery and booking bases, proportions and destination counts. Each set of counts reconciles to its own base.
+These reference-year rows show all four modifiers, the delivery proportion and resulting count. `projection_master` has one LA(R)/Age (SY)/year row. Booking and delivery have independent destination counts and proportions; both reconcile to the same adjusted maternity total.
 
 ```{r}
 #| label: projection-pathway-audit
@@ -2737,7 +2773,7 @@ first_draft_projections$pathway_table
 
 ### Delivery inclusion and projection coverage
 
-Read from left to right: provider-associated recorded maternities, excluded home/unknown-home records, then recorded non-home deliveries split into matched LA/age and unmatched coverage. These parts reconcile. Trust, ICB and cluster rows are alternative views, not totals to add together. This table covers the 2025/26 comparator, not the full three-year allocation period. Section 2.2.4 accounts for records without a usable delivery year or recorded birth.
+Read from left to right: provider-associated recorded maternities, home births and unknown-location records shown separately, then recorded non-home deliveries split into available allocations and records needing review. These parts reconcile. Trust, ICB and cluster rows are alternative views, not totals to add together. This table covers the 2025/26 comparator. Model calibration uses the full supplied cohort; section 2.2.4 accounts for records without a usable delivery year or recorded birth.
 
 ```{r}
 #| label: first-draft-projection-coverage
@@ -2760,7 +2796,7 @@ first_draft_projections$backtest$coverage_details_table
 
 Compare recent published resident counts (solid lines, 2023–2025) with the calculated maternity projection (dashed lines, 2023–2047). The projection is not rescaled to the observations.
 
-Use the overlap to assess the starting level. Both series include maternities involving stillbirths, including stillbirth-only pregnancies. Published counts are observed registrations; the estimates apply fixed national conversion factors to ONS projected births (L).
+Use the overlap to assess the starting level and differences in scope. Both series include maternities involving stillbirths, including stillbirth-only pregnancies. Published counts are observed registrations; the estimates apply all four modifiers to ONS projected births (L), including the allowance for pregnancies without a recorded delivery.
 
 ```{r}
 #| label: method-1-observed-projected-trajectory
@@ -2769,25 +2805,21 @@ Use the overlap to assess the starting level. Both series include maternities in
 #| fig-height: 6.5
 maternity_trajectory_plot(observed_trajectory, projected_trajectory,
   paste("Solid: published maternities. Dashed: calculated projections;",
-        "ONS migration-category births on 2023 geography with age-specific combined stillbirth/multiplicity modifiers."),
+        "ONS migration-category births on 2023 geography with age-specific stillbirth, multiplicity and Bookings uplift modifiers."),
   area_colours)
 ```
 
 ## Previous model introduction and inspection notes {#review-model-introduction}
 
-**MSDS proportions:** pool 2023/24–2025/26 counts before dividing. **National factors:** pool 2023–2025 Table 5 counts at each published age before calculating either factor. Delivery and booking have separate starting-volume columns. Both currently equal adjusted maternities; no early-loss uplift is applied.
+**Four modifiers:** local resident age weights, pooled national stillbirth and multiplicity factors, and the Bookings uplift. Pool national Table 5 counts across 2023–2025; use every supplied MSDS cohort row for the uplift and destination counts. Outside LAs use the same-age cluster-resident uplift as a proxy.
 
-**One row per LA(R) × Age (SY) × projection year:**
+**Adjusted maternities = ONS births (L) × age weight × [1 + S/L] × [M/(L+S)] × Bookings uplift.**
 
-**Adjusted maternities = ONS births (L) × local age weight × \[1 + S/L\] × \[M/(L+S)\].** S, L and M are pooled 2023–2025 counts at the matching published age.
+Both allocations use destination counts divided by **resident births × Bookings uplift**. The Booking Denominator Factor fills the difference between this denominator and the supplied cohort count. Home, no recorded delivery/booking, unknowns and births absent from the cohort remain distinct.
 
-Delivery proportion = pooled destination deliveries ÷ pooled resident maternities at the same LA(R)/Age (SY). Pool delivery years 2023/24–2025/26 using `birth_yr`. Booking proportions separately pool provider bookings ÷ all bookings in the same LA(R)/Age (SY), using booking dates for those three financial years. Hold both sets of proportions fixed across future years.
+**The reference estimate is not rebased.** Each master row is one LA(R)/Age (SY)/year. Both allocation bases equal `Adjusted_maternities`. Inspect `booking_modifications` for the uplift source, resident/cohort comparison and residual group. Unavailable same-age evidence leaves a missing projection; conflicting denominators leave provider allocations unallocated.
 
-**The reference estimate is not rebased.** 2025 ONS counts are compared with observed 2025/26 activity. Home, unknown and unrepresented deliveries remain separate; absent denominators leave counts explicitly unallocated. MSDS proportions are assumed to represent the ONS population.
-
-**Master review columns:** `Exact_age_live_births` → `Delivery_projection_base` and `Booking_projection_base`. The first is babies after the age split only; the other two are currently equal adjusted maternity volumes.
-
-**Analyst audit:** inspect `projection_master`, `ons_modifications`, `delivery_proportions` and `booking_proportions` in RStudio. Calculation columns remain visible before results are summed into Age (B), trust, ICB and cluster totals. [Detailed worked examples](#imaginary-example) shows the arithmetic.
+**Analyst audit:** inspect `projection_master`, `ons_modifications`, `booking_modifications`, `delivery_proportions` and `booking_proportions`. [Detailed worked examples](#imaginary-example) show the arithmetic.
 
 ```{r}
 #| label: first-draft-projections-notes
@@ -2800,9 +2832,9 @@ if (nzchar(first_draft_projections$note)) {
 
 ## Previous report introduction {#review-old-introduction}
 
-**This report starts from ONS projected births (L).** [Section 3](#first-draft-projections) splits combined ages, allows for stillbirths, converts babies to maternities and applies separate delivery and booking proportions pooled from three years of MSDS. Trust estimates are not forced to match recorded activity. [Detailed worked examples](#imaginary-example) shows the arithmetic.
+**This report starts from ONS projected births (L).** [Section 3](#first-draft-projections) splits combined ages, allows for stillbirths, converts babies to maternities, applies the Bookings uplift, then independently allocates the shared total to delivery and booking categories. Trust estimates are not forced to match recorded activity. [Detailed worked examples](#imaginary-example) show the arithmetic.
 
-Method 1 uses national Table 5 counts for 2023–2025. At each published maternal age, pool the three years of counts, then calculate **stillbirths ÷ live births** and **maternities ÷ births (L+S)**. Apply **1 + the stillbirth ratio** first, then the multiplicity factor. The first step increases births (L) to births (L+S); the second converts babies to maternities. No additional MSDS uplift is applied.
+Method 1 uses national Table 5 counts for 2023–2025. At each published maternal age, pool the three years of counts, then calculate **stillbirths ÷ live births** and **maternities ÷ births (L+S)**. Apply **1 + the stillbirth ratio** first, then the multiplicity factor. The first step increases births (L) to births (L+S); the second converts babies to maternities. The fourth modifier is the MSDS Bookings uplift, using the same-age cluster-resident proxy for outside LAs.
 
 The ONS source rows **15 and 44** include younger and older ages respectively. The combined model splits these births using the pooled local MSDS maternity age distribution before applying national age-specific factors. Under-14 and 50+ registration factors are shared across individual ages within those groups. [Detailed age-boundary example](#age-boundaries) explains the assumptions.
 
@@ -2816,55 +2848,55 @@ Method 1 — ONS resident maternity estimates
 
 [Worked modifier](#modifier-worked-comparison) · [Age boundaries](#age-boundaries)
 
-Method 1 converts ONS births (L) into estimated maternities, allowing for stillbirths and multiple births. This section sums adjusted master-table counts for residents of the six local authorities, before destination allocation. Section 3 allocates those same counts to delivery and booking providers.
+Method 1 converts ONS births (L) into estimated maternities, allowing for age distribution, stillbirths, multiple births and the Bookings uplift. This section sums adjusted master-table counts for residents of the six local authorities, before destination allocation. Section 3 allocates those same counts to delivery and booking providers.
 
 ## Previous section 12: analysis information flow {#analysis-information-flow}
 
 ```{mermaid}
 %%| fig-cap: "Calculation and presentation steps in R/Maternity analysis.R."
 flowchart TD
-  A["ONS births (L)<br/>LA(R) × source age × year"] --> C
-  B["Pooled MSDS resident age mix<br/>2023/24–2025/26"] --> C
-  C["Split combined ONS ages<br/>retain Age (1); other ages weight = 1"] --> E
-  D["ons_modifications<br/>national Table 5, 2023–2025<br/>pool counts, then divide at each age"] --> E
-  E["Births (L) × [1 + S/L]<br/>then × M/(L+S)<br/>S, L, M = pooled counts"] --> F
-  F["Adjusted maternities<br/>one LA(R) × Age (1) × year row"] --> FD
-  F --> FB
-  F --> R["Resident charts: same adjusted counts<br/>sum by LA(R) and Age (B)<br/>before destination allocation"]
-  FD["Delivery_projection_base<br/>= adjusted maternities"] --> G
-  FB["Booking_projection_base<br/>= adjusted maternities for now<br/>future uplift method to be agreed"] --> H
-  DB["delivery_proportions<br/>pooled deliveries / resident maternities"] --> G
-  BB["booking_proportions<br/>pooled destination bookings / ALL bookings"] --> H
-  G["Independent delivery count columns"] --> I
-  H["Independent booking count columns"] --> I
-  I["Separate booking and delivery summaries<br/>Age (B), trust, ICB, cluster<br/>aggregate completed counts only"]
+  A["ONS live births<br/>LA × source age × year"] --> C
+  B["Resident-LA births by age<br/>total_births_by_LA_2326"] --> C
+  C["1. Age distribution modifier"] --> D
+  D["2. Stillbirth modifier"] --> E
+  E["3. Multiplicity modifier"] --> F
+  P["Full supplied cohort<br/>Own cluster LA/age ratio<br/>Same-age cluster proxy outside"] --> F
+  F["4. Bookings uplift modifier"] --> M
+  M["One adjusted maternity total<br/>LA × age × year"] --> G
+  M --> H
+  M --> R["Resident reporting"]
+  Q["Shared allocation denominator<br/>Resident births × Bookings uplift"] --> G
+  Q --> H
+  G["Delivery allocation<br/>Trusts, home, unknown location<br/>No recorded delivery, unrepresented"] --> I
+  H["Booking allocation<br/>Providers, no recorded booking, unknown<br/>Booking Denominator Factor residual"] --> I
+  I["Master and reporting summaries<br/>Keep the two allocation views separate"]
 ```
 
 | Object / columns to inspect | Meaning |
 |----|----|
 | `ons_modifications` | Geography, source period, ONS source age, registration age, applied Age (SY), pooled source counts, stillbirth ratio and both factors. The master joins directly to these factors. |
-| `delivery_proportions`; `booking_proportions` | Pooled counts and proportions by LA(R), Age (SY) and destination; separate denominators. |
+| `delivery_proportions`; `booking_proportions` | Counts and proportions by LA(R), Age (SY) and destination; one shared estimated maternity denominator. |
 | `Age_weight` | Local share used to split combined ONS ages; 1 at ages 16–43. |
 | `Exact_age_live_births` | ONS births (L) after the age split only; before stillbirth, multiplicity or booking adjustments. |
-| `Adjusted_births_ls`; `Adjusted_maternities` | Stillbirth uplift followed by multiplicity conversion. |
-| `Delivery_projection_base`; `Booking_projection_base` | Separate allocation volumes; currently both equal adjusted maternities. |
+| `Adjusted_births_ls`; `Adjusted_maternities` | Intermediate baby count and the completed maternity total after all four modifiers. |
+| `booking_modifications` | Local/cluster uplift, resident and cohort counts, residual group and source checks. |
+| `Delivery_projection_base`; `Booking_projection_base` | Both allocation columns equal the same adjusted maternity total. |
 | `Delivery_proportion_*`; `Delivery_count_*` | Delivery base × delivery proportions. |
 | `Booking_proportion_*`; `Booking_count_*` | Booking base × booking proportions. |
 | `projection_master_dictionary` | Column definitions for the completed master. |
 
-**Keep the views separate:** delivery count columns reconcile to `Delivery_projection_base`; booking count columns reconcile to `Booking_projection_base`. Both bases currently equal adjusted maternities. Do not sum both views together. `ONS_live_births` repeats across exact ages within a combined group; use `Exact_age_live_births` for additive split totals. A group with no age evidence remains an explicit unsplit/unallocated source row.
+**Keep the views separate:** delivery count columns reconcile to `Delivery_projection_base`; booking count columns reconcile to `Booking_projection_base`. Both bases equal adjusted maternities after all four modifiers. Do not sum both views together. `ONS_live_births` repeats across exact ages within a combined group; use `Exact_age_live_births` for additive split totals. A group with no age evidence remains an explicit unsplit/unallocated source row.
 
-`projection_master_backtest` uses the same pooled three-year proportions for the historical comparison. Because its calibration includes the comparison years, this is an in-sample diagnostic, not independent validation. Historical births, fertility rates and population charts remain context.
+`projection_master_backtest` uses the same full-cohort proportions for the historical comparison. Because its calibration includes the comparison years, this is an in-sample diagnostic, not independent validation. Historical births, fertility rates and population charts remain context.
 
 ## Previous section 13: earlier-versus-current method comparison {#projection-method-comparison}
 
-**Use the fictional age-25 projection and 60% share from section Consider deleting: previous full worked examples:** ONS births (L) 100 → 110; combined modifier 1.02 × 0.95 = 0.969. For the earlier-method comparison, assume 100 resident maternities and 60 Trust A deliveries in the reference year. This reference count is separate from the pooled 285 maternities and 171 deliveries used to calculate the share. No booking uplift is applied yet.
+**Illustration:** ONS births (L) rise from 100 to 110. National factors are 1.02 and 0.95; the Bookings uplift is 1.25. Trust A receives 48% of the shared maternity denominator, corresponding to 60% of resident recorded births.
 
 | Calculation | Earlier growth-on-MSDS approach | Active ONS-count approach |
 |----|----|----|
-| Reference count at Trust A | 100 MSDS maternities × 0.60 = **60** | 100 ONS babies × 1.02 × 0.95 × 0.60 = **58.14** |
-| Future count at Trust A | 100 × \[(110 × ~~1.02~~ × ~~0.95~~) / (100 × ~~1.02~~ × ~~0.95~~)\] × 0.60 = **66** | 110 × 1.02 × 0.95 × 0.60 = **63.954** |
-| Role of modifiers | Cancel within each fixed-age future/reference ratio | Remain in the count calculation |
-| Role of MSDS | Supplies starting level and allocation proportions | Supplies age weights and allocation proportions |
+| Reference count at Trust A | 100 recorded maternities × 60% = **60** | 100 × 1.02 × 0.95 × 1.25 × 48% = **58.14** |
+| Future count at Trust A | 60 × (110/100) = **66** | 110 × 1.02 × 0.95 × 1.25 × 48% = **63.954** |
+| Role of MSDS | Supplies starting level and delivery proportions | Supplies age weights, Bookings uplift and independent allocations |
 
-Both grow by 10% in this single-age illustration, but they start from different levels. The active method's future result is **3.1% below** the old method here. Multiplying the active method by a calibration factor to force 58.14 back to 60 would restore the previous result of 66; that rebasing is not applied.
+Both grow by 10% in this single-age illustration. The active method retains the ONS starting level and does not rebase it to observed trust activity. The uplift increases the shared maternity total while the matching denominator retains the share assigned to recorded births.

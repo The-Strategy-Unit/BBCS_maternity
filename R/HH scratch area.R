@@ -1,11 +1,25 @@
 #scratch area 
 
 library(dplyr)
+source("R/report_cohort.R")
 
+# Use exactly the report's birth-age / booking-age fallback rule.
+prepared_age_check <- prepare_report_cohort(final_cohort_2326)
+# Raw diagnostic counts behind the report's age-completeness table.
+# Denominator distinguishes the whole cohort from records missing birth age.
+summarise_maternal_age_completeness(final_cohort_2326) |>
+  mutate(percent = if_else(Denominator > 0, 100 * N / Denominator, NA_real_))
 age_check <- final_cohort_2326 |>
-  mutate(age_numeric = suppressWarnings(
-    as.numeric(as.character(age_at_birth_mother))
-  ))
+  mutate(age_numeric = prepared_age_check$Age,
+    age_source = prepared_age_check$Age_source)
+
+# Before/after missing-age counts and the number recovered from booking age.
+age_check |>
+  group_by(birth_yr, birth_flag) |>
+  summarise(pregnancies = n(), birth_age_na = sum(is.na(age_at_birth_mother)),
+    recovered_from_booking = sum(age_source == "Booking fallback"),
+    still_unknown_or_invalid = sum(is.na(age_numeric)),
+    percent_still_unknown = 100 * mean(is.na(age_numeric)), .groups = "drop")
 
 age_check |>
   summarise(
@@ -23,7 +37,8 @@ age_check |>
       !between(age_numeric, 13, 54) |
       age_numeric != floor(age_numeric)
   ) |>
-  count(age_at_birth_mother, name = "pregnancies", sort = TRUE)
+  count(age_at_birth_mother, age_at_booking_mother, age_numeric, age_source,
+    name = "pregnancies", sort = TRUE)
 
 
 # OPTIONAL SNIPPETS: select and run whichever bits are useful.
@@ -56,7 +71,7 @@ total_births_by_LA_2326 |>
   group_by(birth_yr, age_missing) |>
   summarise(source_rows = n(), recorded_count = sum(count_numeric), .groups = "drop")
 
-# Other age/date fields available for discussion; no substitute is assumed.
+# Other available age/date fields; the report uses only the agreed two ages.
 grep("age|dob|birth_date", names(final_cohort_2326), ignore.case = TRUE, value = TRUE)
 
 # Raw and harmonised LA codes, plus remaining ONS gaps ---------------------
@@ -81,6 +96,7 @@ report_applied_geography(final_cohort_2326$la_of_mother,
   total_births_by_LA_2326$la_of_mother)
 
 # Additional quick checks ------------------------------------------------
+# Birth-age-only source check, before the booking fallback.
 # Filter missing ages first: count(age_at_birth_mother = NA) would count all rows.
 final_cohort_2326 |>
   filter(is.na(age_at_birth_mother)) |>

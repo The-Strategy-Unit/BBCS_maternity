@@ -34,7 +34,7 @@ local({
     uniq_preg_id = seq_len(nrow(cells)), birth_yr = cells$FY,
     birth_flag = as.integer(cells$Pregnancy_in_cell <= 10),
     birth_date = as.Date(paste0(substr(cells$FY, 1, 4), "-12-01")),
-    la_of_mother = cells$LA, age_at_birth_mother = cells$Age,
+    la_of_mother = cells$LA, age_at_birth_mother = cells$Age, age_at_booking_mother = NA_real_,
     birth_provider = trust, home_birth = 0L, resident_icb = unname(provider_icb[trust]),
     booking_provider = trust,
     antenatal_app_date = as.Date(paste0(substr(cells$FY, 1, 4), "-06-01")))

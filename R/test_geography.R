@@ -26,7 +26,7 @@ local({
   cohort <- data.frame(person_id_mother = seq_len(nrow(cells)), uniq_preg_id = seq_len(nrow(cells)),
     birth_yr = cells$FY, birth_flag = as.integer(cells$Row <= 10),
     birth_date = as.Date(paste0(substr(cells$FY, 1, 4), "-12-01")),
-    la_of_mother = cells$LA, age_at_birth_mother = 25, birth_provider = "RQ3", home_birth = 0L,
+    la_of_mother = cells$LA, age_at_birth_mother = 25, age_at_booking_mother = NA_real_, birth_provider = "RQ3", home_birth = 0L,
     resident_icb = "QHL", booking_provider = "RQ3",
     antenatal_app_date = as.Date(paste0(substr(cells$FY, 1, 4), "-06-01")))
   resident <- unique(cells[c("LA", "FY")]) |>

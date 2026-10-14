@@ -78,7 +78,7 @@ report_date <- function(x) {
 
 prepare_report_cohort <- function(cohort) {
   required <- c("person_id_mother", "uniq_preg_id", "birth_yr", "birth_flag",
-    "birth_date", "la_of_mother", "age_at_birth_mother", "birth_provider",
+    "birth_date", "la_of_mother", "age_at_birth_mother", "age_at_booking_mother", "birth_provider",
     "home_birth", "resident_icb", "booking_provider", "antenatal_app_date")
   absent <- setdiff(required, names(cohort))
   if (length(absent)) stop("final_cohort_2326 is missing: ",
@@ -91,6 +91,13 @@ prepare_report_cohort <- function(cohort) {
   year[!valid_year] <- NA_character_
   start[!valid_year] <- NA_integer_
   booking_date <- report_date(cohort$antenatal_app_date)
+  # Birth age takes precedence. Only a source NA permits the booking fallback;
+  # a supplied but invalid birth age remains an explicit data-quality issue.
+  birth_age <- report_age(cohort$age_at_birth_mother)
+  booking_age <- report_age(cohort$age_at_booking_mother)
+  use_booking_age <- is.na(cohort$age_at_birth_mother)
+  age <- birth_age
+  age[use_booking_age] <- booking_age[use_booking_age]
 
   tibble::tibble(
     Row = seq_len(nrow(cohort)),
@@ -101,8 +108,11 @@ prepare_report_cohort <- function(cohort) {
     Birth_recorded = Birth_flag %in% 1,
     LA_source = report_code(cohort$la_of_mother, "Unknown LA"),
     LA = report_la_code(cohort$la_of_mother),
-    Age = report_age(cohort$age_at_birth_mother),
-    Age_band = report_age_band(cohort$age_at_birth_mother),
+    Age_at_birth = birth_age, Age_at_booking = booking_age,
+    Age = age,
+    Age_source = ifelse(is.na(age), "Unknown",
+      ifelse(use_booking_age, "Booking fallback", "Birth")),
+    Age_band = report_age_band(age),
     Trust = report_code(cohort$birth_provider, "Unknown provider"),
     Home = report_number(cohort$home_birth),
     Resident_ICB = report_code(cohort$resident_icb),
@@ -114,6 +124,39 @@ prepare_report_cohort <- function(cohort) {
     Booking_date = booking_date,
     Booking_year = as.integer(format(booking_date, "%Y")) -
       as.integer(as.integer(format(booking_date, "%m")) < 4L))
+}
+
+# Descriptive diagnostic over the whole supplied cohort, before age/year filters.
+# Missing here means source NA, not an invalid or out-of-model-range age.
+summarise_maternal_age_completeness <- function(cohort) {
+  records <- prepare_report_cohort(cohort)
+  missing_birth <- is.na(cohort$age_at_birth_mother)
+  missing_booking <- is.na(cohort$age_at_booking_mother)
+  n <- nrow(cohort)
+  missing_n <- sum(missing_birth)
+  tibble::tibble(
+    Measure = c("All pregnancy records", "Age at birth missing",
+      "Missing birth age: birth recorded", "Missing birth age: no birth recorded",
+      "Missing birth age: birth status unknown/invalid",
+      "Missing birth age: recovered from booking age", "Neither birth nor booking age recorded"),
+    N = c(n, missing_n, sum(missing_birth & records$Birth_flag %in% 1),
+      sum(missing_birth & records$Birth_flag %in% 0),
+      sum(missing_birth & !records$Birth_flag %in% c(0, 1)),
+      sum(records$Age_source == "Booking fallback"), sum(missing_birth & missing_booking)),
+    Denominator = c(n, n, rep(missing_n, 4), n),
+    Percentage_of = c(rep("Full cohort", 2), rep("Records missing birth age", 4), "Full cohort"))
+}
+
+# Diagnostic only: classify numerator AND denominator by booking age so that
+# birthdays between booking and delivery do not move the comparison population.
+summarise_booking_age_fallback <- function(cohort) {
+  records <- prepare_report_cohort(cohort)
+  band <- report_age_band(records$Age_at_booking)
+  missing_birth <- is.na(cohort$age_at_birth_mother)
+  tibble::tibble(Age_band = report_age_bands,
+    Booking_age_known = vapply(report_age_bands, function(b) sum(band == b), integer(1)),
+    Birth_age_missing = vapply(report_age_bands,
+      function(b) sum(band == b & missing_birth), integer(1)))
 }
 
 # Keep the non-provider categories explicit in the projection allocations.

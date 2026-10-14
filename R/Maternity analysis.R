@@ -267,6 +267,54 @@ if (length(missing_objects)) stop("Run the preparation scripts first. Missing: "
                                   paste(missing_objects, collapse = ", "), call. = FALSE)
 report_episodes <- prepare_report_cohort(final_cohort_2326)
 
+maternal_age_completeness_table <- function(counts) {
+  dc_cells(counts, c("N", "Denominator"), list(Percent = c("N", "Denominator"))) |>
+    dplyr::select(Measure, N, Percent, Percentage_of) |>
+    gt::gt() |>
+    gt::tab_header(title = "Maternal age completeness in the supplied cohort") |>
+    gt::cols_label(Measure = "Measure", N = "Pregnancies (n)", Percent = "%",
+      Percentage_of = "Percentage of") |>
+    gt::fmt_number(columns = N, decimals = 0) |>
+    gt::fmt_percent(columns = Percent, decimals = 1) |>
+    gt::sub_missing(columns = Percent, missing_text = "Not applicable") |>
+    gt::tab_source_note("All supplied pregnancy rows, before age or year filters. Missing means NA in the source field. Birth recorded: birth_flag = 1; no birth recorded: birth_flag = 0; other flags remain separate. The recovery row overlaps the birth-status rows; these rows must not be added together.") |>
+    gt::tab_options(table.width = gt::pct(100))
+}
+maternal_age_completeness <- summarise_maternal_age_completeness(final_cohort_2326)
+maternal_age_completeness_display <- maternal_age_completeness_table(maternal_age_completeness)
+
+booking_age_fallback_outputs <- function(counts) {
+  shown <- dc_cells(counts, c("Booking_age_known", "Birth_age_missing"),
+    list(Share = c("Birth_age_missing", "Booking_age_known")))
+  chart <- plotly::plot_ly(shown, x = ~Age_band, y = ~Share, type = "bar",
+    height = 380, marker = list(color = "#0072B2"),
+    text = ~paste0("Booking age: ", Age_band,
+      "<br>Birth age missing: ", scales::comma(Birth_age_missing, accuracy = 1),
+      "<br>Booking age available: ", scales::comma(Booking_age_known, accuracy = 1),
+      "<br>Missing birth age: ", ifelse(is.na(Share), "Not available", scales::percent(Share, accuracy = 0.1))),
+    textposition = "none", hovertemplate = "%{text}<extra></extra>") |>
+    plotly::layout(xaxis = list(title = "Age at booking", categoryorder = "array",
+      categoryarray = report_age_bands),
+      yaxis = list(title = "Birth age missing (%)", tickformat = ".0%", rangemode = "tozero"),
+      margin = list(l = 75, r = 20, t = 20, b = 60), showlegend = FALSE) |>
+    plotly::config(responsive = TRUE, displaylogo = FALSE)
+  if (all(is.na(shown$Share))) chart <- plotly::layout(chart,
+    yaxis = list(range = c(0, 1)), annotations = list(list(
+      text = "No usable booking ages in the supplied cohort", x = .5, y = .5,
+      xref = "paper", yref = "paper", showarrow = FALSE)))
+  table <- shown |>
+    gt::gt() |>
+    gt::cols_label(Age_band = "Age at booking", Booking_age_known = "Booking age available (n)",
+      Birth_age_missing = "Birth age missing (n)", Share = "% with birth age missing") |>
+    gt::fmt_number(columns = c(Booking_age_known, Birth_age_missing), decimals = 0) |>
+    gt::fmt_percent(columns = Share, decimals = 1) |>
+    gt::sub_missing(columns = Share, missing_text = "Not available") |>
+    gt::tab_options(table.width = gt::pct(100))
+  list(chart = dc_widget(chart), table = table)
+}
+booking_age_fallback_counts <- summarise_booking_age_fallback(final_cohort_2326)
+booking_age_fallback <- booking_age_fallback_outputs(booking_age_fallback_counts)
+
 # Section 2.2.4: patient flows in 2025/26
 # Two-stage flows and the combined residence-to-booking-to-birth flow.
 # Clean the supplied codes and group providers outside the labelled areas as Other.
@@ -1089,6 +1137,10 @@ booking_icb_delivery_over_time <- build_delivery_outcome_trends(booking_icb_deli
 # Save the exploration outputs; Run analysis.R runs QA before rendering.
 save_report_rds(
   list(icb_sankey = icb_sankey, trust_sankey = trust_sankey, by_year = by_year,
+       maternal_age_completeness = maternal_age_completeness,
+       maternal_age_completeness_table = maternal_age_completeness_display,
+       booking_age_fallback_counts = booking_age_fallback_counts,
+       booking_age_fallback = booking_age_fallback,
        residence_booking_birth_flow = residence_booking_birth_flow,
        residence_booking_birth_sankey = residence_booking_birth_sankey,
        cluster_activity = cluster_activity, delivery_over_time = delivery_over_time,
@@ -1108,7 +1160,7 @@ absent <- required[!vapply(required, function(name) exists(name, inherits = TRUE
 if (length(absent)) stop("Missing objects: ", paste(absent, collapse = ", "),
                          ". Run the analysis runner first.", call. = FALSE)
 columns <- c("person_id_mother", "uniq_preg_id", "birth_yr", "birth_flag",
-             "resident_icb", "la_of_mother", "age_at_birth_mother", "birth_provider", "home_birth")
+             "resident_icb", "la_of_mother", "age_at_birth_mother", "age_at_booking_mother", "birth_provider", "home_birth")
 absent <- setdiff(columns, names(final_cohort_2326))
 if (length(absent)) stop("final_cohort_2326 is missing: ", paste(absent, collapse = ", "), call. = FALSE)
 
@@ -2006,7 +2058,7 @@ build_projection_master <- function(cohort, resident_totals, ons_births, registr
   attr(master, "registration_source") <- registration_counts
   attr(master, "ons_modifications") <- ons_modifications
   attr(master, "private_nhs") <- private_nhs
-  attr(master, "calculation_version") <- "ons-shared-age-calculations-v20"
+  attr(master, "calculation_version") <- "ons-shared-age-calculations-v21"
   master
 }
 
@@ -2215,7 +2267,7 @@ if (length(absent)) stop("Missing objects: ", paste(absent, collapse = ", "),
   ". Use Run analysis.R.", call. = FALSE)
 required_columns <- list(
   final_cohort_2326 = c("person_id_mother", "uniq_preg_id", "birth_yr", "birth_flag",
-    "la_of_mother", "age_at_birth_mother", "birth_provider", "home_birth"),
+    "la_of_mother", "age_at_birth_mother", "age_at_booking_mother", "birth_provider", "home_birth"),
   total_births_by_LA_2326 = c("birth_yr", "la_of_mother", "age_at_birth_mother", "count"))
 for (name in names(required_columns)) {
   missing_columns <- setdiff(required_columns[[name]], names(get(name)))
@@ -2349,7 +2401,7 @@ build_first_draft_projections <- function(baseline_fy = projection_baseline,
   ons_reference_year = projection_reference_year, projection_end = projection_end_year,
   prepare_outputs = TRUE, master = if (baseline_fy == "2023/24") projection_master_backtest else projection_master,
   history_master = NULL) {
-  stopifnot(identical(attr(master, "calculation_version"), "ons-shared-age-calculations-v20"),
+  stopifnot(identical(attr(master, "calculation_version"), "ons-shared-age-calculations-v21"),
     all(master$Baseline_FY == baseline_fy), all(master$ONS_reference_year == ons_reference_year))
   if (!is.null(projection_end)) master <- dplyr::filter(master, Year <= projection_end)
   wide_master <- master
@@ -2706,7 +2758,7 @@ build_first_draft_projections <- function(baseline_fy = projection_baseline,
     "Outside LAs use the same-age cluster-resident pathway factor as a proxy.",
     "Both allocations use one adjusted total. Home, no recorded delivery/booking, unknowns",
     "and the Booking Denominator Factor remain separate. No rebasing to observed activity.")
-  result <- list(calculation_version = "ons-shared-age-calculations-v20", organisations = organisations, feeder_shares = feeder_shares,
+  result <- list(calculation_version = "ons-shared-age-calculations-v21", organisations = organisations, feeder_shares = feeder_shares,
     master = wide_master, delivery_rows = master, booking_rows = booking_rows,
     booking_totals = list(Trust = booking_trust_totals, ICB = booking_icb_totals, Cluster = booking_cluster_totals),
     booking_age_projections = booking_age_projections, booking_total_projections = booking_total_projections,

@@ -291,7 +291,7 @@ build_msds_age_review <- function(cohort, projections, historical, trust_labels,
     dplyr::summarise(Observed = sum(Observed), .groups = "drop")
   profile <- ggplot2::ggplot(dc_counts(old, "Observed"), ggplot2::aes(Age, Observed, colour = factor(year), group = year)) +
     ggplot2::geom_line() + ggplot2::geom_point() + ggplot2::scale_x_continuous(breaks = model_ages[model_ages >= 40]) +
-    ggplot2::labs(title = "Actual older-age starting counts: cluster trusts combined", x = "Exact age at birth",
+    ggplot2::labs(title = "Actual older-age starting counts: cluster trusts combined", x = "Exact maternal age",
       y = "Recorded non-home deliveries", colour = "Year",
       caption = "Recorded non-home deliveries at cluster trusts, ages 40-54. Each pregnancy counts once, including live births and stillbirths.") +
     ggplot2::theme_minimal(base_family = "sans") + ggplot2::theme(legend.position = "bottom")

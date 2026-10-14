@@ -34,6 +34,16 @@ projection_numbers_match <- function(actual, expected, tolerance = 1e-8) {
 # 2. Check the source pregnancy records and LA totals.
 cohort_records <- final_cohort_2326
 prepared_records <- prepare_report_cohort(cohort_records)
+expected_age <- report_age(cohort_records$age_at_birth_mother)
+fallback_rows <- is.na(cohort_records$age_at_birth_mother)
+expected_age[fallback_rows] <- report_age(cohort_records$age_at_booking_mother[fallback_rows])
+qa_check("Maternal age uses birth age, with booking age only for missing birth age",
+  projection_numbers_match(prepared_records$Age, expected_age) &&
+    identical(prepared_records$Age_band, report_age_band(expected_age)),
+  paste(sum(prepared_records$Age_source == "Booking fallback"), "rows use booking age;",
+    sum(is.na(prepared_records$Age)), "remain unknown/invalid"))
+qa_details$maternal_age_source <- prepared_records |>
+  dplyr::count(Year, Birth_recorded, Age_source, name = "Pregnancies")
 missing_ids <- is.na(cohort_records$person_id_mother) |
   trimws(as.character(cohort_records$person_id_mother)) == "" |
   is.na(cohort_records$uniq_preg_id) | trimws(as.character(cohort_records$uniq_preg_id)) == ""
@@ -412,7 +422,7 @@ if (file.exists(".delivery_geography.rds")) {
 if (file.exists(".projections.rds")) {
   projections <- readRDS(".projections.rds")
   qa_check("Projection outputs use the current five-modifier method",
-    identical(projections$calculation_version, "ons-shared-age-calculations-v20"))
+    identical(projections$calculation_version, "ons-shared-age-calculations-v21"))
   flows <- projections$sankey_comparison
   qa_check("Delivery Sankey recorded flows match the observed cluster total",
     !is.null(flows) && numbers_match(sum(flows$flows$Observed),

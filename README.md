@@ -193,9 +193,21 @@ remain recorded births. Where no same-age cluster ratio exists, flag the
 projection as unestimated; do not substitute a ratio pooled across ages.
 
 BBCS resident delivery counts and age distributions come from `final_cohort_2326`,
-using `age_at_birth_mother`. The wider `total_births_by_LA_2326` file supplies
+using `age_at_birth_mother`, with `age_at_booking_mother` used only where birth age is `NA`.
+Both age columns are required in the updated cohort. The same resolved age feeds all
+cohort-based charts, calibration and allocations. Booking age is used directly, without
+adding a year; it may be younger than delivery age. If neither age is usable, the row
+remains unknown. `prepare_report_cohort()` retains both ages and `Age_source` for QA. The wider `total_births_by_LA_2326` file supplies
 resident delivery totals and age distributions only for contributing outside LAs.
 Provider counts and the maternity pathway adjustment come from the pregnancy cohort.
+The MSDS inputs section includes an age-completeness table for the whole supplied
+cohort: missing birth ages by recorded-birth status, recovery from booking age,
+and both ages missing. Percentages explicitly identify their denominator. These
+are pregnancy rows, not distinct mothers; missing birth evidence is not proof
+that a delivery did not occur.
+An adjacent chart compares missing birth age within booking-age bands, using
+all records with usable booking age in each band as the denominator. Its table
+and hover text include counts; this diagnostic does not alter the model age rule.
 
 The master retains `Exact_age_live_births`, `Bookings_uplift_modifier`, its
 source, the shared denominator, source counts and destination proportions/counts.
@@ -287,8 +299,10 @@ It is not a report step and does not require a particular saved output.
 Run `Rscript R/test_projection_scale.R` to check the three chart series with
 invented data and confirm that outside-LA bookings use the shared resident
 denominator rather than being scaled up to the whole LA population.
+Run `Rscript R/test_age_fallback.R` to check birth-age precedence, the booking-age
+fallback, remaining unknown ages, age-band boundaries and downstream allocations.
 
-The report requires calculation version `ons-shared-age-calculations-v20`.
+The report requires calculation version `ons-shared-age-calculations-v21`.
 The three ONS registration workbooks were checked against the public downloads
 on 6 October 2026 and matched exactly. Table 5 supplies the two national modifiers; Table 7
 remains descriptive evidence about multiplicity.

@@ -18,6 +18,7 @@
 !/R/QA.R
 !/R/test_projection_scale.R
 !/R/test_private_nhs.R
+!/R/test_age_fallback.R
 !/R/matrix of booking appts and births.R
 !/assets/
 !/config/

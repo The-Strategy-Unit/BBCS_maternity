@@ -114,7 +114,7 @@ first_draft_projections <- readRDS(".projections.rds")
 if (!identical(first_draft_projections$comparison_style_version, "organisation-lines-v1") ||
     !identical(ons_exploration$resident_comparison$comparison_style_version, "organisation-lines-v1")) stop(
   "Saved charts need refreshing for the organisation colours and historical/future layout. Run R/Run analysis.R again.")
-if (!identical(first_draft_projections$calculation_version, "ons-shared-age-calculations-v20")) stop(
+if (!identical(first_draft_projections$calculation_version, "ons-shared-age-calculations-v21")) stop(
   "Saved projection outputs need refreshing for the current method. Run R/Run analysis.R in UDAL.")
 if (is.null(first_draft_projections$sankey_comparison) || is.null(first_draft_projections$input_variation)) stop(
   "Run Run analysis.R again to prepare the delivery flow comparison and input variation charts.")
@@ -599,7 +599,44 @@ population_plot(
 | Supplied pregnancy cohort | One pregnancy row; resident LA, maternal age, booking provider/date and recorded delivery details | Recorded activity, patient flows, BBCS resident delivery counts and age distributions, maternity pathway adjustment and provider counts |
 | Wider resident-LA totals | Recorded resident deliveries by delivery financial year and maternal age | Delivery totals and age distributions for contributing LAs outside BBCS; includes their residents delivering at BBCS trusts, elsewhere or at home |
 
-The pregnancy records come from `final_cohort_2326`, with maternal age taken from `age_at_birth_mother`. Calculations use ages 13–54. Detailed counting rules accompany the relevant delivery and booking views.
+The pregnancy records come from `final_cohort_2326`. Maternal age uses `age_at_birth_mother`; only where this is missing (`NA`), it uses `age_at_booking_mother`. This same age is used throughout cohort-based charts, age bands, calibration, provider allocations and projections. Booking age is used as supplied, without adding a year; it can be younger than age at delivery and can place a pregnancy in a younger age band. Records with neither usable age remain unknown. Calculations use ages 13–54. Detailed counting rules accompany the relevant delivery and booking views.
+
+Some missing birth ages may relate to bookings without a corresponding recorded birth. The table below assesses this explanation and shows the proportion of the full cohort with neither age recorded. Absence of a recorded birth does not establish that no birth occurred: incomplete recording or linkage may also contribute. Counts refer to pregnancy records, so a mother with more than one pregnancy can appear more than once.
+
+```{r}
+#| label: maternal-age-completeness
+
+age_completeness_table <- readRDS(".patient_flows.rds")$maternal_age_completeness_table
+if (is.null(age_completeness_table)) stop(
+  "Run R/Run analysis.R again to prepare the maternal age completeness table.")
+age_completeness_table
+```
+
+**Is missing birth age more common at older ages?** The chart shows the percentage with birth age `NA` among records with a usable booking age in each band. Both numerator and denominator use **age at booking** for this diagnostic, so a higher bar means missing birth age is more common within that age group, rather than simply reflecting a larger group. Records without a usable booking age cannot be placed in these bands. All supplied ages are included here; the model's birth-age-first rule is unchanged. Hover for counts, or use the table.
+
+```{r}
+#| label: booking-age-fallback-setup
+#| include: false
+booking_age_fallback <- readRDS(".patient_flows.rds")$booking_age_fallback
+if (is.null(booking_age_fallback)) stop(
+  "Run R/Run analysis.R again to prepare the booking-age diagnostic.")
+```
+
+::: panel-tabset
+#### By age at booking
+
+```{r}
+#| label: booking-age-fallback-chart
+booking_age_fallback$chart
+```
+
+#### Counts and percentages
+
+```{r}
+#| label: booking-age-fallback-table
+booking_age_fallback$table
+```
+:::
 
 The model uses the six BBCS LAs and other LAs with recorded bookings or deliveries at cluster trusts. For BBCS residents, delivery counts and age distributions come from the pregnancy cohort, including recorded live births, stillbirths, home deliveries and deliveries elsewhere. For contributing LAs outside BBCS, the wider totals provide the full resident delivery count, so the share using BBCS services can be calculated. Booking and delivery provider counts always come from the pregnancy cohort. The maternity pathway adjustment for outside LAs uses the rate among BBCS residents at the same age.
 
@@ -1953,7 +1990,7 @@ projection_plot(
 
 ### Projection coverage {#provider-projection-coverage}
 
-Provider charts retain the allocations that can be calculated. An unmatched record no longer removes the whole provider estimate: **Partial** means the displayed count covers usable LA/age cells, while **No usable estimate** remains unavailable. Missing ages are not redistributed. Unknown residence, source-geography differences and unresolved calibration remain explicit limitations. Zero counts are used for absent recorded categories within supported data, not for missing source areas, unknown ages or undefined rates.
+Provider charts retain the allocations that can be calculated. An unmatched record no longer removes the whole provider estimate: **Partial** means the displayed count covers usable LA/age cells, while **No usable estimate** remains unavailable. Ages still missing after the booking-age fallback are not redistributed. Unknown residence, source-geography differences and unresolved calibration remain explicit limitations. Zero counts are used for absent recorded categories within supported data, not for missing source areas, unknown ages or undefined rates.
 
 The table below counts the supplied cohort separately for bookings and deliveries. It shows the proportion of recorded activity with usable LA/age evidence; this is not a claim that the same percentage of future activity is covered. Unknown-age records cannot be assigned to individual age bands and can therefore flag several bands, but are counted only once in each provider total. Recorded historical totals retain all activity; delivery percentage comparisons use only recorded activity from the same usable LA/age cells as the projection. Booking and age-specific growth compare the same modelled cells across years.
 

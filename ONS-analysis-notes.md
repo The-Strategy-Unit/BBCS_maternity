@@ -19,7 +19,12 @@ All adjusted projections use one LA(R) × Age (SY) × year master in
 
 Use supplied cohort rows aged 13–54, without another date filter. BBCS resident
 delivery counts and age weights come from `final_cohort_2326`, using
-`age_at_birth_mother`. Only contributing outside LAs use `total_births_by_LA_2326`
+`age_at_birth_mother`, falling back to `age_at_booking_mother` only when birth age is `NA`.
+The resolved age is used throughout cohort-based outputs, calibration, age-band modifiers
+and allocations. No year is added to booking age; it may be younger than delivery age
+and move a pregnancy into a younger band. Neither usable age means an unknown age.
+Both input columns are required; source values and the selected source are retained
+in the prepared cohort for QA. Only contributing outside LAs use `total_births_by_LA_2326`
 for their full resident delivery counts and age distributions. Outside LAs use the
 same-age ratio pooled among residents of the configured cluster LAs. The same
 proxy applies where a cluster LA lacks local recorded-birth evidence. Do not
@@ -92,7 +97,7 @@ references to the same `Adjusted_maternities` value. Do not add their totals.
 `National_conversion_factor` contains the two national factors only;
 the master's `Maternity_modifier` also includes the Private–NHS modifier and maternity pathway adjustment and is
 applied after the age split.
-Calculation version: `ons-shared-age-calculations-v20`.
+Calculation version: `ons-shared-age-calculations-v21`.
 
 Resident charts sum the master before allocation; trust charts sum completed
 provider contributions. The historical comparison is in-sample, not independent

@@ -93,3 +93,144 @@ final_cohort_2326 |>
   print(n=Inf)
 
 file.exists("render.log")
+
+# BOOKING DROP CHECK: 2023/24, 2024/25 AND 2025/26 --------------------------
+# Run this setup, then whichever numbered checks are useful. Load the current
+# parquet objects with R/Read parquet files from azure.R first; no model run needed.
+# Raw internal counts only: do not copy these tables into the shared report.
+# This section does not change the source objects, run the model or save files.
+library(dplyr)
+source("R/report_cohort.R")
+hh_booking_fy <- function(date) {
+  start <- as.integer(format(date, "%Y")) -
+    as.integer(as.integer(format(date, "%m")) < 4L)
+  ifelse(is.na(start), NA_character_, paste0(start, "/", substr(start + 1L, 3, 4)))
+}
+# Read just the organisation settings from the analysis, without executing it.
+hh_booking_config <- new.env(parent = baseenv())
+for (hh_statement in parse("R/Maternity analysis.R")) {
+  if (is.call(hh_statement) && identical(hh_statement[[1]], as.name("<-")) &&
+      as.character(hh_statement[[2]])[1] %in%
+        c("cluster_icbs", "icb_provider_codes", "provider_icb", "cluster_trusts"))
+    eval(hh_statement, envir = hh_booking_config)
+}
+hh_bookings <- prepare_report_cohort(final_cohort_2326) |>
+  mutate(Source_birth_FY = as.character(final_cohort_2326$birth_yr),
+    Booking_FY = hh_booking_fy(Booking_date),
+    Birth_date_FY = hh_booking_fy(Delivery_date),
+    Booking_month = format(Booking_date, "%Y-%m"),
+    Birth_month = format(Delivery_date, "%Y-%m"),
+    Booking_ICB = coalesce(unname(hh_booking_config$provider_icb[Booking_Trust]),
+      "Outside lookup / unknown"),
+    Booking_in_cluster = Booking_Trust %in% hh_booking_config$cluster_trusts,
+    Days_booking_to_birth = as.numeric(Delivery_date - Booking_date))
+stopifnot(nrow(hh_bookings) == nrow(final_cohort_2326))
+
+# 1. Source rows BEFORE any report filtering, by supplied year and birth flag.
+# These are pregnancy rows, not distinct women (a woman may have >1 pregnancy).
+tibble::as_tibble(final_cohort_2326) |>
+  count(birth_yr, birth_flag, name = "raw_pregnancy_rows") |>
+  print(n = Inf)
+
+# Missing dates/providers, failed date parsing and year disagreements.
+# A provider without a usable booking date cannot enter a booking-FY chart.
+hh_bookings |>
+  group_by(Source_birth_FY) |>
+  summarise(rows = n(), recorded_deliveries = sum(Birth_recorded),
+    booking_date_absent = sum(!Booking_date_supplied),
+    booking_date_unparsed = sum(Booking_date_supplied & is.na(Booking_date)),
+    booking_provider_absent = sum(!Booking_provider_supplied),
+    booking_provider_outside_lookup = sum(Booking_provider_supplied &
+      !Booking_Trust %in% names(hh_booking_config$provider_icb)),
+    cluster_booking_rows = sum(Booking_in_cluster),
+    cluster_booking_rows_with_date = sum(Booking_in_cluster & !is.na(Booking_date)),
+    recorded_birth_date_missing = sum(Birth_recorded & is.na(Delivery_date)),
+    birth_year_date_disagree = sum(Birth_recorded &
+      !is.na(Birth_date_FY) & !is.na(Year) & Birth_date_FY != Year),
+    booking_after_birth = sum(Birth_recorded & Days_booking_to_birth < 0, na.rm = TRUE),
+    .groups = "drop") |>
+  print(width = Inf)
+class(final_cohort_2326$antenatal_app_date)
+# Aggregate the SHAPE of unparsed dates, without printing individual dates/IDs.
+hh_bookings |>
+  filter(Booking_date_supplied & is.na(Booking_date)) |>
+  mutate(date_format = gsub("[0-9]", "9",
+    trimws(as.character(final_cohort_2326$antenatal_app_date[Row])))) |>
+  count(Source_birth_FY, date_format, name = "rows", sort = TRUE) |>
+  print(n = Inf)
+
+# 2. Annual bookings by provider code, including codes outside our lookup.
+# No age, LA, ONS match, birth flag or delivery-year filter is applied here.
+hh_bookings |>
+  count(Booking_Trust, Booking_ICB, Booking_FY, name = "raw_bookings") |>
+  tidyr::pivot_wider(names_from = Booking_FY, values_from = raw_bookings,
+    values_fill = 0) |>
+  print(n = Inf, width = Inf)
+hh_bookings |>
+  count(Booking_ICB, Booking_FY, name = "raw_bookings") |>
+  tidyr::pivot_wider(names_from = Booking_FY, values_from = raw_bookings,
+    values_fill = 0) |>
+  print(n = Inf, width = Inf)
+# ICB here means the BOOKING PROVIDER'S ICB, as in the chart, not residence.
+
+# 3. Monthly cluster counts: does the drop emerge part-way through the year?
+# Zero means no rows in THIS extract, not proof of no activity in the service.
+hh_booking_months <- tibble::tibble(Month = format(seq(as.Date("2023-04-01"),
+  as.Date("2026-03-01"), by = "month"), "%Y-%m"))
+hh_booking_months |>
+  left_join(hh_bookings |> filter(Booking_in_cluster) |>
+      count(Month = Booking_month, name = "bookings"), by = "Month") |>
+  left_join(hh_bookings |> filter(Birth_recorded,
+      Trust %in% hh_booking_config$cluster_trusts) |>
+      count(Month = Birth_month, name = "recorded_deliveries"), by = "Month") |>
+  mutate(across(c(bookings, recorded_deliveries), ~ coalesce(.x, 0L))) |>
+  print(n = Inf)
+# Provider detail for the same monthly investigation (including unknown dates).
+hh_bookings |>
+  filter(Booking_in_cluster) |>
+  count(Booking_Trust, Booking_ICB, Booking_month, name = "bookings") |>
+  print(n = Inf)
+
+# 4. Is this a delivery-year cohort being used to count booking-year activity?
+# Complete 2025/26 DELIVERIES do not prove complete 2025/26 BOOKINGS: later
+# bookings may lead to 2026/27 deliveries. Check the extract's SQL selection
+# with the analysts if those pregnancies are absent; do not assume a cause.
+# Split birth_flag too: pregnancies without a recorded delivery may be included.
+hh_bookings |>
+  filter(Booking_in_cluster) |>
+  count(Booking_FY, Source_birth_FY, Birth_flag, name = "bookings") |>
+  print(n = Inf)
+# Duplicate pregnancy keys could inflate earlier years; inspect, don't deduplicate.
+hh_bookings |>
+  filter(!is.na(Person), nzchar(Person), !is.na(Pregnancy), nzchar(Pregnancy)) |>
+  group_by(Person, Pregnancy) |>
+  mutate(repeated_key = n() > 1L) |>
+  ungroup() |>
+  group_by(Source_birth_FY) |>
+  summarise(rows_with_repeated_key = sum(repeated_key), .groups = "drop") |>
+  print(n = Inf)
+
+# 5. OPTIONAL: reconcile these rows to the SAVED report's raw historical totals.
+# Run only when .projections.rds and the loaded parquet are from the same run.
+# Differences can also mean the saved report is stale. Comparison is before
+# disclosure rounding; the displayed chart can differ slightly through rounding.
+if (file.exists(".projections.rds")) {
+  hh_booking_saved <- readRDS(".projections.rds")
+  hh_booking_reconcile <- tibble::as_tibble(hh_booking_saved$total_comparison$Booking) |>
+    filter(Series == "MSDS recorded")
+  hh_booking_reconcile$Raw_recount <- vapply(seq_len(nrow(hh_booking_reconcile)),
+    function(i) {
+      line <- hh_booking_reconcile[i, ]
+      org <- hh_booking_saved$organisations |>
+        filter(Key == line$Key)
+      stopifnot(nrow(org) == 1L)
+      codes <- if (org$Level == "Trust") org$Code else if (org$Level == "ICB")
+        names(hh_booking_config$provider_icb)[hh_booking_config$provider_icb == org$Code]
+        else hh_booking_config$cluster_trusts
+      sum(hh_bookings$Booking_Trust %in% codes & hh_bookings$Booking_FY %in% line$Period)
+    }, numeric(1))
+  hh_booking_reconcile |>
+    transmute(Organisation, Period, Saved_raw_count = Value, Raw_recount,
+      Difference = Saved_raw_count - Raw_recount) |>
+    print(n = Inf)
+} else message("No .projections.rds here; checks 1-4 do not need a rendered report.")

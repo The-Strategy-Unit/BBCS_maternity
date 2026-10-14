@@ -16,6 +16,7 @@ format:
   html:
     theme: cosmo
     css: styles.css
+    include-after-body: assets/report-charts.html
     page-layout: full
     # Give the charts and tables more space; keep the contents list on the right.
     grid:

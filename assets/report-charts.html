@@ -1,0 +1,131 @@
+<script>
+// Embedded in the shareable HTML. Resizing uses only the already-rendered data.
+(() => {
+  'use strict';
+  const charts = new Map();
+  const canvas = document.createElement('canvas');
+  const context = canvas.getContext('2d');
+  let pending = false;
+
+  function wrap(text, width, size) {
+    context.font = `${size}px Arial`;
+    return String(text).split(/<br\s*\/?>/i).map(part => {
+      const lines = [''];
+      part.split(/\s+/).forEach(word => {
+        const last = lines.length - 1;
+        const next = lines[last] ? `${lines[last]} ${word}` : word;
+        if (lines[last] && context.measureText(next).width > width) lines.push(word);
+        else lines[last] = next;
+      });
+      return lines.join('<br>');
+    }).join('<br>');
+  }
+
+  async function fit(plot, state) {
+    if (!plot._fullLayout || !plot.clientWidth || !plot.getClientRects().length || state.busy) return;
+    const width = Math.floor(plot.parentElement.getBoundingClientRect().width);
+    if (width < 100) return; // Hidden tabs are measured when they become visible.
+    const height = Math.min(state.height, Math.max(320, window.innerHeight - 48));
+    const key = `${width}:${height}`;
+    if (state.key === key && Math.abs(plot._fullLayout.width - width) < 1 &&
+        plot._fullLayout.height === height && plot.clientHeight === height) return;
+    state.busy = true;
+    try {
+      const update = {width, height, autosize: false};
+      const margin = {...state.margin};
+      const annotations = state.annotations.map(a => ({...a,
+        text: a.xref === 'paper' ? wrap(a.text || '',
+          Math.max(140, width - (margin.l || 60) - (margin.r || 20)), a.font?.size || 12) : a.text
+      }));
+      // Wrapped coverage notes need more room above a narrow chart, clear of
+      // the historical/future labels anchored to the time axis.
+      let topOffset = 38;
+      annotations.filter(a => a.xref === 'paper' && a.yref === 'paper' && a.y > 1)
+        .sort((a, b) => a.y - b.y).forEach(note => {
+          note.y = 1;
+          note.yshift = topOffset;
+          note.yanchor = 'bottom';
+          topOffset += note.text.split('<br>').length * (note.font?.size || 12) * 1.4 + 8;
+          margin.t = Math.max(margin.t || 0, topOffset + 8);
+        });
+      // Horizontal legends wrap long organisation names and reserve enough space
+      // below the axes. Never replace an overflowing legend with a scroll box.
+      if (state.horizontal && plot.layout.showlegend !== false) {
+        const size = plot.layout.legend?.font?.size || 11;
+        const available = Math.max(140, width - (margin.l || 60) - (margin.r || 20));
+        const names = state.names.map(name => wrap(name, available - 55, size));
+        await Plotly.restyle(plot, {name: names});
+        let rowsHeight = 0, rowWidth = 0, rowHeight = 0;
+        plot._fullData.forEach((trace, i) => {
+          if (!trace.showlegend || trace.visible === false) return;
+          const lines = names[i].split('<br>');
+          context.font = `${size}px Arial`;
+          const itemWidth = Math.max(...lines.map(line => context.measureText(line).width)) + 60;
+          const itemHeight = Math.max(29, lines.length * size * 1.4 + 14);
+          if (rowWidth && rowWidth + itemWidth > available) {
+            rowsHeight += rowHeight; rowWidth = 0; rowHeight = 0;
+          }
+          rowWidth += itemWidth; rowHeight = Math.max(rowHeight, itemHeight);
+        });
+        rowsHeight += rowHeight;
+        const belowNotes = state.annotations.some(a => a.yref === 'paper' && a.y < 0);
+        const legendOffset = belowNotes ? 110 : 70;
+        margin.b = Math.max(state.margin.b || 0, rowsHeight + legendOffset + 12);
+        const plotHeight = Math.max(80, height - (margin.t || 60) - margin.b);
+        update['legend.x'] = 0;
+        update['legend.xanchor'] = 'left';
+        update['legend.y'] = -legendOffset / plotHeight;
+        update['legend.yanchor'] = 'top';
+      }
+      update.margin = margin;
+      update.annotations = annotations.map(a => {
+        const note = {...a};
+        if (a.xref === 'paper') {
+          if (a.yref === 'paper' && a.y < 0) {
+            note.y = 0;
+            note.yshift = -65;
+            note.yanchor = 'top';
+          }
+        }
+        return note;
+      });
+      plot.style.width = '100%';
+      plot.style.height = `${height}px`;
+      await Plotly.relayout(plot, update);
+      state.key = key;
+    } finally { state.busy = false; }
+  }
+
+  function schedule() {
+    if (pending) return;
+    pending = true;
+    requestAnimationFrame(() => {
+      pending = false;
+      charts.forEach((state, plot) => fit(plot, state));
+    });
+  }
+  function initialise() {
+    if (!window.Plotly) return;
+    const observer = new ResizeObserver(schedule);
+    document.querySelectorAll('.cell-output-display div').forEach(el => {
+      if (getComputedStyle(el).display === 'grid' && el.querySelector('.plotly')) el.classList.add('report-chart-grid');
+    });
+    document.querySelectorAll('.plotly.html-widget').forEach(plot => {
+      if (!plot.layout) return;
+      charts.set(plot, {
+        height: Number(plot.layout.height) || plot.clientHeight || 480,
+        margin: {...plot.layout.margin},
+        horizontal: plot.layout.legend?.orientation === 'h',
+        names: plot.data.map(t => t.name || ''),
+        annotations: (plot.layout.annotations || []).map(a => ({...a}))
+      });
+      observer.observe(plot.parentElement);
+    });
+    window.addEventListener('resize', schedule);
+    document.addEventListener('shown.bs.tab', schedule);
+    schedule();
+  }
+  if (document.readyState === 'complete') initialise();
+  else window.addEventListener('load', initialise, {once: true});
+})();
+</script>

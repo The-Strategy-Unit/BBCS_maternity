@@ -111,7 +111,10 @@ if (is.null(delivery_geography$chart_grids)) stop(
 #| include: false
 
 first_draft_projections <- readRDS(".projections.rds")
-if (!identical(first_draft_projections$calculation_version, "ons-shared-age-calculations-v19")) stop(
+if (!identical(first_draft_projections$comparison_style_version, "organisation-lines-v1") ||
+    !identical(ons_exploration$resident_comparison$comparison_style_version, "organisation-lines-v1")) stop(
+  "Saved charts need refreshing for the organisation colours and historical/future layout. Run R/Run analysis.R again.")
+if (!identical(first_draft_projections$calculation_version, "ons-shared-age-calculations-v20")) stop(
   "Saved projection outputs need refreshing for the current method. Run R/Run analysis.R in UDAL.")
 if (is.null(first_draft_projections$sankey_comparison) || is.null(first_draft_projections$input_variation)) stop(
   "Run Run analysis.R again to prepare the delivery flow comparison and input variation charts.")
@@ -133,6 +136,8 @@ if (is.null(ons_exploration$resident_comparison)) stop(
 **How might demand for deliveries and bookings at BBCS trusts change in future?** The report explores ONS and MSDS, explains the agreed calculation, and presents projections by trust, ICB, combined cluster and age band.
 
 [The model converts ONS projected live-born babies into maternities using age-specific adjustments, then applies MSDS booking and delivery shares to estimate activity at each provider. The adjustments cover the local age distribution, stillbirths, multiple births and pregnancies without a recorded delivery. (LM edit)]{.lm-edit}
+
+The Private–NHS modifier additionally reduces the projected total using pooled England non-NHS delivery-setting shares, with the same assumed age-band reduction for bookings and deliveries.
 
 ### Disclosure control {#disclosure-control}
 
@@ -183,18 +188,19 @@ ONS source definitions follow the [birth statistics user guide](https://www.ons.
 |----|----|
 | **Recorded / observed / published count** | MSDS recorded activity or ONS registered events that have already happened. The source and counting unit are identified alongside the figure. |
 | **Projected live births** | [Future baby counts from the [ONS subnational population projection model](#method-1-ref-snpp-method), conditional on its assumptions. (LM edit)]{.lm-edit} |
-| **Estimated / projected maternities** | [Counts calculated from ONS projected live births after the local age split, an allowance for stillbirths and a multiplicity adjustment to account for multiple births. The maternity pathway adjustment then includes pregnancies without a recorded delivery, giving the project's wider maternity total. (LM edit)]{.lm-edit} |
+| **Estimated / projected maternities** | [Counts calculated from ONS projected live births after the local age split, an allowance for stillbirths and a multiplicity adjustment to account for multiple births. The maternity pathway adjustment then includes pregnancies without a recorded delivery, giving the project's wider maternity total. (LM edit)]{.lm-edit} The Private–NHS modifier is applied between multiplicity and the maternity pathway adjustment. |
 | **MSDS recorded resident deliveries** | Pregnancies with a recorded live birth or stillbirth among residents of an LA, including home deliveries and deliveries outside the cluster. These are recorded MSDS counts, not a complete population-wide delivery count. They provide the age shares and resident delivery counts used in the model. |
 | **Provider projection** | Adjusted ONS projection multiplied by the provider’s booking or delivery share for each resident LA and age, then added together. |
 | **Shared allocation denominator** | Recorded resident deliveries × maternity pathway adjustment. This estimates resident pregnancies with or without a recorded delivery. Both booking and delivery shares divide by this same total. |
 | **Maternity pathway adjustment** | All supplied cohort pregnancies ÷ cohort pregnancies with a recorded live birth or stillbirth, at each cluster LA and age. Outside LAs, or where local birth evidence is absent, use the pooled rate for cluster residents at the same age. |
 | **Booking Denominator Factor** | The shared denominator minus supplied cohort pregnancies. This estimated volume has no linked booking details and is kept separate from provider bookings. |
+| **Private–NHS modifier** | One minus the pooled non-NHS-establishment share of England-resident maternities, from Table 4 (2023–2025), by maternal age band. Applied after multiplicity and before the pathway adjustment. |
 | **Multiplicity modifier** | Pooled maternities ÷ pooled births (L+S), using Table 5 counts for 2023–2025 at each published age. Converts babies to maternities. |
 | **General fertility rate (GFR)** | Live births per 1,000 women aged 15–44. It describes frequency relative to population size. |
 | **Age-specific fertility rate (ASFR)** | Live births per 1,000 women in the relevant age group. |
 | **Total fertility rate (TFR)** | Children per woman if the year's age-specific fertility rates applied throughout childbearing life. Not an annual maternity count. |
 
-**The calculation:** ONS live births × age share × stillbirth factor × multiplicity factor × maternity pathway adjustment = adjusted maternities. The stillbirth and multiplicity factors use national Table 5 counts pooled across 2023–2025. [Section 3.1](#projection-modifications) describes each step.
+**The calculation:** ONS live births × age share × stillbirth factor × multiplicity factor × Private–NHS modifier × maternity pathway adjustment = adjusted maternities. The stillbirth and multiplicity factors use national Table 5 counts pooled across 2023–2025; the Private–NHS modifier uses England Table 4 counts pooled across the same years. [Section 3.1](#projection-modifications) describes each step.
 
 [The displayed birth rates provide demographic context and are not applied within this conversion; fertility assumptions already enter the ONS birth projection. (LM edit)]{.lm-edit}
 
@@ -209,9 +215,9 @@ ONS source definitions follow the [birth statistics user guide](https://www.ons.
 
 ## 1.4 Overview of the approach {#approach-overview}
 
-The diagram shows how the four adjustments produce one maternity total for each resident LA, age and year. That total is distributed separately to antenatal booking and delivery destinations. Both sets of shares divide by recorded resident deliveries multiplied by the maternity pathway adjustment. Each view, including its unassigned categories, adds to the same total; the two views should not be added together.
+The diagram shows how the five adjustments produce one maternity total for each resident LA, age and year. That total is distributed separately to antenatal booking and delivery destinations. Both sets of shares divide by recorded resident deliveries multiplied by the maternity pathway adjustment. Each view, including its unassigned categories, adds to the same total; the two views should not be added together.
 
-![Current projection process](assets/projection_process_current.svg){fig-alt="ONS live births adjusted for local age distribution, stillbirths, multiplicity and the maternity pathway adjustment; one shared maternity total feeds independent delivery and booking allocations, including the Booking Denominator Factor residual group."}
+![Current projection process](assets/projection_process_current.svg){fig-alt="ONS live births adjusted for local age distribution, stillbirths, multiplicity, the Private–NHS modifier and the maternity pathway adjustment; one shared maternity total feeds independent delivery and booking allocations, including the Booking Denominator Factor residual group."}
 
 # 2. Data exploration {#data-exploration}
 
@@ -225,6 +231,7 @@ The six authorities are Birmingham, Dudley, Sandwell, Solihull, Walsall and Wolv
 |----|----|----|
 | Observed live births | 2013–2025 | Nomis local-authority births (L), shown directly in total and source age bands; no maternity conversion. |
 | Observed GFR and maternities | 2023–2025 | ONS registration workbooks, Tables 1 and 3; published values used directly. |
+| England maternities by delivery setting and age band | 2023–2025 | Table 4 supplies pooled Private–NHS rates; the same rate is assumed for bookings and deliveries. |
 | National maternities and live births by age and multiplicity | 2023–2025 | Table 5 supplies individual-age baby and maternity counts for modifiers; Table 7 is descriptive context. |
 | Projected live births | 2023–2047 | ONS birth component, by modelled maternal age; used for projected rates and estimated maternities. |
 | Projected female population | 2023–2047 | ONS migration-category variant on 2023 geography; ages 15–44 form the rate denominator; ages 13–54 are shown separately as population context. |
@@ -233,6 +240,7 @@ The following assumptions and differences affect how the series can be compared:
 
 - **ONS projection:** local fertility differentials use the five years 2018–2022 initially, then a rolling five-year approach, applied to national fertility assumptions. Projected local births are constrained to England totals. Fertility, mortality and migration assumptions describe a demographic scenario, not future service activity. [See the [ONS methodology](#method-1-ref-snpp-method) for more details. (LM edit)]{.lm-edit}
 - **Maternity conversion:** pool Table 5 counts across 2023–2025 at each published age, then calculate stillbirths/live births and maternities/births (L+S). Apply both at Age (SY), sharing only the published under-14 and 50+ factors at the extremes. National relationships remain fixed over future years.
+- **Private–NHS modifier:** pool England Table 4 counts across 2023–2025 by age band. Apply one minus the non-NHS-establishment share after multiplicity and before pathway uplift, assuming the same reduction for bookings and deliveries. This is a delivery-setting proxy for private care, held constant across modelled LAs and years.
 - **Model age range:** calculations use individual ages **13–54**. ONS births (L) for ≤15 are split across ages 13–15, and 44+ across ages 44–54, using the pooled local MSDS resident delivery age mix. Counts are zero where an LA has no recorded activity at an age. Final projections use seven reporting bands: Under 20 (13–19), 20–24, 25–29, 30–34, 35–39, 40–44 and 45+ (45–54). Background source charts retain their published age groups.
 
 #### Reporting years {#reporting-years}
@@ -364,7 +372,7 @@ multiplicity_table(multiplicity_data, 2025) |>
 
 #### Stillbirth and multiplicity modifiers {#method-1-maternity-conversion-ratios}
 
-The table shows the original ONS age group, the individual age to which each factor is applied, the stillbirth factor, the multiplicity factor and their combined value. Factors for under 14 and 50+ are shared within those published age groups. The model also applies the local age split and [maternity pathway adjustment](#bookings-uplift-adjustment).
+The table shows the original ONS age group, the individual age to which each factor is applied, the stillbirth factor, the multiplicity factor and their combined value. Factors for under 14 and 50+ are shared within those published age groups. The model also applies the local age split, [Private–NHS modifier](#private-nhs-modifier) and [maternity pathway adjustment](#bookings-uplift-adjustment).
 
 ```{r}
 #| label: method-1-maternity-modifier
@@ -374,7 +382,7 @@ maternity_modifier_table(ons_modifications)
 
 ### 2.1.4 Variation across registration years {#ons-input-variation}
 
-These charts show variation between 2023 and 2025. Boxes show the middle half of the values and their median. Whiskers extend to values within 1.5 times the box height; points beyond them show more extreme values. The model adds the three years of counts before calculating each rate, rather than averaging the three annual rates.
+These charts show variation between 2023 and 2025. The stillbirth and multiplicity charts use boxes to show the middle half of the values and their median. Whiskers extend to values within 1.5 times the box height; points beyond them show more extreme values. The Private–NHS chart uses lines to compare annual and pooled shares across age bands. The model adds the three years of counts before calculating each rate, rather than averaging the three annual rates.
 
 ::: panel-tabset
 #### Stillbirth ratio
@@ -394,6 +402,15 @@ Three annual **maternities ÷ births (L+S)** ratios at each published age; black
 #| label: variation-ons-multiplicity
 first_draft_projections$input_variation$multiplicity_chart
 ```
+
+#### Private–NHS modifier
+
+The lines show the non-NHS-establishment share of England-resident maternities in each calendar year and the pooled 2023–2025 share. The model uses **1 minus the pooled share**. The same age bands and setting definition are used across years, combining the two oldest 2025 groups into 45+.
+
+```{r}
+#| label: variation-ons-private-nhs
+private_nhs_variation_chart(first_draft_projections$private_nhs)
+```
 :::
 
 ### 2.1.5 How ONS produces the projected births {#ons-birth-projection-method}
@@ -410,7 +427,7 @@ ONS also makes three adjustments to local fertility rates:
 
 The underlying population model starts with the 2022 population estimates. Each annual cycle ages the population, applies births and deaths, adjusts for internal, cross-border and international migration, and constrains the result to the matching England projection. Armed forces and prison populations are treated separately as static populations. Each year's population becomes the starting point for the next year.
 
-These fertility, population and national-scaling steps are already included in the supplied ONS birth counts. Our model starts with those counts and applies the four adjustments in [section 3.1](#projection-modifications); female population and fertility rates are not multiplied in again. The ONS 2022 base year, the 2023–2025 registration counts for national modifiers, and the supplied 2023/24–2025/26 MSDS cohort have different roles in the calculation.
+These fertility, population and national-scaling steps are already included in the supplied ONS birth counts. Our model starts with those counts and applies the five adjustments in [section 3.1](#projection-modifications); female population and fertility rates are not multiplied in again. The ONS 2022 base year, the 2023–2025 registration counts for national modifiers, and the supplied 2023/24–2025/26 MSDS cohort have different roles in the calculation.
 
 Sources: [ONS methodology, section 4: Births](https://www.ons.gov.uk/peoplepopulationandcommunity/populationandmigration/populationprojections/methodologies/methodologyusedtoproducethe2022basedsubnationalpopulationsprojectionsforengland#births) and [section 2: Overview of methodology](https://www.ons.gov.uk/peoplepopulationandcommunity/populationandmigration/populationprojections/methodologies/methodologyusedtoproducethe2022basedsubnationalpopulationsprojectionsforengland#overview-of-methodology).
 
@@ -1348,7 +1365,7 @@ ONS defines a stillbirth as a baby born with no signs of life at **24 or more co
 
 ### 2.3.2 Ages 40+: evidence for the shared growth proxy {#older-age-evidence}
 
-ONS combines ages 44 and above in one projection. The model splits that count across ages 44–54 using each LA’s recorded age mix, then applies the national factors and maternity pathway adjustment at each age. Those rates remain fixed, so these ages follow the same projected growth within an LA. This is a modelling assumption; the historical counts at individual ages can grow at different rates. The charts below show those recorded differences.
+ONS combines ages 44 and above in one projection. The model splits that count across ages 44–54 using each LA’s recorded age mix, then applies the stillbirth, multiplicity, Private–NHS and maternity pathway adjustment factors at each age. Those rates remain fixed, so these ages follow the same projected growth within an LA. This is a modelling assumption; the historical counts at individual ages can grow at different rates. The charts below show those recorded differences.
 
 National live births at age 44 changed by **`r scales::percent(older_age_review$older$index[older_age_review$older$age == "44" & older_age_review$older$year == 2025] / 100 - 1, accuracy = 0.1)`** between 2023 and 2025; at age 46 the change was **`r scales::percent(older_age_review$older$index[older_age_review$older$age == "46" & older_age_review$older$year == 2025] / 100 - 1, accuracy = 0.1)`**. These recent differences provide context for the shared 44+ projection.
 
@@ -1509,7 +1526,7 @@ older_age_review$plots$conversion
 older_age_review$plots$stillbirth_uplift
 ```
 
-The stillbirth factor allows for stillborn babies, and the multiplicity factor converts baby counts into pregnancies reaching birth, including singleton and multiple births. Both factors are applied to ONS live births, followed by the maternity pathway adjustment for pregnancies without a recorded delivery. The adjusted total is then allocated to booking and delivery destinations. Recorded MSDS maternities already include pregnancies with live births and stillbirths; they are counted directly without a further national conversion.
+The stillbirth factor allows for stillborn babies, and the multiplicity factor converts baby counts into pregnancies reaching birth, including singleton and multiple births. Both factors are applied to ONS live births, followed by the Private–NHS modifier and then the maternity pathway adjustment for pregnancies without a recorded delivery. The adjusted total is then allocated to booking and delivery destinations. Recorded MSDS maternities already include pregnancies with live births and stillbirths; they are counted directly without a further national conversion.
 
 The supplied **Table 2** has age-specific stillbirth information at country level; its regional and LA rows are all-age only. **Table 3** has all-age maternities and home maternities. This age-focused review therefore uses finer national Table 5 counts and Table 4 home-birth age groups; it does not present all-age regional rates as older-mother rates. Sources: [ONS projection fertility assumptions](https://www.ons.gov.uk/peoplepopulationandcommunity/populationandmigration/populationprojections/methodologies/nationalpopulationprojectionsfertilityassumptions2022based) and [ONS birth definitions](https://www.ons.gov.uk/peoplepopulationandcommunity/birthsdeathsandmarriages/livebirths/methodologies/userguidetobirthstatistics).
 
@@ -1576,7 +1593,7 @@ older_age_review$plots$local_change
 
 #### ONS projected growth
 
-ONS supplies separate birth projections for ages 40–43 and one combined 44+ projection. The model splits 44+ across ages 44–54 using the LA’s recorded age shares, then applies stillbirth, multiplicity and maternity pathway adjustment factors. Fixed age shares and factors preserve the source projection’s growth within each LA.
+ONS supplies separate birth projections for ages 40–43 and one combined 44+ projection. The model splits 44+ across ages 44–54 using the LA’s recorded age shares, then applies stillbirth, multiplicity, Private–NHS and maternity pathway adjustment factors. Fixed age shares and factors preserve growth within each LA and ONS source-age group. Totals across source-age groups can grow at different rates as their mix changes.
 
 ```{r}
 #| label: review-projected-counts
@@ -1666,7 +1683,7 @@ Sources: ONS registration workbooks, Tables 4, 5, 7, 8 and 10; the supplied Nomi
 
 ### 2.3.3 Resident counts: ONS maternities, MSDS deliveries and modelled maternities {#resident-source-comparison}
 
-Each LA(R) keeps one colour. **Circles and solid lines:** ONS published maternities. **Squares and solid lines:** MSDS recorded resident deliveries. **Dashed lines:** modelled maternities using the project definition, derived from ONS projections and including the overlapping historical years.
+Each LA(R) keeps one colour. **Solid lines** show recorded MSDS activity in the shaded historical period and modelled maternities in the future period. **Dashed lines** show ONS published maternities historically and the ONS projected live-birth base in future. The ONS future base counts babies before the model's maternity adjustments; historical published maternities count pregnancies. These are labelled source comparisons, not a single continuous measure.
 
 ```{r}
 #| label: resident-ons-msds-comparison
@@ -1676,11 +1693,11 @@ Each LA(R) keeps one colour. **Circles and solid lines:** ONS published maternit
 ons_exploration$resident_comparison$chart
 ```
 
-The MSDS line counts recorded deliveries in `final_cohort_2326` among residents of each BBCS LA, including home deliveries, deliveries outside cluster trusts and records with unknown age. MSDS financial years are plotted at their starting year: 2023 represents 2023/24. Published ONS maternities use registration years; adjusted projections use the supplied ONS projection years, paired as described in the [reporting-year convention](#reporting-years). The recorded series retain their original age coverage; the model distributes the ONS projections across ages 13–54. Modelled maternities also include the maternity pathway adjustment allowance for pregnancies without a recorded delivery. The vertical line marks 2025.
+The MSDS line counts recorded deliveries in `final_cohort_2326` among residents of each BBCS LA, including home deliveries, deliveries outside cluster trusts and records with unknown age. MSDS financial years are plotted at their starting year: 2023 represents 2023/24. Published ONS maternities use registration years; adjusted projections use the supplied ONS projection years, paired as described in the [reporting-year convention](#reporting-years). The recorded series retain their original age coverage; the model distributes the ONS projections across ages 13–54. Modelled maternities also include the maternity pathway adjustment allowance for pregnancies without a recorded delivery. The vertical line falls between 2025 and 2026, separating the recorded period through 2025/26 from future years. Historical model estimates remain in the retrospective comparisons and tables.
 
 # 3. Projections: deliveries and antenatal bookings {#first-draft-projections}
 
-The model applies four adjustments to ONS births, then distributes the total to booking and delivery destinations. It calculates each resident LA and individual age from **13 to 54** separately before adding results into age bands, trusts, ICBs and the cluster. Rates and provider shares stay fixed; future changes follow the ONS birth projections.
+The model applies five adjustments to ONS births, then distributes the total to booking and delivery destinations. It calculates each resident LA and individual age from **13 to 54** separately before adding results into age bands, trusts, ICBs and the cluster. Rates and provider shares stay fixed; future changes follow the ONS birth projections.
 
 ## 3.1 How the projections are calculated {#projection-method}
 
@@ -1704,6 +1721,21 @@ At the same published age, calculate **pooled maternities ÷ pooled births (live
 
 [**Assumptions and stillbirth coverage:** the national age-specific relationships are assumed to apply locally and remain constant over time. Both factors use matching Table 5 counts: the stillbirth allowance changes live-born babies to live-born plus stillborn babies, and the multiplicity factor converts those babies to pregnancies reaching birth. Together they include stillbirth-only maternities and multiple maternities with mixed live/stillbirth outcomes, without forecasting each outcome separately. All babies are counted directly in Table 5, including higher-order multiples. (LM edit)]{.lm-edit}
 
+#### Private–NHS modifier {#private-nhs-modifier}
+
+For each maternal age band, pool the **England-resident** maternity counts in **Table 4 of the 2023, 2024 and 2025 ONS birth-registration workbooks**, using the “Any number” total for previous live-born children once per age band and delivery setting. Calculate **non-NHS-establishment maternities ÷ all maternities**, then subtract that proportion from 1. Multiply the projection by this factor **after multiplicity and before the maternity pathway adjustment**. Pool counts before dividing; do not average annual percentages or round factors inside the model.
+
+Use under 20, 20–24, 25–29, 30–34, 35–39, 40–44 and 45+. The 2025 groups 45–49 and 50+ are combined to match 45+ in 2023–2024. Each model age from 13 to 54 receives its band's factor; age 44 uses 40–44, and ages 45–54 use 45+. The derived unknown-age row reconciles the all-age total with the published bands and is retained for review, but is not assigned to known model ages. A source boundary with no local age split receives no assumed private-care rate or completed age-specific estimate.
+
+**Assumption:** non-NHS delivery settings are used as a proxy for private care. The same pooled age-band reduction is assumed to apply to both bookings and deliveries, in every modelled LA and future year. Table 4 measures delivery setting, not funding or antenatal care: it cannot identify private care within NHS establishments or partial private pathways. Home and elsewhere categories are not classified as private by this modifier. Recorded MSDS activity, the pathway ratio and both allocation denominators remain unchanged; the new factor reduces the shared projection once, so it is not applied again to the allocated booking or delivery totals.
+
+Sources: [ONS birth-registration workbooks, Table 4](https://www.ons.gov.uk/peoplepopulationandcommunity/birthsdeathsandmarriages/livebirths/datasets/birthsinenglandandwalesbirthregistrations) and [ONS birth-statistics definitions](https://www.ons.gov.uk/peoplepopulationandcommunity/birthsdeathsandmarriages/livebirths/methodologies/userguidetobirthstatistics#place-of-birth-and-area-of-usual-residence).
+
+```{r}
+#| label: private-nhs-pooled-modifier
+private_nhs_modifier_table(first_draft_projections$private_nhs$pooled)
+```
+
 #### Maternity pathway adjustment {#bookings-uplift-adjustment}
 
 For each cluster LA and individual age from **13 to 54**, divide **all supplied cohort pregnancies by those with a recorded delivery**, including live births and stillbirths. Each pregnancy counts once, regardless of the number of babies or appointments. The ratio allows for pregnancies without a recorded delivery. Home deliveries and deliveries with an unknown location remain in the delivery count. The calculation uses the supplied cohort without a further date filter.
@@ -1714,7 +1746,7 @@ Multiply the ONS-derived maternity projection by this maternity pathway adjustme
 
 **Booking Denominator Factor** is this estimated resident pregnancy total minus the supplied cohort pregnancy count. It represents volume without linked booking details and stays separate from provider bookings.
 
-**How bookings and deliveries relate:** after the age, stillbirth and multiplicity adjustments, the ONS-derived count represents pregnancies reaching delivery. For a BBCS resident LA and age, call that projection **P**, recorded deliveries **D**, recorded bookings **B**, and all supplied pregnancies **T**. A pregnancy can have both events, a booking only or a delivery only, so T is counted from pregnancy rows rather than adding B and D.
+**How bookings and deliveries relate:** after the age, stillbirth, multiplicity and Private–NHS adjustments, the ONS-derived count represents the delivery-equivalent projection retained for the modelled pathway. For a BBCS resident LA and age, call that projection **P**, recorded deliveries **D**, recorded bookings **B**, and all supplied pregnancies **T**. A pregnancy can have both events, a booking only or a delivery only, so T is counted from pregnancy rows rather than adding B and D.
 
 The **maternity pathway adjustment is T/D**. Multiplying P by T/D gives the shared adjusted maternity total. Booking and delivery volumes are then separate allocations from it:
 
@@ -1727,16 +1759,16 @@ These identities describe the local BBCS calculation where the cohort supplies t
 
 #### Example: from ONS births to adjusted maternities
 
-**Fictional counts and factors.** An LA has 200 projected live births in the combined ≤15 row. Local age shares split the count before the other three modifiers are applied. The maternity pathway adjustment is 1.25 in this example.
+**Fictional counts and factors.** An LA has 200 projected live births in the combined ≤15 row. Local age shares split the count before the other four modifiers are applied. For transparent arithmetic, the fictional Private–NHS modifier is 0.99 and the maternity pathway adjustment is 1.25.
 
-| Age (SY) | Age share | Live births after split | Stillbirth factor | Live + stillborn babies | Multiplicity factor | Pathway factor | Adjusted maternities |
-|---:|---:|---:|---:|---:|---:|---:|---:|
-| 13 | 10% | 20 | 1.05 | 21 | 0.98 | 1.25 | 25.725 |
-| 14 | 20% | 40 | 1.025 | 41 | 0.98 | 1.25 | 50.225 |
-| 15 | 70% | 140 | 1.00 | 140 | 0.99 | 1.25 | 173.250 |
-| **Total** | **100%** | **200** |  | **202** |  |  | **249.200** |
+| Age (SY) | Age share | Live births after split | Stillbirth factor | Live + stillborn babies | Multiplicity factor | Private–NHS modifier | Pathway factor | Adjusted maternities |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 13 | 10% | 20 | 1.05 | 21 | 0.98 | 0.99 | 1.25 | 25.46775 |
+| 14 | 20% | 40 | 1.025 | 41 | 0.98 | 0.99 | 1.25 | 49.72275 |
+| 15 | 70% | 140 | 1.00 | 140 | 0.99 | 0.99 | 1.25 | 171.51750 |
+| **Total** | **100%** | **200** |  | **202** |  |  |  | **246.70800** |
 
-For age 13: **200 × 10% × 1.05 × 0.98 × 1.25 = 25.725 maternities**. The final total includes pregnancies without a recorded delivery; provider allocations select the relevant booking or delivery activity from it.
+For age 13: **200 × 10% × 1.05 × 0.98 × 0.99 × 1.25 = 25.46775 maternities**. The final total includes pregnancies without a recorded delivery; provider allocations select the relevant booking or delivery activity from it.
 
 ### 3.1.2 Allocating maternities to providers {#provider-allocation}
 
@@ -1751,25 +1783,25 @@ Trusts outside the cluster retain their own shares. Adding every provider and th
 
 #### Example: from resident maternities to trust activity {#allocation-worked-example}
 
-**Fictional counts and factors.** Two LA/age groups contribute to Trust A. Both ages have their own ONS rows, so their age shares are 1. The national factor is the stillbirth factor multiplied by the multiplicity factor.
+**Fictional counts and factors.** Two LA/age groups contribute to Trust A. Both ages have their own ONS rows, so their age shares are 1. The national factor is the stillbirth factor multiplied by the multiplicity factor. The separate fictional Private–NHS factor is 0.99 for both ages.
 
 ::::::: {.projection-example-grid .allocation-example-grid}
 ::: example-step
 ##### 1. Adjust the resident projections
 
-| LA(R) / Age (SY) | ONS live births | National factor | Pathway factor | Adjusted maternities |
-|----|---:|---:|---:|---:|
-| B / 25 | 100 | 1.01 × 0.99 = 0.9999 | 1.20 | 119.988 |
-| C / 30 | 200 | 1.02 × 0.98 = 0.9996 | 1.25 | 249.900 |
+| LA(R) / Age (SY) | ONS live births | National factor | Private–NHS modifier | Pathway factor | Adjusted maternities |
+|----|---:|---:|---:|---:|---:|
+| B / 25 | 100 | 1.01 × 0.99 = 0.9999 | 0.99 | 1.20 | 118.78812 |
+| C / 30 | 200 | 1.02 × 0.98 = 0.9996 | 0.99 | 1.25 | 247.40100 |
 
-For B: **100 × 0.9999 × 1.20 = 119.988**.
+For B: **100 × 0.9999 × 0.99 × 1.20 = 118.78812**.
 :::
 
 ::: example-step
 ##### 2. Calculate Trust A's shares
 
 | LA / age | Resident deliveries | All pregnancies | Trust A deliveries | Trust A bookings |
-|----|---:|---:|---:|---:|
+|----|---:|---:|---:|---:|---:|
 | B / 25 | 100 | 120 | 60 | 72 |
 | C / 30 | 200 | 250 | 100 | 150 |
 
@@ -1781,8 +1813,8 @@ For B, the shared denominator is **100 × 1.20 = 120**. Trust A's delivery share
 
 | LA / age | Projected Trust A deliveries | Projected Trust A bookings |
 |----------|-----------------------------:|---------------------------:|
-| B / 25   |       119.988 × 50% = 59.994 |    119.988 × 60% = 71.9928 |
-| C / 30   |       249.900 × 40% = 99.960 |   249.900 × 60% = 149.9400 |
+| B / 25   |       118.78812 × 50% = 59.39406 |    118.78812 × 60% = 71.272872 |
+| C / 30   |       247.401 × 40% = 98.9604 |   247.401 × 60% = 148.4406 |
 
 Both views use the same adjusted maternity total. Each applies its own provider share once.
 :::
@@ -1792,22 +1824,22 @@ Both views use the same adjusted maternity total. Each applies its own provider 
 
 | Trust A            | Projected activity |
 |--------------------|-------------------:|
-| Deliveries         |        **159.954** |
-| Antenatal bookings |       **221.9328** |
+| Deliveries         |        **158.35446** |
+| Antenatal bookings |       **219.713472** |
 
 Other providers and non-provider categories retain their shares. Add the unrounded LA/age contributions before displaying trust, ICB and cluster totals; bookings and deliveries are separate views of the same pregnancies.
 :::
 :::::::
 
-**When bookings are fewer than deliveries:** if an LA/age has 90 pregnancies with both a booking and delivery, plus 10 with delivery only, it has 100 pregnancies and a modifier of 100/100 = 1. An ONS-derived estimate of 100 deliveries gives 100 adjusted maternities; the booking share of 90/100 produces **90 bookings**, while the delivery share of 100/100 retains **100 deliveries**. The remaining 10 are “No recorded booking”. The modifier expands the shared pathway total; the separate shares determine the two activity volumes. If instead there are 70 pregnancies with both events, 20 with a booking only and 30 with a delivery only, B is still 90 and D is still 100, but T is 120. The pathway factor is 1.2: 100 × 1.2 = 120 adjusted maternities, then 120 × 90/120 = **90 bookings** and 120 × 100/120 = **100 deliveries**.
+**When bookings are fewer than deliveries:** if an LA/age has 90 pregnancies with both a booking and delivery, plus 10 with delivery only, it has 100 pregnancies and a modifier of 100/100 = 1. An ONS-derived estimate of 100 deliveries after the Private–NHS modifier gives 100 adjusted maternities; the booking share of 90/100 produces **90 bookings**, while the delivery share of 100/100 retains **100 deliveries**. The remaining 10 are “No recorded booking”. The modifier expands the shared pathway total; the separate shares determine the two activity volumes. If instead there are 70 pregnancies with both events, 20 with a booking only and 30 with a delivery only, B is still 90 and D is still 100, but T is 120. The pathway factor is 1.2: 100 × 1.2 = 120 adjusted maternities, then 120 × 90/120 = **90 bookings** and 120 × 100/120 = **100 deliveries**.
 
 ## 3.2 Adjusted resident maternity projections {#method-1-estimated-maternities-from-projected-births}
 
-These charts show the adjusted total for each LA’s residents before allocation to providers. They include the maternity pathway adjustment for pregnancies without a recorded delivery.
+These charts show the adjusted total for each LA’s residents before allocation to providers. They include the Private–NHS reduction and the maternity pathway adjustment for pregnancies without a recorded delivery.
 
 All years through 2047, including 2023–2025, are calculated from the [2022-based ONS birth projection](#method-1-ref-birth-projections) on 2023 LA geography.
 
-ONS ages 15 and 44 include younger and older ages respectively. The model splits these groups using local age shares, then applies the stillbirth, multiplicity and maternity pathway adjustment factors.
+ONS ages 15 and 44 include younger and older ages respectively. The model splits these groups using local age shares, then applies the stillbirth, multiplicity, Private–NHS and maternity pathway adjustment factors.
 
 Completed estimates are added into seven age bands: **Under 20 (13–19), 20–24, 25–29, 30–34, 35–39, 40–44 and 45+ (45–54)**.
 
@@ -1821,7 +1853,7 @@ Completed estimates are added into seven age bands: **Under 20 (13–19), 20–2
 #| fig-height: 6
 projection_plot(
   total_maternity_projections,
-  "Source: ONS 2022-based migration-category projected live births, 2023 geography; age-specific national modifiers from pooled 2023-2025 Table 5 counts and the MSDS maternity pathway adjustment.",
+  "Source: ONS 2022-based migration-category projected live births, 2023 geography; pooled 2023-2025 Table 5 age-specific conversions, Table 4 Private–NHS age-band factors and the MSDS maternity pathway adjustment.",
   area_colours
 )
 ```
@@ -1834,7 +1866,7 @@ projection_plot(
 #| fig-height: 6
 projection_plot(
   age_band_projections |> filter(age_band == "Under 20"),
-  "Under 20: local age shares, stillbirth, multiplicity and maternity pathway adjustments applied; calculated before allocation to providers.",
+  "Under 20: local age shares, stillbirth, multiplicity, Private–NHS and maternity pathway adjustments applied; calculated before allocation to providers.",
   area_colours
 )
 ```
@@ -1847,7 +1879,7 @@ projection_plot(
 #| fig-height: 6
 projection_plot(
   age_band_projections |> filter(age_band == "20-24"),
-  "Ages 20-24: ONS live births with stillbirth, multiplicity and maternity pathway adjustments at each age.",
+  "Ages 20-24: ONS live births with stillbirth, multiplicity, Private–NHS and maternity pathway adjustments at each age.",
   area_colours
 )
 ```
@@ -1860,7 +1892,7 @@ projection_plot(
 #| fig-height: 6
 projection_plot(
   age_band_projections |> filter(age_band == "25-29"),
-  "Ages 25-29: ONS live births with stillbirth, multiplicity and maternity pathway adjustments at each age.",
+  "Ages 25-29: ONS live births with stillbirth, multiplicity, Private–NHS and maternity pathway adjustments at each age.",
   area_colours
 )
 ```
@@ -1873,7 +1905,7 @@ projection_plot(
 #| fig-height: 6
 projection_plot(
   age_band_projections |> filter(age_band == "30-34"),
-  "Ages 30-34: ONS live births with stillbirth, multiplicity and maternity pathway adjustments at each age.",
+  "Ages 30-34: ONS live births with stillbirth, multiplicity, Private–NHS and maternity pathway adjustments at each age.",
   area_colours
 )
 ```
@@ -1886,7 +1918,7 @@ projection_plot(
 #| fig-height: 6
 projection_plot(
   age_band_projections |> filter(age_band == "35-39"),
-  "Ages 35-39: ONS live births with stillbirth, multiplicity and maternity pathway adjustments at each age.",
+  "Ages 35-39: ONS live births with stillbirth, multiplicity, Private–NHS and maternity pathway adjustments at each age.",
   area_colours
 )
 ```
@@ -1899,7 +1931,7 @@ projection_plot(
 #| fig-height: 6
 projection_plot(
   age_band_projections |> filter(age_band == "40-44"),
-  "Ages 40-44: stillbirth, multiplicity and maternity pathway adjustments applied; age 44 uses the local split of ONS 44+ births.",
+  "Ages 40-44: stillbirth, multiplicity, Private–NHS and maternity pathway adjustments applied; age 44 uses the local split of ONS 44+ births.",
   area_colours
 )
 ```
@@ -1912,7 +1944,7 @@ projection_plot(
 #| fig-height: 6
 projection_plot(
   age_band_projections |> filter(age_band == "45+"),
-  "Ages 45-54: local split of ONS 44+ births, then stillbirth, multiplicity and maternity pathway adjustments at each age.",
+  "Ages 45-54: local split of ONS 44+ births, then stillbirth, multiplicity, Private–NHS and maternity pathway adjustments at each age.",
   area_colours)
 ```
 :::
@@ -1932,9 +1964,9 @@ first_draft_projections$provider_coverage_table
 
 ### 3.3.1 Total deliveries and patient flows {#projection-total-maternities}
 
-The total charts compare **blue: modelled deliveries**, **orange: ONS base**, and **green: recorded MSDS deliveries**. The ONS base distributes the original projected live births using the same delivery-provider shares as the model, after splitting the combined age groups but before applying the stillbirth, multiplicity and maternity pathway adjustment factors. It shows the model's live-birth starting point allocated to providers; it is not a separate provider forecast published by ONS.
+Each organisation keeps one colour across the total charts. Solid lines show recorded MSDS deliveries in the shaded historical period and modelled deliveries in the future period; dashed lines show the ONS base on both sides of the divider after 2025/26. The ONS base distributes the original projected live births using the same delivery-provider shares as the model, after splitting the combined age groups but before applying the stillbirth, multiplicity, Private–NHS and maternity pathway adjustment factors. Its historical segment is also projection-derived, not observed ONS provider activity. ONS does not publish a separate provider forecast.
 
-Recorded deliveries count each pregnancy with a recorded live birth or stillbirth at the organisation once, including multiple births as one delivery. Home births and births with unknown location are excluded from these provider totals. Historical points use the delivery financial year’s start: 2023 means 2023/24. ONS projection years start at 2025; the [reporting-year convention](#reporting-years) pairs ONS 2025 with MSDS 2025/26. Line patterns distinguish organisations; colours distinguish the three series. The tabs show trusts, ICBs and the combined cluster both together and in separate charts.
+Recorded deliveries count each pregnancy with a recorded live birth or stillbirth at the organisation once, including multiple births as one delivery. Home births and births with unknown location are excluded from these provider totals. Historical points use the delivery financial year’s start: 2023 means 2023/24. ONS projection years start at 2025; the [reporting-year convention](#reporting-years) pairs ONS 2025 with MSDS 2025/26. The tabs show trusts, ICBs and the combined cluster both together and in separate charts.
 
 ::: panel-tabset
 #### Trusts
@@ -2105,9 +2137,9 @@ No recorded booking, unknown providers and the Booking Denominator Factor remain
 
 ### 3.4.1 Total antenatal bookings {#booking-total-comparison}
 
-The total charts compare **blue: modelled bookings**, **orange: ONS base**, and **green: recorded MSDS bookings**. The ONS base distributes the original projected live births using the same booking-provider shares as the model, after splitting the combined age groups but before applying the stillbirth, multiplicity and maternity pathway adjustment factors. It shows the model's live-birth starting point allocated to booking providers; ONS does not publish these as booking projections.
+Each organisation uses the same colour as in the delivery charts. Solid lines show recorded MSDS bookings in the shaded historical period and modelled bookings in the future period; dashed lines show the ONS base on both sides of the divider after 2025/26. The ONS base distributes the original projected live births using the same booking-provider shares as the model, after splitting the combined age groups but before applying the stillbirth, multiplicity, Private–NHS and maternity pathway adjustment factors. Its historical segment is also projection-derived; ONS does not publish observed booking counts or booking projections for these providers.
 
-Recorded bookings count each pregnancy once at its booking provider, in the financial year of booking, whether or not a delivery is recorded. They count pregnancies, not appointments. Historical points use the booking financial year's start: 2023 means 2023/24. Bookings without a usable date cannot be assigned to a historical year, although they contribute to the model's provider shares when resident LA and age are known. ONS projection years start at 2025; the [reporting-year convention](#reporting-years) pairs ONS 2025 with MSDS 2025/26. Line patterns distinguish organisations; colours distinguish the three series. The tabs show trusts, ICBs and the combined cluster both together and in separate charts.
+Recorded bookings count each pregnancy once at its booking provider, in the financial year of booking, whether or not a delivery is recorded. They count pregnancies, not appointments. Historical points use the booking financial year's start: 2023 means 2023/24. Bookings without a usable date cannot be assigned to a historical year, although they contribute to the model's provider shares when resident LA and age are known. ONS projection years start at 2025; the [reporting-year convention](#reporting-years) pairs ONS 2025 with MSDS 2025/26. The tabs show trusts, ICBs and the combined cluster both together and in separate charts.
 
 ::: panel-tabset
 #### Trusts
@@ -2255,7 +2287,7 @@ The [resident chart](#resident-source-comparison) shows ONS, MSDS and adjusted e
 
 ### 3.5.1 Resident starting level versus published ONS maternities {#method-1-resident-level-check}
 
-The adjusted totals include the maternity pathway adjustment allowance for pathways without a recorded delivery. Published ONS maternities require a live birth or stillbirth, so differences also reflect this wider scope.
+The adjusted totals include the Private–NHS reduction and the maternity pathway adjustment allowance for pathways without a recorded delivery. Published ONS maternities require a live birth or stillbirth, so differences also reflect this wider scope.
 
 This table compares the modelled 2025 resident total with published ONS maternities for 2025 in the same six LAs. The model distributes the ONS projection across ages 13–54; the published maternity totals retain their original all-age coverage.
 
@@ -2280,7 +2312,7 @@ resident_level_check |>
              Percent_difference = "% difference") |>
   fmt_number(columns = c(Published, Projected, Difference), decimals = 0) |>
   fmt_percent(columns = Percent_difference, decimals = 1) |>
-  tab_source_note(source_note = "Published: ONS Table 3. Modelled: adjusted ONS projections, including the maternity pathway adjustment.") |>
+  tab_source_note(source_note = "Published: ONS Table 3. Modelled: adjusted ONS projections, including the Private–NHS and maternity pathway adjustments.") |>
   ons_table_style()
 ```
 

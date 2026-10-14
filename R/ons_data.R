@@ -85,9 +85,9 @@ ons_source_files <- function(data_dir = ons_data_dir()) {
     "snpp_2022", "2022 SNPP Births persons.csv", "ONS 2022-based subnational population projections: births by age of mother", "Projection", "2023–2047", "Existing supplied migration-category variant on 2023 geography; projected rates and estimated maternities.",
     "snpp_female_population_2022", "ons_2022_based_female_population_projections_2023_geography.csv", "ONS 2022-based subnational population projections: female population by single year of age", "Projection", "2023–2047", "Direct ONS migration-category population on matching 2023 geography: denominator for the projected ratio and female-population context.",
     "historic_live_births", "ons_live_births_la_2013_2025.csv", "ONS live births in England and Wales down to local authority area, via Nomis", "Observed", "2013–2025", "Show registered births (L) directly; no conversion of historical age-band counts.",
-    "registrations_2023", "2023birthregistrations.xlsx", "ONS Births in England and Wales: birth registrations", "Observed", "2023", "Table 1: published GFR; Table 3: maternities; Table 5: individual-age conversion counts; Table 7: multiplicity context.",
-    "registrations_2024", "2024birthregistrations.xlsx", "ONS Births in England and Wales: birth registrations", "Observed", "2024", "Table 1: published GFR; Table 3: maternities; Table 5: individual-age conversion counts; Table 7: multiplicity context.",
-    "registrations_2025", "2025birthregistrations.xlsx", "ONS Births in England and Wales: birth registrations", "Observed", "2025", "Table 1: published GFR; Table 3: maternities; Table 5: individual-age conversion counts; Table 7: multiplicity context."
+    "registrations_2023", "2023birthregistrations.xlsx", "ONS Births in England and Wales: birth registrations", "Observed", "2023", "Table 1: published GFR; Table 3: maternities; Table 4: England Private-NHS age-band modifier; Table 5: individual-age conversion counts; Table 7: multiplicity context.",
+    "registrations_2024", "2024birthregistrations.xlsx", "ONS Births in England and Wales: birth registrations", "Observed", "2024", "Table 1: published GFR; Table 3: maternities; Table 4: England Private-NHS age-band modifier; Table 5: individual-age conversion counts; Table 7: multiplicity context.",
+    "registrations_2025", "2025birthregistrations.xlsx", "ONS Births in England and Wales: birth registrations", "Observed", "2025", "Table 1: published GFR; Table 3: maternities; Table 4: England Private-NHS age-band modifier; Table 5: individual-age conversion counts; Table 7: multiplicity context."
   ) |>
     mutate(path = file.path(data_dir, file_name), available = file.exists(path))
 }
@@ -386,6 +386,118 @@ prepare_projection_age_factors <- function(counts = read_national_age_counts(), 
   list(annual = annual, factors = factors, modifications = modifications)
 }
 
+# Table 4: England-resident maternities by delivery setting and age band.
+# Select all previous-child counts once. Preserve source totals and derive the
+# unknown-age residual explicitly; never allocate it to known maternal ages.
+read_private_nhs_counts <- function(data_dir = ons_data_dir()) {
+  files <- ons_source_files(data_dir) |> filter(grepl("^registrations_", source_id), available)
+  bands <- c("Under 20", "20-24", "25-29", "30-34", "35-39", "40-44", "45+")
+  result <- map2_dfr(files$path, as.integer(files$period), function(path, source_year) {
+    raw <- read_registration_table(path, "Table_4")
+    column <- intersect(c("maternities", "number_of_maternities"), names(raw))
+    if (length(column) != 1L) stop("Ambiguous Table 4 maternity count in ", basename(path))
+    selected <- raw |>
+      filter(country == "England", number_of_previous_live_born_children %in%
+        c("Any number", "Any number of previous live-born children")) |>
+      transmute(Age_source = age_of_mother_at_birth_years, Place = place_of_birth,
+        Count = as.numeric(.data[[column]]))
+    source_ages <- if (source_year == 2025L) c("All ages", "Under 20", "20 to 24", "25 to 29",
+      "30 to 34", "35 to 39", "40 to 44", "45 to 49", "50 and over") else
+      c("All ages", "Under 20", "20 to 24", "25 to 29", "30 to 34", "35 to 39", "40 to 44", "45 and over")
+    places <- c("Any place of birth", "NHS establishments", "Non-NHS establishments", "At home", "Elsewhere")
+    expected <- tidyr::expand_grid(Age_source = source_ages, Place = places)
+    if (anyDuplicated(selected[c("Age_source", "Place")]) ||
+        nrow(anti_join(expected, selected, by = c("Age_source", "Place"))) ||
+        nrow(anti_join(selected, expected, by = c("Age_source", "Place"))) ||
+        any(!is.finite(selected$Count) | selected$Count < 0 | selected$Count != floor(selected$Count)))
+      stop("Table 4 needs complete, unique, nonnegative counts in ", basename(path))
+    selected <- selected |>
+      mutate(Private_NHS_age_band = case_when(Age_source %in% c("45 and over", "45 to 49", "50 and over") ~ "45+",
+        TRUE ~ gsub(" to ", "-", Age_source))) |>
+      group_by(Private_NHS_age_band, Place) |> summarise(Count = sum(Count), .groups = "drop")
+    unknown <- selected |> group_by(Place) |>
+      summarise(Count = Count[Private_NHS_age_band == "All ages"] -
+        sum(Count[Private_NHS_age_band != "All ages"]), .groups = "drop") |>
+      mutate(Private_NHS_age_band = "Unknown (derived)")
+    bind_rows(selected, unknown) |>
+      tidyr::pivot_wider(names_from = Place, values_from = Count) |>
+      transmute(Year = source_year, Private_NHS_age_band,
+        Total_maternities = `Any place of birth`, NHS_maternities = `NHS establishments`,
+        Non_NHS_maternities = `Non-NHS establishments`, Home_maternities = `At home`,
+        Elsewhere_maternities = Elsewhere,
+        Unallocated_place = Total_maternities - NHS_maternities - Non_NHS_maternities - Home_maternities - Elsewhere_maternities)
+  })
+  expected <- tidyr::expand_grid(Year = 2023:2025, Private_NHS_age_band = c(bands, "Unknown (derived)", "All ages"))
+  if (nrow(anti_join(expected, result, by = c("Year", "Private_NHS_age_band"))) ||
+      nrow(anti_join(result, expected, by = c("Year", "Private_NHS_age_band"))) ||
+      any(as.matrix(result[setdiff(names(result), c("Year", "Private_NHS_age_band"))]) < 0))
+    stop("Table 4 years, age groups or residual counts do not reconcile.")
+  result
+}
+
+prepare_private_nhs_factors <- function(counts = read_private_nhs_counts(), ages = 13:54) {
+  bands <- c("Under 20", "20-24", "25-29", "30-34", "35-39", "40-44", "45+")
+  expected <- tidyr::expand_grid(Year = 2023:2025, Private_NHS_age_band = c(bands, "Unknown (derived)", "All ages"))
+  values <- as.matrix(counts[c("Total_maternities", "NHS_maternities", "Non_NHS_maternities",
+    "Home_maternities", "Elsewhere_maternities", "Unallocated_place")])
+  if (anyDuplicated(counts[c("Year", "Private_NHS_age_band")]) ||
+      nrow(anti_join(expected, counts, by = c("Year", "Private_NHS_age_band"))) ||
+      nrow(anti_join(counts, expected, by = c("Year", "Private_NHS_age_band"))) ||
+      any(!is.finite(values) | values < 0) || any(values[, 1] != rowSums(values[, -1, drop = FALSE])))
+    stop("Invalid Private-NHS source counts; do not replace missing evidence with zero.")
+  annual <- counts |> mutate(Private_NHS_rate = Non_NHS_maternities / Total_maternities,
+    Private_NHS_factor = 1 - Private_NHS_rate)
+  pooled <- counts |> group_by(Private_NHS_age_band) |>
+    summarise(across(c(Total_maternities, NHS_maternities, Non_NHS_maternities,
+      Home_maternities, Elsewhere_maternities, Unallocated_place), sum), .groups = "drop") |>
+    mutate(Private_NHS_rate = Non_NHS_maternities / Total_maternities,
+      Private_NHS_factor = 1 - Private_NHS_rate,
+      Period = "2023-2025", Population = "England-resident mothers")
+  if (any(!is.finite(pooled$Private_NHS_factor[pooled$Private_NHS_age_band %in% bands])))
+    stop("Missing denominator for a Private-NHS age band.")
+  pooled <- pooled[match(c(bands, "Unknown (derived)", "All ages"), pooled$Private_NHS_age_band), ]
+  modifications <- data.frame(Age = ages, Private_NHS_age_band = as.character(cut(ages,
+    breaks = c(-Inf, 19, 24, 29, 34, 39, 44, Inf), labels = bands))) |>
+    left_join(pooled |> select(Private_NHS_age_band, Private_NHS_rate, Private_NHS_factor), by = "Private_NHS_age_band")
+  list(annual = annual, pooled = pooled, modifications = modifications)
+}
+
+private_nhs_variation_chart <- function(evidence) {
+  bands <- evidence$pooled$Private_NHS_age_band[1:7]
+  annual <- evidence$annual |> filter(Private_NHS_age_band %in% bands) |>
+    transmute(Series = as.character(Year), Private_NHS_age_band, Private_NHS_rate)
+  rows <- bind_rows(annual, evidence$pooled |> filter(Private_NHS_age_band %in% bands) |>
+    transmute(Series = "Pooled 2023-2025", Private_NHS_age_band, Private_NHS_rate))
+  colours <- c("2023" = "#005EB8", "2024" = "#D55E00", "2025" = "#00856A", "Pooled 2023-2025" = "#222222")
+  chart <- plotly::plot_ly(height = 440)
+  for (series in names(colours)) {
+    data <- rows[rows$Series == series, ]
+    data <- data[match(bands, data$Private_NHS_age_band), ]
+    chart <- plotly::add_trace(chart, type = "scatter", mode = "lines+markers",
+      x = data$Private_NHS_age_band, y = data$Private_NHS_rate, name = series,
+      line = list(color = colours[[series]]), marker = list(color = colours[[series]], symbol = "circle"),
+      text = paste0(series, "<br>", data$Private_NHS_age_band, "<br>Non-NHS share: ",
+        scales::percent(data$Private_NHS_rate, accuracy = 0.001)), hovertemplate = "%{text}<extra></extra>")
+  }
+  chart |> plotly::layout(xaxis = list(title = "Maternal age band", categoryorder = "array", categoryarray = bands),
+    yaxis = list(title = "Non-NHS share of all maternities", tickformat = ".1%", rangemode = "tozero"),
+    legend = list(orientation = "h", y = -0.22), margin = list(l = 75, r = 20, t = 20, b = 95)) |>
+    plotly::config(displayModeBar = FALSE, responsive = TRUE) |> dc_widget()
+}
+
+private_nhs_modifier_table <- function(pooled) {
+  pooled |> select(Private_NHS_age_band, Total_maternities, Non_NHS_maternities,
+    Private_NHS_rate, Private_NHS_factor) |> gt::gt() |>
+    gt::cols_label(Private_NHS_age_band = "Maternal age", Total_maternities = "All maternities",
+      Non_NHS_maternities = "Non-NHS maternities", Private_NHS_rate = "Non-NHS share",
+      Private_NHS_factor = "Private\u2013NHS modifier") |>
+    gt::fmt_number(columns = c(Total_maternities, Non_NHS_maternities), decimals = 0) |>
+    gt::fmt_percent(columns = Private_NHS_rate, decimals = 3) |>
+    gt::fmt_number(columns = Private_NHS_factor, decimals = 6) |>
+    gt::tab_source_note("ONS Table 4, England residents, pooled 2023\u20132025. The modifier is 1 minus the non-NHS share. The 2025 groups 45\u201349 and 50+ are combined to match 45+ in 2023\u20132024. Unknown age is the all-age total minus published ages; unknown and all-age rows are context only, not rates assigned to known model ages.") |>
+    gt::tab_options(container.width = "100%", container.overflow.x = TRUE)
+}
+
 # 4. Table 7 multiplicity proportions: descriptive context only ----------
 pooled_multiplicity_rates <- function(multiplicity_data) {
   multiplicity_data |>
@@ -623,7 +735,7 @@ maternity_modifier_table <- function(modifications) {
       `Stillbirth factor` = Stillbirth_factor, `Multiplicity factor` = Multiplicity_factor,
       `National factor product` = National_conversion_factor) |>
     gt::gt() |> gt::fmt_number(columns = c("Stillbirth factor", "Multiplicity factor", "National factor product"), decimals = 5) |>
-    gt::tab_source_note("ONS Table 5, pooled 2023-2025 counts at each published age. These two factors convert live births to ONS-defined maternities. The model also applies the local age split and maternity pathway adjustment.") |>
+    gt::tab_source_note("ONS Table 5, pooled 2023-2025 counts at each published age. These two factors convert live births to ONS-defined maternities. The model also applies the local age split, Private\u2013NHS modifier and maternity pathway adjustment.") |>
     ons_table_style()
 }
 

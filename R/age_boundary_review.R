@@ -312,7 +312,7 @@ build_msds_age_review <- function(cohort, projections, historical, trust_labels,
     ggplot2::geom_line() + ggplot2::geom_point() + ggplot2::scale_x_continuous(breaks = model_ages[model_ages >= 40]) +
     ggplot2::labs(title = "Deliveries by age: modelled 2025 and recorded 2025/26", x = "Exact maternal age",
       y = "Recorded / modelled non-home deliveries", colour = NULL,
-      caption = "Cluster trusts combined. ONS counts use all four modifiers and full-cohort allocation proportions.\nPartial model counts retain available allocations; recorded counts retain all activity. See provider coverage.") +
+      caption = "Cluster trusts combined. ONS counts use all five modifiers and full-cohort allocation proportions.\nPartial model counts retain available allocations; recorded counts retain all activity. See provider coverage.") +
     ggplot2::theme_minimal(base_family = "sans") + ggplot2::theme(legend.position = "bottom")
   age_mix <- counts |> dplyr::filter(series != "40-43") |> dplyr::group_by(year) |>
     dplyr::mutate(denominator = sum(Observed), share = ifelse(denominator > 0, Observed / denominator * 100, NA_real_)) |>

@@ -1,19 +1,19 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="950" viewBox="0 0 1200 950" role="img" aria-labelledby="title desc">
-<title id="title">Four modifiers and one shared maternity total</title>
-<desc id="desc">ONS live births are distributed across ages 13–54 and adjusted for stillbirths, multiplicity and the maternity pathway adjustment. Outside LAs use the same-age cluster-resident pathway factor. One shared total feeds independent booking and delivery allocations, retaining all non-provider categories and the Booking Denominator Factor residual. Both allocations use recorded resident deliveries multiplied by the maternity pathway adjustment as their denominator. Live births and stillbirths count babies; deliveries and maternities count pregnancies.</desc>
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1115" viewBox="0 0 1200 1115" role="img" aria-labelledby="title desc">
+<title id="title">Five modifiers and one shared maternity total</title>
+<desc id="desc">ONS live births are distributed across ages 13–54 and adjusted for stillbirths, multiplicity, the Private–NHS modifier and the maternity pathway adjustment. Outside LAs use the same-age cluster-resident pathway factor. One shared total feeds independent booking and delivery allocations, retaining all non-provider categories and the Booking Denominator Factor residual. Both allocations use recorded resident deliveries multiplied by the maternity pathway adjustment as their denominator. Live births and stillbirths count babies; deliveries and maternities count pregnancies.</desc>
 <defs><marker id="arrow" markerWidth="9" markerHeight="9" refX="8" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8" fill="none" stroke="#256681" stroke-width="1.4"/></marker></defs>
-<rect width="1200" height="950" fill="white"/>
+<rect width="1200" height="1115" fill="white"/>
 <path d="M280 100 H314" fill="none" stroke="#256681" stroke-width="2" marker-end="url(#arrow)"/>
 <path d="M580 100 H614" fill="none" stroke="#256681" stroke-width="2" marker-end="url(#arrow)"/>
 <path d="M880 100 H914" fill="none" stroke="#256681" stroke-width="2" marker-end="url(#arrow)"/>
-<path d="M1050 170 V210" fill="none" stroke="#256681" stroke-width="2" marker-end="url(#arrow)"/>
-<path d="M620 287 H704" fill="none" stroke="#256681" stroke-width="2" marker-end="url(#arrow)"/>
-<path d="M945 355 V395 H600 V429" fill="none" stroke="#256681" stroke-width="2" marker-end="url(#arrow)"/>
-<path d="M420 483 H385" fill="none" stroke="#256681" stroke-width="2" marker-end="url(#arrow)"/>
-<path d="M510 535 V575 H340 V604" fill="none" stroke="#256681" stroke-width="2" marker-end="url(#arrow)"/>
-<path d="M690 535 V575 H860 V604" fill="none" stroke="#256681" stroke-width="2" marker-end="url(#arrow)"/>
-<path d="M340 780 V820 H550 V854" fill="none" stroke="#256681" stroke-width="2" marker-end="url(#arrow)"/>
-<path d="M860 780 V820 H650 V854" fill="none" stroke="#256681" stroke-width="2" marker-end="url(#arrow)"/>
+<path d="M1050 170 V190 H945 V210" fill="none" stroke="#256681" stroke-width="2" marker-end="url(#arrow)"/>
+<path d="M620 452 H704" fill="none" stroke="#256681" stroke-width="2" marker-end="url(#arrow)"/>
+<path d="M945 520 V560 H600 V594" fill="none" stroke="#256681" stroke-width="2" marker-end="url(#arrow)"/>
+<path d="M420 648 H385" fill="none" stroke="#256681" stroke-width="2" marker-end="url(#arrow)"/>
+<path d="M510 700 V740 H340 V769" fill="none" stroke="#256681" stroke-width="2" marker-end="url(#arrow)"/>
+<path d="M690 700 V740 H860 V769" fill="none" stroke="#256681" stroke-width="2" marker-end="url(#arrow)"/>
+<path d="M340 945 V985 H550 V1019" fill="none" stroke="#256681" stroke-width="2" marker-end="url(#arrow)"/>
+<path d="M860 945 V985 H650 V1019" fill="none" stroke="#256681" stroke-width="2" marker-end="url(#arrow)"/>
 <rect x="20" y="30" width="260" height="140" rx="3" fill="#eb7030"/>
 <text x="150.0" y="60" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="19" font-weight="bold">ONS live births</text>
 <text x="150.0" y="89" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="17">2022-based projections</text>
@@ -35,38 +35,47 @@
 <text x="1050.0" y="89" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="17">Multiply by M/(L+S)</text>
 <text x="1050.0" y="112" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="17">National Table 5 counts</text>
 <text x="1050.0" y="135" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="17">Pooled 2023–2025</text>
-<rect x="20" y="215" width="600" height="140" rx="3" fill="#19627d"/>
-<text x="320.0" y="245" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="19" font-weight="bold">MSDS cohort and resident totals</text>
-<text x="320.0" y="274" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="17">Supplied cohort, ages 13–54, by resident LA</text>
-<text x="320.0" y="297" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="17">Local LA/age pathway factor; same-age BBCS proxy outside</text>
-<text x="320.0" y="320" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="17">BBCS cohort; wider resident totals for incoming LAs</text>
+<rect x="20" y="380" width="600" height="140" rx="3" fill="#19627d"/>
+<text x="320.0" y="410" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="19" font-weight="bold">MSDS cohort and resident totals</text>
+<text x="320.0" y="439" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="17">Supplied cohort, ages 13–54, by resident LA</text>
+<text x="320.0" y="462" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="17">Local LA/age pathway factor; same-age BBCS proxy outside</text>
+<text x="320.0" y="485" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="17">BBCS cohort; wider resident totals for incoming LAs</text>
+<rect x="710" y="380" width="470" height="140" rx="3" fill="#19627d"/>
+<text x="945.0" y="410" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="19" font-weight="bold">5. Maternity pathway adjustment</text>
+<text x="945.0" y="439" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="17">All cohort pregnancies / recorded cohort deliveries</text>
+<text x="945.0" y="462" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="17">Includes pregnancies without a recorded delivery</text>
+<text x="945.0" y="485" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="17">Home and unknown-location deliveries included</text>
+<rect x="20" y="597" width="360" height="103" rx="3" fill="#19627d"/>
+<text x="200.0" y="627" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="19" font-weight="bold">Resident projection charts</text>
+<text x="200.0" y="656" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="17">Sum the shared adjusted counts</text>
+<text x="200.0" y="679" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="17">by LA(R) and age band</text>
+<rect x="420" y="597" width="360" height="103" rx="3" fill="#eb7030"/>
+<text x="600.0" y="627" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="19" font-weight="bold">Adjusted maternities</text>
+<text x="600.0" y="656" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="17">One LA(R) × age × year total</text>
+<text x="600.0" y="679" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="17">Shared by both allocation views</text>
+<rect x="90" y="773" width="500" height="172" rx="3" fill="#438f24"/>
+<text x="340.0" y="803" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="19" font-weight="bold">Delivery allocation</text>
+<text x="340.0" y="832" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="17">Each trust, including outside cluster</text>
+<text x="340.0" y="855" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="17">Home birth and delivery location unknown</text>
+<text x="340.0" y="878" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="17">No recorded delivery</text>
+<text x="340.0" y="901" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="17">Deliveries not represented in the linked cohort</text>
+<text x="340.0" y="924" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="17">Denominator = resident deliveries × pathway factor</text>
+<rect x="640" y="773" width="500" height="172" rx="3" fill="#438f24"/>
+<text x="890.0" y="803" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="19" font-weight="bold">Antenatal booking allocation</text>
+<text x="890.0" y="832" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="17">Each booking provider</text>
+<text x="890.0" y="855" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="17">No recorded booking / provider unknown</text>
+<text x="890.0" y="878" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="17">Booking Denominator Factor residual</text>
+<text x="890.0" y="901" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="17">Denominator = resident deliveries × pathway factor</text>
+<rect x="280" y="1023" width="640" height="75" rx="3" fill="#eb7030"/>
+<text x="600.0" y="1053" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="19" font-weight="bold">Completed master → reporting summaries</text>
+<text x="600.0" y="1082" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="17">Both views reconcile to the same total; do not add them together</text>
+<path d="M945 355 V375" fill="none" stroke="#256681" stroke-width="2" marker-end="url(#arrow)"/>
 <rect x="710" y="215" width="470" height="140" rx="3" fill="#19627d"/>
-<text x="945.0" y="245" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="19" font-weight="bold">4. Maternity pathway adjustment</text>
-<text x="945.0" y="274" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="17">All cohort pregnancies / recorded cohort deliveries</text>
-<text x="945.0" y="297" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="17">Includes pregnancies without a recorded delivery</text>
-<text x="945.0" y="320" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="17">Home and unknown-location deliveries included</text>
-<rect x="20" y="432" width="360" height="103" rx="3" fill="#19627d"/>
-<text x="200.0" y="462" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="19" font-weight="bold">Resident projection charts</text>
-<text x="200.0" y="491" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="17">Sum the shared adjusted counts</text>
-<text x="200.0" y="514" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="17">by LA(R) and age band</text>
-<rect x="420" y="432" width="360" height="103" rx="3" fill="#eb7030"/>
-<text x="600.0" y="462" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="19" font-weight="bold">Adjusted maternities</text>
-<text x="600.0" y="491" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="17">One LA(R) × age × year total</text>
-<text x="600.0" y="514" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="17">Shared by both allocation views</text>
-<rect x="90" y="608" width="500" height="172" rx="3" fill="#438f24"/>
-<text x="340.0" y="638" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="19" font-weight="bold">Delivery allocation</text>
-<text x="340.0" y="667" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="17">Each trust, including outside cluster</text>
-<text x="340.0" y="690" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="17">Home birth and delivery location unknown</text>
-<text x="340.0" y="713" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="17">No recorded delivery</text>
-<text x="340.0" y="736" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="17">Deliveries not represented in the linked cohort</text>
-<text x="340.0" y="759" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="17">Denominator = resident deliveries × pathway factor</text>
-<rect x="640" y="608" width="500" height="172" rx="3" fill="#438f24"/>
-<text x="890.0" y="638" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="19" font-weight="bold">Antenatal booking allocation</text>
-<text x="890.0" y="667" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="17">Each booking provider</text>
-<text x="890.0" y="690" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="17">No recorded booking / provider unknown</text>
-<text x="890.0" y="713" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="17">Booking Denominator Factor residual</text>
-<text x="890.0" y="736" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="17">Denominator = resident deliveries × pathway factor</text>
-<rect x="280" y="858" width="640" height="75" rx="3" fill="#eb7030"/>
-<text x="600.0" y="888" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="19" font-weight="bold">Completed master → reporting summaries</text>
-<text x="600.0" y="917" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="17">Both views reconcile to the same total; do not add them together</text>
+<text x="945" y="245" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="19" font-weight="bold">4. Private–NHS modifier</text>
+<text x="945" y="274" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="17">1 − non-NHS / all maternities</text>
+<text x="945" y="297" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="17">England Table 4 age bands, pooled 2023–2025</text>
+<text x="945" y="320" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="17">Same assumed rate for bookings and deliveries</text>
+<text x="310" y="270" text-anchor="middle" fill="#19627d" font-family="Arial, sans-serif" font-size="18">Delivery-setting proxy for private care</text>
+<text x="310" y="299" text-anchor="middle" fill="#19627d" font-family="Arial, sans-serif" font-size="17">Apply once to the shared projection</text>
+<text x="310" y="328" text-anchor="middle" fill="#19627d" font-family="Arial, sans-serif" font-size="17">Recorded counts and allocation shares unchanged</text>
 </svg>

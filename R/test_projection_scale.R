@@ -11,6 +11,13 @@ local({
     if (is.call(statement) && identical(statement[[1]], as.name("<-")) &&
         is.call(statement[[3]]) && identical(statement[[3]][[1]], as.name("function"))) eval(statement)
   }
+  # Neutral Private-NHS evidence isolates these existing scale/allocation cases.
+  # test_private_nhs.R exercises actual Table 4 rates through the full model.
+  private_test_counts <- read_private_nhs_counts()
+  private_test_counts$NHS_maternities <- private_test_counts$NHS_maternities + private_test_counts$Non_NHS_maternities
+  private_test_counts$Non_NHS_maternities <- 0
+  build_master_with_private <- build_projection_master
+  build_projection_master <- function(...) build_master_with_private(..., private_nhs_counts = private_test_counts)
   near <- function(actual, expected) {
     stopifnot(isTRUE(all.equal(as.numeric(actual), as.numeric(expected), tolerance = 1e-8)))
   }
@@ -126,7 +133,8 @@ local({
   saveRDS(result, saved)
   restored <- readRDS(saved)
   check_total_chart <- function(chart, bookings) {
-    traces <- plotly::plotly_build(chart)$x$data
+    built <- plotly::plotly_build(chart)$x
+    traces <- built$data
     stopifnot(length(traces) >= 3L)
     for (trace in traces) {
       key <- trace$meta$Key
@@ -135,13 +143,63 @@ local({
       expected <- expected_total(key, if (series == "MSDS recorded") rep(2025, length(year)) else year, bookings)
       if (series == "ONS base") expected <- expected / 1.2
       near(trace$y, dc_count(expected))
-      if (series == "MSDS recorded") near(year, 2023:2025) else near(year, 2025:2047)
+      if (series == "MSDS recorded") near(year, 2023:2025) else
+        if (series == "Modelled projection") near(year, 2026:2047) else near(year, 2025:2047)
+      stopifnot(trace$mode == "lines", is.null(trace$marker$symbol),
+        trace$line$color == unname(organisation_line_colours(key)),
+        trace$line$dash == if (series == "ONS base") "dash" else "solid")
     }
+    stopifnot(sum(vapply(traces, function(x) isTRUE(x$showlegend), logical(1))) ==
+      length(unique(vapply(traces, function(x) x$meta$Key, character(1)))),
+      built$layout$shapes[[1]]$type == "rect",
+      built$layout$shapes[[2]]$x0 == 2025.5)
   }
   for (chart in restored$booking_charts$total) check_total_chart(chart, TRUE)
   for (chart in restored$booking_total_charts) check_total_chart(chart, TRUE)
   for (chart in restored$total_charts) check_total_chart(chart, FALSE)
   for (output in restored$forecast_outputs) check_total_chart(output$total_chart, FALSE)
+  full_history <- build_projection_master(final_cohort_2326, total_births_by_LA_2326, ons, counts, start_year = 2023L)
+  with_history <- build_provider_total_comparison(m, prepare_report_cohort(final_cohort_2326),
+    result$organisations, result$maternity_projections, "Delivery", history_master = full_history)
+  historic_base <- with_history |> dplyr::filter(Series == "ONS base", Year < 2025)
+  near(historic_base$Value, mapply(expected_total, historic_base$Key, historic_base$Year,
+    MoreArgs = list(bookings = FALSE)) / 1.2)
+  stopifnot(setequal(historic_base$Year, 2023:2024))
+  # Historical bookings follow booking FY, independently of delivery year,
+  # birth flag, age, geography, home-birth status and model coverage.
+  booking_history <- original_cohort[rep(1, 11), ]
+  booking_history$person_id_mother <- booking_history$uniq_preg_id <- 1:11
+  booking_history$birth_yr <- "2025/26"
+  booking_history$birth_yr[11] <- "2026/27"
+  booking_history$birth_flag <- rep(c(0L, 1L), length.out = 11)
+  booking_history$home_birth <- 1L
+  booking_history$age_at_birth_mother <- NA_real_
+  booking_history$la_of_mother <- NA_character_
+  booking_history$booking_provider <- " rq3 "
+  booking_history$antenatal_app_date <- c("2023-04-01", "31/03/2024",
+    "2024-04-01", "31/03/2025", "2025-04-01", "31/03/2026",
+    "2026-04-01", "bad date", "", NA, "2025-12-01")
+  prepared_history <- prepare_report_cohort(booking_history)
+  near(prepared_history$Booking_year,
+    c(2023, 2023, 2024, 2024, 2025, 2025, 2026, NA, NA, NA, 2025))
+  stopifnot(nrow(prepared_history) == nrow(booking_history))
+  history_check <- build_provider_total_comparison(m, prepared_history,
+    result$organisations, result$booking_total_projections, "Booking") |>
+    dplyr::filter(Series == "MSDS recorded", Key == "trust-rq3")
+  near(history_check$Value, c(2, 2, 3))
+  # A complete delivery-year extract can still omit later booking cohorts.
+  # Here all 36 delivery months exist; bookings precede deliveries by 180 days.
+  # This demonstrates the possible selection effect, not evidence about Azure.
+  delivery_window <- original_cohort[rep(1, 36), ]
+  delivery_window$person_id_mother <- delivery_window$uniq_preg_id <- 1:36
+  delivery_window$birth_date <- seq(as.Date("2023-04-15"), by = "month", length.out = 36)
+  delivery_window$birth_yr <- rep(c("2023/24", "2024/25", "2025/26"), each = 12)
+  delivery_window$booking_provider <- "RQ3"
+  delivery_window$antenatal_app_date <- delivery_window$birth_date - 180
+  window_check <- build_provider_total_comparison(m, prepare_report_cohort(delivery_window),
+    result$organisations, result$booking_total_projections, "Booking") |>
+    dplyr::filter(Series == "MSDS recorded", Key == "trust-rq3")
+  near(window_check$Value, c(12, 12, 6))
   for (type in names(restored$total_comparison)) {
     totals <- restored$total_comparison[[type]] |>
       dplyr::group_by(Level, Series, Year) |>

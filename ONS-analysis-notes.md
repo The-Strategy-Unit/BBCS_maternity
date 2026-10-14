@@ -3,7 +3,7 @@
 ## Current calculation
 
 All adjusted projections use one LA(R) × Age (SY) × year master in
-`R/Maternity analysis.R`. Apply four modifiers, then allocate:
+`R/Maternity analysis.R`. Apply five modifiers, then allocate:
 
 1. Split ONS ≤15 across ages 13–15 and ONS 44+ across ages 44–54 using resident-LA
    delivery counts pooled across 2023/24–2025/26. Ages 16–43 retain their own ONS count.
@@ -11,7 +11,9 @@ All adjusted projections use one LA(R) × Age (SY) × year master in
 2. Apply 1 + S/L from national Table 5 counts pooled across 2023–2025 at each
    published age.
 3. Apply M/(L+S) from those same national counts.
-4. Apply the maternity pathway adjustment: all cohort pregnancies / recorded cohort deliveries
+4. Apply the Private–NHS modifier: 1 minus pooled 2023–2025 England Table 4
+   non-NHS maternities / all maternities, within each available age band.
+5. Apply the maternity pathway adjustment: all cohort pregnancies / recorded cohort deliveries
    for each cluster LA/age. Only No recorded delivery drives the uplift;
    home births and Delivery location unknown remain recorded births.
 
@@ -88,9 +90,9 @@ Inspect `projection_master`, `booking_modifications`, `ons_modifications`,
 split ages. `Delivery_projection_base` and `Booking_projection_base` are two
 references to the same `Adjusted_maternities` value. Do not add their totals.
 `National_conversion_factor` contains the two national factors only;
-the master's `Maternity_modifier` also includes the maternity pathway adjustment and is
+the master's `Maternity_modifier` also includes the Private–NHS modifier and maternity pathway adjustment and is
 applied after the age split.
-Calculation version: `ons-shared-age-calculations-v19`.
+Calculation version: `ons-shared-age-calculations-v20`.
 
 Resident charts sum the master before allocation; trust charts sum completed
 provider contributions. The historical comparison is in-sample, not independent
@@ -109,7 +111,8 @@ the report. Secure-data execution remains necessary to inspect the actual gaps.
 
 The three registration workbooks (2023, 2024 and 2025) matched the ONS downloads
 checked on 6 October 2026. Table 5 supplies the stillbirth and multiplicity
-modifiers; BBCS cohort deliveries and outside-LA resident totals supply age weights, and the cohort supplies the
+modifiers, and England Table 4 supplies the Private–NHS modifier. BBCS cohort
+deliveries and outside-LA resident totals supply age weights, and the cohort supplies the
 maternity pathway adjustment.
 
 The report reads the existing supplied `data/2022 SNPP Births persons.csv` directly.
@@ -165,8 +168,38 @@ and undefined zero-denominator rates remain unavailable. The HH scratch file is
 a collection of optional snippets to select and run against the parquet-backed
 objects; it is not a pipeline step and does not create a prescribed output.
 
-The report calls the fourth modifier **Maternity pathway adjustment**. The existing
+The report calls the fifth modifier **Maternity pathway adjustment**. The existing
 `Bookings_uplift_modifier` column name is retained for compatibility; it still means
 all cohort pregnancies divided by recorded cohort deliveries, not bookings divided
 by deliveries. Within BBCS, allocating the shared total by B/T and D/T gives
-P × B/D bookings and P deliveries. Apply each share once; do not apply the factor again.
+P × B/D bookings and P deliveries, where P is the ONS-derived delivery-equivalent
+projection after the Private–NHS modifier and before pathway adjustment. Apply
+each share once; do not apply the factor again.
+
+
+## Private–NHS modifier
+
+Table 4 of the [ONS birth-registration workbooks](https://www.ons.gov.uk/peoplepopulationandcommunity/birthsdeathsandmarriages/livebirths/datasets/birthsinenglandandwalesbirthregistrations)
+supplies England-resident maternities by delivery setting. Pool 2023–2025 counts
+before calculating non-NHS establishments / all maternities. The multiplier is
+one minus that share, applied once after multiplicity and before pathway uplift.
+The model uses under 20, 20–24, 25–29, 30–34, 35–39, 40–44 and 45+; combine 2025
+45–49 and 50+ to match earlier editions. Apply each band to its individual model
+ages (13–54). Unknown age is a derived reconciliation row, not a substitute rate
+for known ages or an unsplit ONS boundary. All-age totals are descriptive only.
+
+This delivery-setting proxy is assumed to represent private care equally for
+bookings and deliveries, in all modelled LAs and projection years. It does not
+measure private funding within NHS establishments or partial private pathways.
+Home/elsewhere births remain outside the proxy numerator. Recorded activity,
+allocation denominators, provider shares and the pathway factor are unchanged.
+Do not apply the reduction again after allocation or change pure ONS comparators.
+Keep full precision through all calculations; existing disclosure controls apply
+only to final MSDS-derived or combined outputs. Public ONS source tables retain
+their published counts and the ratios calculated from them.
+
+`private_nhs` retains annual and pooled evidence; `Private_NHS_age_band`,
+`Private_NHS_rate` and `Private_NHS_factor` identify each master row's factor.
+`Maternities_before_private` and `Maternities_after_private` expose its effect.
+`National_conversion_factor` remains the Table 5 baby-to-maternity conversion.
+The total `Maternity_modifier` includes the new reduction and pathway uplift.

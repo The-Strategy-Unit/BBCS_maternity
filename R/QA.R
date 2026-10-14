@@ -411,8 +411,8 @@ if (file.exists(".delivery_geography.rds")) {
 # 6. Check the master and both independent destination allocations.
 if (file.exists(".projections.rds")) {
   projections <- readRDS(".projections.rds")
-  qa_check("Projection outputs use the current four-modifier method",
-    identical(projections$calculation_version, "ons-shared-age-calculations-v19"))
+  qa_check("Projection outputs use the current five-modifier method",
+    identical(projections$calculation_version, "ons-shared-age-calculations-v20"))
   flows <- projections$sankey_comparison
   qa_check("Delivery Sankey recorded flows match the observed cluster total",
     !is.null(flows) && numbers_match(sum(flows$flows$Observed),
@@ -451,9 +451,23 @@ if (file.exists(".projections.rds")) {
     qa_check(paste(label, "stillbirth adjustment increases or preserves births (L)"),
       all(m$Adjusted_births_ls >= m$Exact_age_live_births) &&
       numbers_match(m$Adjusted_births_ls, m$Exact_age_live_births * (1 + m$Stillbirth_ratio)))
-    expected_adjusted <- m$Adjusted_births_ls * m$Multiplicity_factor * m$Bookings_uplift_modifier
+    private <- base$private_nhs$pooled
+    # A genuine zero in a descriptive row (for example unknown age) has no rate.
+    # Known model ages still require finite factors in the following check.
+    qa_check(paste(label, "Private-NHS factors use pooled England maternity counts"),
+      projection_numbers_match(private$Private_NHS_factor, 1 - private$Non_NHS_maternities / private$Total_maternities) &&
+      all(private$Private_NHS_factor >= 0 & private$Private_NHS_factor <= 1, na.rm = TRUE))
+    known_age <- !is.na(m$Age)
+    expected_private <- base$private_nhs$modifications$Private_NHS_factor[
+      match(m$Age[known_age], base$private_nhs$modifications$Age)]
+    qa_check(paste(label, "Private-NHS bands match every known model age"),
+      numbers_match(m$Private_NHS_factor[known_age], expected_private))
+    qa_check(paste(label, "Private-NHS adjustment follows multiplicity"),
+      projection_numbers_match(m$Maternities_before_private, m$Adjusted_births_ls * m$Multiplicity_factor) &&
+      projection_numbers_match(m$Maternities_after_private, m$Maternities_before_private * m$Private_NHS_factor))
+    expected_adjusted <- m$Maternities_after_private * m$Bookings_uplift_modifier
     expected_adjusted[m$Exact_age_live_births == 0] <- 0
-    qa_check(paste(label, "all four modifiers feed the adjusted maternity total"),
+    qa_check(paste(label, "all five modifiers feed the adjusted maternity total"),
       projection_numbers_match(m$Adjusted_maternities, expected_adjusted))
     missing_uplift <- unique(m[!m$Projection_available, c("LA", "Age", "ONS_age")])
     qa_details[[paste(label, "missing uplift evidence")]] <- missing_uplift

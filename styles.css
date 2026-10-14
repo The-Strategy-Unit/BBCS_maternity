@@ -21,6 +21,28 @@ main#quarto-document-content {
   padding-inline: 0.5rem;
 }
 
+/* Charts occupy their available width; the page, not an inner chart box,
+   handles vertical document scrolling. Wide tables retain their own scrolling. */
+.cell-output-display:has(.html-widget) {
+  overflow: visible;
+  min-width: 0;
+  container-type: inline-size;
+}
+.cell-output-display .html-widget,
+.cell-output-display .plot-container,
+.cell-output-display .svg-container {
+  max-width: 100%;
+  min-width: 0;
+}
+.cell-output-display img {
+  max-width: 100%;
+  height: auto;
+}
+.report-chart-grid > * { min-width: 0; }
+@container (max-width: 760px) {
+  .report-chart-grid { grid-template-columns: 1fr !important; }
+}
+
 #quarto-margin-sidebar {
   padding-inline: 0.5rem;
 }

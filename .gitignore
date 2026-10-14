@@ -17,6 +17,7 @@
 !/R/age_boundary_review.R
 !/R/QA.R
 !/R/test_projection_scale.R
+!/R/test_private_nhs.R
 !/R/matrix of booking appts and births.R
 !/assets/
 !/config/
@@ -34,6 +35,7 @@
 !/assets/logo_black_medium.png
 !/assets/logo_yellow_medium.png
 !/assets/projection_process_current.svg
+!/assets/report-charts.html
 !/data/2023birthregistrations.xlsx
 !/data/2024birthregistrations.xlsx
 !/data/2025birthregistrations.xlsx

@@ -104,6 +104,7 @@ run_maternity_project <- function() {
   delivery_proportions <<- projections$delivery_proportions
   booking_proportions <<- projections$booking_proportions
   ons_modifications <<- projections$ons_modifications
+  private_nhs_modifications <<- projections$private_nhs$pooled
   booking_modifications <<- projections$allocation_tables$calibration
   qa_results <<- checks$results
   qa_details <<- checks$details

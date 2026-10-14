@@ -79,3 +79,17 @@ total_births_by_LA_2326 |>
 # Supported conversions present in either input (codes only).
 report_applied_geography(final_cohort_2326$la_of_mother,
   total_births_by_LA_2326$la_of_mother)
+
+# Additional quick checks ------------------------------------------------
+# Filter missing ages first: count(age_at_birth_mother = NA) would count all rows.
+final_cohort_2326 |>
+  filter(is.na(age_at_birth_mother)) |>
+  summarise(pregnancies_without_age = n())
+
+final_cohort_2326 |>
+  count(age_at_birth_mother, name="n") |>
+  mutate(percentage = round(n / sum(n)*100, 2)) |>
+  arrange(age_at_birth_mother)  |>
+  print(n=Inf)
+
+file.exists("render.log")

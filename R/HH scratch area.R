@@ -24,3 +24,15 @@ age_check |>
       age_numeric != floor(age_numeric)
   ) |>
   count(age_at_birth_mother, name = "pregnancies", sort = TRUE)
+
+
+final_cohort_2326 |>
+  count(age_at_birth_mother = NA)
+
+final_cohort_2326 |>
+  count(age_at_birth_mother, name="n") |>
+  mutate(percentage = round(n / sum(n)*100, 2)) |>
+  arrange(age_at_birth_mother)  |>
+  print(n=Inf)
+
+file.exists("render.log")

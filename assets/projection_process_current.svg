@@ -39,7 +39,7 @@
 <text x="320.0" y="245" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="19" font-weight="bold">MSDS cohort and resident totals</text>
 <text x="320.0" y="274" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="17">Supplied cohort, ages 13–54, by resident LA</text>
 <text x="320.0" y="297" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="17">Own cluster LA/age uplift; same-age cluster proxy outside</text>
-<text x="320.0" y="320" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="17">Resident deliveries, cohort deliveries and pregnancies</text>
+<text x="320.0" y="320" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="17">BBCS cohort; wider resident totals for incoming LAs</text>
 <rect x="710" y="215" width="470" height="140" rx="3" fill="#19627d"/>
 <text x="945.0" y="245" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="19" font-weight="bold">4. Bookings uplift</text>
 <text x="945.0" y="274" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="17">All cohort pregnancies / recorded cohort deliveries</text>

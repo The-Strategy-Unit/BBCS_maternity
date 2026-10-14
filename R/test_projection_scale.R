@@ -48,11 +48,46 @@ local({
     dplyr::filter(Age %in% c(13, 14, 45:54))
   stopifnot(nrow(zero_ages) == 24L, all(zero_ages$MSDS_resident_count == 0))
   original_cohort <- final_cohort_2326
+  # Local delivery totals and age weights come from the cohort, regardless
+  # of the counts supplied for those same LAs in the wider file.
+  inflated_local_totals <- total_births_by_LA_2326
+  inflated_local_totals$count <- inflated_local_totals$count * 10
+  local_source <- build_projection_master(original_cohort, inflated_local_totals, ons, counts)
+  near(local_source$Age_weight, m$Age_weight)
+  near(local_source$Adjusted_maternities, m$Adjusted_maternities)
+  near(local_source$Booking_count_RQ3, m$Booking_count_RQ3)
+  near(local_source$Delivery_count_RQ3, m$Delivery_count_RQ3)
+  # The national resident file must not expand the BBCS catchment or its QA.
+  unrelated_residents <- dplyr::bind_rows(total_births_by_LA_2326,
+    data.frame(la_of_mother = c("W06000002", "E07000028", "E07000001"),
+      age_at_birth_mother = 36, birth_yr = "2025/26", count = 10000))
+  unrelated_ons <- dplyr::bind_rows(ons, ons |> dplyr::filter(area_code == "E08000025") |>
+    dplyr::mutate(area_code = "E07000001", area_name = "Unrelated area", projected_births = 10000))
+  unrelated_cohort <- original_cohort[1, ]
+  unrelated_cohort$la_of_mother <- "E07000001"
+  unrelated_cohort$age_at_birth_mother <- 36
+  unrelated_cohort$birth_provider <- unrelated_cohort$booking_provider <- "RZZ"
+  scoped <- build_projection_master(dplyr::bind_rows(original_cohort, unrelated_cohort),
+    unrelated_residents, unrelated_ons, counts)
+  stopifnot(identical(scoped$LA, m$LA),
+    identical(attr(scoped, "la_source_matching"), attr(m, "la_source_matching")))
+  near(scoped$Adjusted_maternities, m$Adjusted_maternities)
+  unrelated_cohort$birth_flag <- 0L
+  unrelated_cohort$booking_provider <- "RQ3"
+  booking_feeder <- build_projection_master(dplyr::bind_rows(original_cohort, unrelated_cohort),
+    unrelated_residents, unrelated_ons, counts)
+  stopifnot("E07000001" %in% booking_feeder$LA,
+    any(booking_feeder$Booking_count_RQ3[booking_feeder$LA == "E07000001"] > 0, na.rm = TRUE))
+  # Empty exact-age cells contribute zero to denominators; they are not missing totals.
+  calibration <- attr(m, "allocation_tables")$calibration
+  near(calibration$Shared_maternity_denominator[calibration$MSDS_resident_count == 0],
+    rep(0, sum(calibration$MSDS_resident_count == 0)))
   outside_ages <- original_cohort[1:3, ]
-  outside_ages$age_at_birth_mother <- c(12, 55, 60)
+  outside_ages$age_at_birth_mother <- c(12, 55, 61)
+  near(prepare_report_cohort(outside_ages)$Age, c(12, 55, 61))
   final_cohort_2326 <- dplyr::bind_rows(original_cohort, outside_ages)
   outside_residents <- dplyr::bind_rows(total_births_by_LA_2326,
-    data.frame(la_of_mother = "E08000025", age_at_birth_mother = c(12, 55, 60),
+    data.frame(la_of_mother = "E08000025", age_at_birth_mother = c(12, 55, 61),
       birth_yr = "2023/24", count = 1000))
   bounded <- build_projection_master(final_cohort_2326, outside_residents, ons, counts)
   bounded_result <- build_first_draft_projections(master = bounded, prepare_outputs = FALSE)

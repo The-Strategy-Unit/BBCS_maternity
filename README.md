@@ -18,10 +18,13 @@ The command reads Sarah's prepared parquet inputs, prepares the analysis, runs
 QA, renders `_site/index.html` and opens the finished report in the configured
 browser. Reading and analysis run in the current
 RStudio session, keeping its existing Azure setup. The command replaces the
-previous outputs. If preparation or rendering fails, partial outputs are removed.
+previous outputs. If preparation fails, partial outputs are removed. If rendering
+fails, the prepared results are retained and the error is saved in `render.log`.
+After fixing the reported error, retry rendering without reading the data again:
+`system2(Sys.which("quarto"), c("render", "index.qmd"))`.
 Rendering uses a temporary folder to avoid clashes with an editor render.
 A preview opened during preparation waits for that run to finish.
-The console shows a short QA summary, details of items requiring review, and
+The console shows a short QA summary, counts of items requiring review, and
 the finished report path; no separate QA script is needed.
 
 The completed `projection_master`, `projection_master_backtest`, `ons_modifications`,
@@ -155,6 +158,11 @@ delivery drives the fourth modifier. Home birth and Delivery location unknown
 remain recorded births. Where no same-age cluster ratio exists, flag the
 projection as unestimated; do not substitute a ratio pooled across ages.
 
+BBCS resident delivery counts and age distributions come from `final_cohort_2326`,
+using `age_at_birth_mother`. The wider `total_births_by_LA_2326` file supplies
+resident delivery totals and age distributions only for contributing outside LAs.
+Provider counts and the bookings uplift come from the pregnancy cohort.
+
 The master retains `Exact_age_live_births`, `Bookings_uplift_modifier`, its
 source, the shared denominator, source counts and destination proportions/counts.
 `Delivery_projection_base` and `Booking_projection_base` both equal
@@ -171,12 +179,12 @@ provider unknown. Resident deliveries absent from the linked cohort remain a sep
 delivery category. Negative residuals and conflicting source counts are flagged
 and left unallocated, not silently clamped or assigned to a provider.
 
-Every configured or supplied MSDS LA is checked against the recorded resident delivery counts
-and ONS births. Missing source codes are QA issues: the console lists
-the affected LAs and the source to review. The complete check is retained as
-`la_source_matching` in the projection outputs and QA details. An outside LA without linked
-cohort rows can use the agreed same-age cluster proxy; missing resident or ONS
-source data requires investigation.
+Source matching covers the six cluster LAs and other LAs with recorded bookings
+or deliveries at cluster trusts, at ages 13–54. Areas appearing only in the wider
+totals file do not enter the model. The console summarises missing source matches
+once; `la_source_matching` and `qa_details` retain the individual rows. A larger
+resident delivery total than the linked cohort is expected for incoming LAs and
+is represented by the residual allocation categories.
 
 Provider coverage follows supplied records aged 13–54, including rows without a usable
 LA or ONS match, and retains unknown-age records for checks. Known ages outside
@@ -225,7 +233,7 @@ Run `Rscript R/test_projection_scale.R` to check the three chart series with
 invented data and confirm that outside-LA bookings use the shared resident
 denominator rather than being scaled up to the whole LA population.
 
-The report requires calculation version `ons-shared-age-calculations-v16`.
+The report requires calculation version `ons-shared-age-calculations-v17`.
 The three ONS registration workbooks were checked against the public downloads
 on 6 October 2026 and matched exactly. Table 5 supplies the two national modifiers; Table 7
 remains descriptive evidence about multiplicity.

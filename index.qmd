@@ -108,7 +108,7 @@ if (is.null(delivery_geography$chart_grids)) stop(
 #| include: false
 
 first_draft_projections <- readRDS(".projections.rds")
-if (!identical(first_draft_projections$calculation_version, "ons-shared-age-calculations-v16")) stop(
+if (!identical(first_draft_projections$calculation_version, "ons-shared-age-calculations-v17")) stop(
   "Saved projection outputs need refreshing for the current method. Run R/Run analysis.R in UDAL.")
 if (is.null(first_draft_projections$sankey_comparison) || is.null(first_draft_projections$input_variation)) stop(
   "Run Run analysis.R again to prepare the delivery flow comparison and input variation charts.")
@@ -133,7 +133,7 @@ The model adjusts ONS birth projections for age, stillbirths, multiple births an
 
 ## 1.2 The BBCS cohort and cluster {#bbcs-cohort}
 
-The supplied MSDS cohort contains one row per pregnancy. Historical deliveries are counted in the delivery financial year and antenatal bookings in the booking financial year. The model calculates its rates and provider shares by resident LA for ages **13–54**, using the supplied cohort without a further date filter. Recorded resident delivery counts and age shares use 2023/24–2025/26.
+The supplied MSDS cohort contains one row per pregnancy. Historical deliveries are counted in the delivery financial year and antenatal bookings in the booking financial year. The model calculates its rates and provider shares by resident LA for ages **13–54**, using the supplied cohort without a further date filter. BBCS resident delivery counts and age distributions come from this cohort. For contributing LAs outside BBCS, the model uses the separate resident delivery totals for 2023/24–2025/26.
 
 | Cluster group | Resident LAs | Named acute trusts |
 |----|----|----|
@@ -528,17 +528,6 @@ population_plot(
 )
 ```
 
-#### 55 {#method-1-population-age-55}
-
-```{r}
-#| label: method-1-female-population-55
-
-population_plot(
-  female_population_projections |> filter(age_band == "55"),
-  "Female population aged 55. Source: ONS 2022-based migration-category population projections, 2023 geography.",
-  area_colours
-)
-```
 :::
 
 ## 2.2 MSDS {#msds-exploration}
@@ -547,12 +536,12 @@ population_plot(
 
 | Input | Unit and detail | Use |
 |----|----|----|
-| Supplied pregnancy cohort | One pregnancy row; resident LA, maternal age, booking provider/date and recorded delivery details | Recorded activity, patient flows and provider numerators |
-| Resident-LA totals | Recorded resident deliveries by delivery financial year and maternal age | Resident comparisons, age shares and the delivery count used to estimate resident maternities; includes home deliveries and residents delivering outside cluster trusts |
+| Supplied pregnancy cohort | One pregnancy row; resident LA, maternal age, booking provider/date and recorded delivery details | Recorded activity, patient flows, BBCS resident delivery counts and age distributions, booking uplift and provider counts |
+| Wider resident-LA totals | Recorded resident deliveries by delivery financial year and maternal age | Delivery totals and age distributions for contributing LAs outside BBCS; includes their residents delivering at BBCS trusts, elsewhere or at home |
 
-The report uses the parquet files with prepared inputs. Detailed counting rules accompany the relevant delivery and booking views.
+The pregnancy records come from `final_cohort_2326`, with maternal age taken from `age_at_birth_mother`. Calculations use ages 13–54. Detailed counting rules accompany the relevant delivery and booking views.
 
-The resident-LA file supplies recorded delivery counts and age shares, including home deliveries and residents who delivered outside the cluster; it contains no antenatal booking totals. The pregnancy cohort supplies booking and delivery provider counts and the ratio of all pregnancies to those with a recorded delivery. For LAs outside the cluster, the booking uplift uses the rate among cluster residents at the same age.
+The model uses the six BBCS LAs and other LAs with recorded bookings or deliveries at cluster trusts. For BBCS residents, delivery counts and age distributions come from the pregnancy cohort, including recorded live births, stillbirths, home deliveries and deliveries elsewhere. For contributing LAs outside BBCS, the wider totals provide the full resident delivery count, so the share using BBCS services can be calculated. Booking and delivery provider counts always come from the pregnancy cohort. The booking uplift for outside LAs uses the rate among BBCS residents at the same age.
 
 ### 2.2.2 Cluster deliveries and antenatal bookings {#cluster-activity}
 
@@ -1657,7 +1646,7 @@ The model applies four adjustments to ONS births, then distributes the total to 
 
 #### Age distribution adjustment
 
-The ONS rows labelled 15 and 44 contain all births at ages **15 and under** and **44 and over**, respectively. The model distributes the first count across ages **13–15** and the second across ages **44–54**, using the LA's recorded resident deliveries from 2023/24–2025/26. Each individual age receives its share of deliveries within that range, calculated after adding the three years of counts. An age with no recorded deliveries receives a zero share. The split preserves the original ONS total; it does not add births.
+The ONS rows labelled 15 and 44 contain all births at ages **15 and under** and **44 and over**, respectively. The model distributes the first count across ages **13–15** and the second across ages **44–54**, using the LA's recorded resident deliveries. These come from the supplied cohort for BBCS LAs and from the 2023/24–2025/26 wider totals for contributing outside LAs. Each individual age receives its share of deliveries within that range, calculated after pooling the counts. An age with no recorded deliveries receives a zero share. The split preserves the original ONS total; it does not add births.
 
 Ages 16–43 already have separate ONS counts and need no split. The age shares remain fixed over future years. Where no local age data are available for a combined group, its ONS count is retained, but an age-specific maternity estimate cannot be calculated.
 

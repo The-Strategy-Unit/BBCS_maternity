@@ -30,9 +30,9 @@ run_maternity_project <- function() {
   unlink(generated_paths, recursive = TRUE)
   if (any(file.exists(generated_paths)))
     stop("Could not clear previous outputs. Close open report files and retry.")
-  completed <- FALSE
+  prepared <- FALSE
   on.exit({
-    if (!completed) unlink(generated_paths, recursive = TRUE)
+    if (!prepared) unlink(generated_paths, recursive = TRUE)
   }, add = TRUE)
   started_at <- format(Sys.time(), "%Y-%m-%d %H:%M:%S %Z")
   run_id <- paste("analysis", format(Sys.time(), "%Y%m%dT%H%M%OS6"), Sys.getpid(), sep = "-")
@@ -58,6 +58,8 @@ run_maternity_project <- function() {
   }
   run_info$status <- "prepared"
   run_info$qa_checks <- sum(qa_results$Result == "Check")
+  saveRDS(run_info, ".analysis_run.rds")
+  prepared <- TRUE
 
   # 4. RENDER THE REPORT -------------------------------------------------
   # Build in a temporary folder and report is put in  _site.
@@ -76,12 +78,18 @@ run_maternity_project <- function() {
     stop("Could not copy the report inputs into the temporary folder.")
   saveRDS(run_info, file.path(render_folder, ".analysis_run.rds"))
   message("Rendering report...")
+  render_log <- file.path(project_root, "render.log")
   setwd(render_folder)
-  status <- tryCatch(system2(quarto, c("render", "index.qmd", "--quiet")),
+  status <- tryCatch(system2(quarto, c("render", "index.qmd"),
+    stdout = render_log, stderr = render_log),
     finally = setwd(project_root))
   rendered_site <- file.path(render_folder, "_site")
-  if (status != 0L || !file.exists(file.path(rendered_site, "index.html")))
-    stop("Report rendering failed.")
+  if (status != 0L || !file.exists(file.path(rendered_site, "index.html"))) {
+    message(paste(tail(readLines(render_log, warn = FALSE), 30), collapse = "\n"))
+    stop('Report rendering failed; see render.log. Prepared results are saved. ',
+      'To retry rendering only, run system2(Sys.which("quarto"), c("render", "index.qmd")).',
+      call. = FALSE)
+  }
   if (!file.copy(rendered_site, project_root, recursive = TRUE) ||
       !file.exists("_site/index.html")) stop("Could not save the finished report.")
   saveRDS(run_info, ".analysis_run.rds")
@@ -98,7 +106,6 @@ run_maternity_project <- function() {
   booking_modifications <<- projections$allocation_tables$calibration
   qa_results <<- checks$results
   qa_details <<- checks$details
-  completed <- TRUE
   message("Report ready: _site/index.html")
 
   # 6. OPEN THE FINISHED REPORT ------------------------------------------

@@ -14,7 +14,7 @@ report_number <- function(x) {
 # Exact maternal age for calculations; invalid ages share one explicit missing cell.
 report_age <- function(x) {
   age <- report_number(x)
-  age[!is.finite(age) | age < 10 | age > 60 | age != floor(age)] <- NA_real_
+  age[!is.finite(age) | age != floor(age)] <- NA_real_
   age
 }
 
@@ -31,7 +31,7 @@ report_code <- function(x, missing = "Unknown") {
 report_age_band <- function(x) {
   age <- report_number(x)
   dplyr::case_when(
-    !is.finite(age) | age < 10 | age > 60 | age != floor(age) ~ "Unknown",
+    !is.finite(age) | age != floor(age) ~ "Unknown",
     age < 20 ~ "Under 20", age < 25 ~ "20-24", age < 30 ~ "25-29",
     age < 35 ~ "30-34", age < 40 ~ "35-39", age < 45 ~ "40-44", TRUE ~ "45+")
 }

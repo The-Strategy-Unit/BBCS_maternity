@@ -15,8 +15,10 @@ All adjusted projections use one LA(R) × Age (SY) × year master in
    for each cluster LA/age. Only No recorded delivery drives the uplift;
    home births and Delivery location unknown remain recorded births.
 
-Use supplied cohort rows aged 13–54, without another date filter. Delivery counts and
-age weights still come from `total_births_by_LA_2326`. Outside LAs use the
+Use supplied cohort rows aged 13–54, without another date filter. BBCS resident
+delivery counts and age weights come from `final_cohort_2326`, using
+`age_at_birth_mother`. Only contributing outside LAs use `total_births_by_LA_2326`
+for their full resident delivery counts and age distributions. Outside LAs use the
 same-age ratio pooled among residents of the configured cluster LAs. The same
 proxy applies where a cluster LA lacks local recorded-birth evidence. Do not
 borrow a rate from another age. A positive source count without same-age
@@ -43,17 +45,18 @@ pregnancy count.** This is a separate residual group, not observed bookings
 or known no-booking records. The cluster proxy is an explicit assumption for
 unobserved flows, not a national MSDS ratio.
 
-Example: 100 resident deliveries, 60 cohort deliveries and 15 no-delivery records give
-an uplift of 75/60 = 1.25, denominator 125, birth gap 40 and booking residual 50.
-If the two sources agree on recorded births and the local ratio is used, the
-residual is zero. Outside-LA proxy rates can also create differences from their
+Example: an outside LA with 100 resident deliveries, 60 cohort deliveries and 15
+no-delivery records, using a same-age cluster uplift of 1.25, has denominator 125,
+delivery gap 40 and booking residual 50. Within BBCS, the cohort supplies both
+local counts, so the residual is zero where the local ratio can be calculated.
+Outside-LA proxy rates can create differences from their
 observed cohort mix; these stay visible in the review.
 
 ## Review and reporting
 
 The saved `booking_modifications` table compares resident and cohort deliveries
-by LA and age, shows the uplift source, and calculates the booking residual. Review
-any source difference against the Databricks processing and period coverage.
+by LA and age, shows the uplift source, and calculates the booking residual.
+Resident deliveries outside the linked cohort remain in the residual category.
 Negative gaps or a proxy no-delivery estimate below the observed cohort count
 leave provider allocations Unallocated; negative residuals are never silently
 clamped. Missing uplift evidence is shown explicitly. QA checks coverage as
@@ -62,11 +65,11 @@ by LA and age band, separately from provider activity.
 Its projected residual and share remain unavailable where a positive source
 contribution cannot be estimated or allocated. Zero source contributions stay zero.
 
-The LA source check expects every configured or supplied MSDS LA to match both
-recorded resident delivery counts and ONS births. The console QA identifies missing
-codes and the source to review; `la_source_matching` retains the full check.
-Outside LAs without cohort rows can use the agreed same-age proxy, provided
-their resident and ONS sources match. Unmatched provider flows are QA issues.
+The LA source check covers configured cluster LAs and other LAs with recorded
+bookings or deliveries at cluster trusts, at ages 13–54. Areas appearing only in
+the wider totals file do not enter the model. The console summarises issues once;
+`la_source_matching` and `qa_details` retain the individual rows. Missing uplift
+evidence is counted by LA/age group, without repeating each projection year.
 
 Provider coverage uses supplied rows aged 13–54, including those without a usable LA
 or ONS match, and retains unknown-age records for checks. Known ages outside 13–54
@@ -88,7 +91,7 @@ references to the same `Adjusted_maternities` value. Do not add their totals.
 `National_conversion_factor` contains the two national factors only;
 the master's `Maternity_modifier` also includes the Bookings uplift and is
 applied after the age split.
-Calculation version: `ons-shared-age-calculations-v16`.
+Calculation version: `ons-shared-age-calculations-v17`.
 
 Resident charts sum the master before allocation; trust charts sum completed
 provider contributions. The historical comparison is in-sample, not independent
@@ -107,7 +110,7 @@ the report. Secure-data execution remains necessary to inspect the actual gaps.
 
 The three registration workbooks (2023, 2024 and 2025) matched the ONS downloads
 checked on 6 October 2026. Table 5 supplies the stillbirth and multiplicity
-modifiers; the resident file supplies age weights and the cohort supplies the
+modifiers; BBCS cohort deliveries and outside-LA resident totals supply age weights, and the cohort supplies the
 Bookings uplift.
 
 The report reads the existing supplied `data/2022 SNPP Births persons.csv` directly.

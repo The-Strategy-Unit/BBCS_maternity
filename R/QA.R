@@ -56,12 +56,20 @@ qa_check("Recorded deliveries cover all three financial years", !length(missing_
 home_flags <- report_number(recorded_deliveries$home_birth)
 qa_check("Recorded deliveries have home flags of 0 or 1", all(home_flags %in% c(0, 1)),
          paste(sum(!home_flags %in% c(0, 1)), "records have missing or invalid home flags"))
-resident_counts <- suppressWarnings(as.numeric(as.character(total_births_by_LA_2326$count)))
+resident_records <- total_births_by_LA_2326 |>
+  dplyr::mutate(LA = report_code(la_of_mother), Age = report_age(age_at_birth_mother)) |>
+  dplyr::filter(LA %in% prepared_records$LA, !LA %in% read_area_config()$area_code,
+    as.character(birth_yr) %in% qa_years)
+if (file.exists(".projections.rds")) {
+  used_residents <- readRDS(".projections.rds")$allocation_tables$residents
+  resident_records <- dplyr::semi_join(resident_records, used_residents, by = c("LA", "Age"))
+}
+resident_counts <- report_number(resident_records$count)
 valid_resident_counts <- is.finite(resident_counts) & resident_counts >= 0 &
   resident_counts == floor(resident_counts)
 qa_check("Resident LA counts are nonnegative whole numbers", all(valid_resident_counts),
          paste(sum(!valid_resident_counts), "invalid counts"))
-repeated_resident_cells <- duplicated(total_births_by_LA_2326[
+repeated_resident_cells <- duplicated(resident_records[
   c("birth_yr", "la_of_mother", "age_at_birth_mother")])
 qa_check("Resident totals have one row per LA, age and year", !any(repeated_resident_cells),
          paste(sum(repeated_resident_cells), "repeated LA/age/year rows"))
@@ -404,7 +412,7 @@ if (file.exists(".delivery_geography.rds")) {
 if (file.exists(".projections.rds")) {
   projections <- readRDS(".projections.rds")
   qa_check("Projection outputs use the current four-modifier method",
-    identical(projections$calculation_version, "ons-shared-age-calculations-v16"))
+    identical(projections$calculation_version, "ons-shared-age-calculations-v17"))
   flows <- projections$sankey_comparison
   qa_check("Delivery Sankey recorded flows match the observed cluster total",
     !is.null(flows) && numbers_match(sum(flows$flows$Observed),
@@ -419,10 +427,10 @@ if (file.exists(".projections.rds")) {
     la_matching <- base$la_source_matching
     la_mismatches <- la_matching[la_matching$Issue != "", ]
     qa_details[[paste(label, "LA source matching")]] <- la_matching
-    qa_check(paste(label, "every model LA matches resident counts and ONS births"),
+    qa_check(paste(label, "required LAs match resident counts and ONS births"),
       nrow(la_matching) > 0 && !nrow(la_mismatches),
-      if (nrow(la_mismatches)) paste(paste(la_mismatches$LA, la_mismatches$Issue, sep = ": "),
-        collapse = "; ") else paste(nrow(la_matching), "LA codes match"))
+      if (nrow(la_mismatches)) paste(nrow(la_mismatches), "contributing LAs lack a source match")
+      else paste(nrow(la_matching), "LA codes match"))
     qa_check(paste(label, "uses the matching ONS year"),
       all(m$ONS_reference_year == as.integer(substr(base$baseline_fy, 1, 4))))
     qa_check(paste(label, "both allocations use the same adjusted maternity total"),
@@ -447,13 +455,16 @@ if (file.exists(".projections.rds")) {
     expected_adjusted[m$Exact_age_live_births == 0] <- 0
     qa_check(paste(label, "all four modifiers feed the adjusted maternity total"),
       projection_numbers_match(m$Adjusted_maternities, expected_adjusted))
+    missing_uplift <- unique(m[!m$Projection_available, c("LA", "Age", "ONS_age")])
+    qa_details[[paste(label, "missing uplift evidence")]] <- missing_uplift
     qa_check(paste(label, "positive projections have same-age uplift evidence"),
-      all(m$Projection_available), paste(sum(!m$Projection_available), "unestimated LA/age/year rows"))
+      !nrow(missing_uplift), paste(nrow(missing_uplift), "LA/age groups lack an estimate"))
     calibration <- base$allocation_tables$calibration
     qa_details[[paste(label, "booking denominator reconciliation")]] <- calibration
-    qa_check(paste(label, "resident and cohort births reconcile"),
-      all(is.finite(calibration$Resident_birth_gap) & abs(calibration$Resident_birth_gap) < 1e-8),
-      "Review source coverage/processing for every difference; residual groups retain valid positive gaps")
+    qa_check(paste(label, "resident totals cover recorded cohort deliveries"),
+      all(is.finite(calibration$Resident_birth_gap) & calibration$Resident_birth_gap >= -1e-8),
+      paste(sum(!is.finite(calibration$Resident_birth_gap) | calibration$Resident_birth_gap < -1e-8),
+        "LA/age groups have missing or smaller resident totals"))
     recorded_cells <- calibration[is.na(calibration$MSDS_resident_count) |
       calibration$MSDS_resident_count > 0 | calibration$Cohort_pregnancies > 0, ]
     qa_check(paste(label, "calibration denominators support nonnegative allocations"),
@@ -502,8 +513,12 @@ if (file.exists(".projections.rds")) {
     provider_gaps <- base$provider_projection_gaps
     qa_check(paste(label, "provider flows within the model age range have matching projections"),
       !nrow(provider_gaps),
-      if (nrow(provider_gaps)) paste(unique(paste(provider_gaps$LA, provider_gaps$Age,
-        provider_gaps$Reason, sep = " / ")), collapse = "; ") else "No unmatched provider flows")
+      if (nrow(provider_gaps)) {
+        reasons <- provider_gaps |> dplyr::filter(Level == "Cluster") |>
+          dplyr::group_by(Allocation, Reason) |>
+          dplyr::summarise(Rows = sum(Cohort_rows), .groups = "drop")
+        paste(paste(reasons$Allocation, reasons$Rows, reasons$Reason, sep = ": "), collapse = "; ")
+      } else "No unmatched provider flows")
     for (shown in list(base$maternity_projections, base$booking_total_projections)) {
       complete <- shown$Projection_complete
       qa_check(paste(label, if (identical(shown, base$maternity_projections)) "delivery" else "booking",
@@ -657,9 +672,12 @@ if (all(file.exists(c(".patient_flows.rds", ".delivery_geography.rds", ".project
 
 # 7. Show only items needing attention; keep the complete results for inspection.
 qa_issues <- qa_results[qa_results$Result == "Check", , drop = FALSE]
+qa_issues$Check <- sub("^Reference [0-9]{4}/[0-9]{2} ", "", qa_issues$Check)
+qa_issues <- unique(qa_issues)
 message("QA: ", sum(qa_results$Result == "OK"), " passed",
   if (nrow(qa_issues)) paste0("; ", nrow(qa_issues), " to review") else "", ".")
 for (i in seq_len(nrow(qa_issues))) {
   message("- ", qa_issues$Check[i],
     if (nzchar(qa_issues$Details[i])) paste0(": ", qa_issues$Details[i]) else "")
 }
+if (nrow(qa_issues)) message("Full details are saved in qa_details; repeated projection years are not listed here.")

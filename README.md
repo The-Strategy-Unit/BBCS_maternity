@@ -1,7 +1,7 @@
 # BBCS maternity analysis
 
 `index.qmd` is the report. It converts ONS projected live births into maternities
-using age distribution, stillbirth, multiplicity and Bookings uplift modifiers, describes recorded patient flows and delivery activity,
+using age distribution, stillbirth, multiplicity and maternity pathway adjustments, describes recorded patient flows and delivery activity,
 and makes first-draft projections for trusts, ICBs and the combined cluster.
 Method 1 is used throughout; section 3 explains the ONS boundary-age conversion and local age weights.
 
@@ -147,10 +147,10 @@ Calculation steps:
 2. Apply the stillbirth factor, 1 + pooled S/L, from national Table 5 counts for
    2023–2025 at each published age.
 3. Apply pooled M/(L+S) from the same national counts.
-4. Apply the Bookings uplift: all supplied cohort pregnancies / recorded cohort deliveries for each cluster LA/age. Outside LAs use the pooled same-age rate among
+4. Apply the maternity pathway adjustment: all supplied cohort pregnancies / recorded cohort deliveries for each cluster LA/age. Outside LAs use the pooled same-age rate among
    cluster residents as a proxy; use that proxy for missing local evidence too.
 5. Divide each delivery or booking category count by the shared denominator:
-   resident-LA births × Bookings uplift. Apply these independent proportions to
+   resident-LA births × maternity pathway adjustment. Apply these independent proportions to
    the same adjusted projection. Sum finished counts to age bands and providers.
 
 Use supplied cohort rows aged 13–54 without an extra date filter. Only No recorded
@@ -161,7 +161,7 @@ projection as unestimated; do not substitute a ratio pooled across ages.
 BBCS resident delivery counts and age distributions come from `final_cohort_2326`,
 using `age_at_birth_mother`. The wider `total_births_by_LA_2326` file supplies
 resident delivery totals and age distributions only for contributing outside LAs.
-Provider counts and the bookings uplift come from the pregnancy cohort.
+Provider counts and the maternity pathway adjustment come from the pregnancy cohort.
 
 The master retains `Exact_age_live_births`, `Bookings_uplift_modifier`, its
 source, the shared denominator, source counts and destination proportions/counts.
@@ -169,7 +169,7 @@ source, the shared denominator, source counts and destination proportions/counts
 `Adjusted_maternities` after all four modifiers.
 
 `National_conversion_factor` is the product of the stillbirth and multiplicity
-factors. The master's `Maternity_modifier` also includes the Bookings uplift;
+factors. The master's `Maternity_modifier` also includes the maternity pathway adjustment;
 it is applied to `Exact_age_live_births`, after the age split.
 
 **Booking Denominator Factor** is the shared denominator minus supplied cohort
@@ -338,21 +338,21 @@ ONS source definitions follow the [birth statistics user guide](https://www.ons.
 |---|---|
 | **Recorded / observed / published count** | MSDS recorded activity or ONS registered events that have already happened. The source and counting unit are identified alongside the figure. |
 | **Projected live births** | Future baby counts from the ONS demographic model, conditional on its assumptions. |
-| **Estimated / projected maternities** | Counts calculated from projected births (L), after all four modifiers: age distribution, stillbirth, multiplicity and Bookings uplift. |
-| **Maternity modifier** | [1 + S/L] × M/(L+S) × Bookings uplift, applied after the age split. S, L and M are national Table 5 counts pooled across 2023–2025. |
+| **Estimated / projected maternities** | Counts calculated from projected births (L), after all four modifiers: age distribution, stillbirth, multiplicity and maternity pathway adjustment. |
+| **Maternity modifier** | [1 + S/L] × M/(L+S) × maternity pathway adjustment, applied after the age split. S, L and M are national Table 5 counts pooled across 2023–2025. |
 | **General fertility rate (GFR)** | Live births per 1,000 women aged 15–44 in this report. It describes frequency relative to population size, not the number needing care. |
 | **Age-specific fertility rate (ASFR)** | Live births per 1,000 women in the relevant age group. |
 | **Total fertility rate (TFR)** | Children per woman if the year's age-specific fertility rates applied throughout childbearing life. Not an annual maternity count. |
 
-**The conversion in one line:** projected live-born babies × age weight × [1 + S/L] × M/(L+S) × Bookings uplift = adjusted maternities. Split combined ONS ages first, apply the factors at each LA/age, then add completed results. Birth rates are a separate contextual measure and are not used instead of this conversion.
+**The conversion in one line:** projected live-born babies × age weight × [1 + S/L] × M/(L+S) × maternity pathway adjustment = adjusted maternities. Split combined ONS ages first, apply the factors at each LA/age, then add completed results. Birth rates are a separate contextual measure and are not used instead of this conversion.
 
-For illustration, national factors with a product of 0.99 and a Bookings uplift
+For illustration, national factors with a product of 0.99 and a maternity pathway adjustment
 of 1.25 give 123.75 adjusted maternities per 100 live births at an age with weight
 1. The model applies each LA/age's factors separately before aggregation.
 
 ### Using these figures for pathway demand and capacity
 
-Use the shared adjusted maternity volume and the relevant booking or delivery allocation to estimate pathway demand. To turn that volume into service activity, specify the proportion using each pathway and the contacts per maternity. For baby-based services, retain baby counts. The Bookings uplift uses no recorded delivery as a proxy; it does not establish clinical outcomes or capture pregnancies absent from maternity services.
+Use the shared adjusted maternity volume and the relevant booking or delivery allocation to estimate pathway demand. To turn that volume into service activity, specify the proportion using each pathway and the contacts per maternity. For baby-based services, retain baby counts. The maternity pathway adjustment uses no recorded delivery as a proxy; it does not establish clinical outcomes or capture pregnancies absent from maternity services.
 
 Three further distinctions matter:
 

@@ -1985,14 +1985,14 @@ projection_column_dictionary <- function(master) {
       Column == "Stillbirth_ratio" ~ "Pooled Table 5 stillbirths / pooled live births, 2023--2025.",
       Column == "Stillbirth_factor" ~ "1 + Stillbirth_ratio; births (L) to births (L+S).",
       Column == "Multiplicity_factor" ~ "Pooled Table 5 maternities / pooled births (L+S), 2023--2025.",
-      Column == "National_conversion_factor" ~ "Stillbirth_factor * Multiplicity_factor; the national baby-to-maternity conversion before the Bookings uplift.",
+      Column == "National_conversion_factor" ~ "Stillbirth_factor * Multiplicity_factor; the national baby-to-maternity conversion before the maternity pathway adjustment.",
       Column == "Maternity_modifier" ~ "Stillbirth_factor * Multiplicity_factor * Bookings_uplift_modifier; apply after the local age split.",
       Column == "Adjusted_births_ls" ~ "Exact_age_live_births * Stillbirth_factor.",
-      Column == "Bookings_uplift_modifier" ~ "All cohort pregnancies / recorded cohort deliveries for this cluster LA/age; outside LAs and missing local evidence use the same-age cluster-resident ratio.",
+      Column == "Bookings_uplift_modifier" ~ "Maternity pathway adjustment: all cohort pregnancies / recorded cohort deliveries for this cluster LA/age; outside LAs and missing local evidence use the same-age cluster-resident ratio.",
       Column == "Bookings_uplift_source" ~ "Identifies local evidence, the same-age cluster proxy, or an unavailable modifier.",
       Column == "Cohort_pregnancies" ~ "All supplied pregnancy rows with this usable resident LA and maternal age; no additional date filter.",
       Column == "Cohort_recorded_births" ~ "Supplied pregnancies with birth_flag = 1: live birth or stillbirth, counted once per pregnancy, including home deliveries and unknown delivery locations.",
-      Column == "Cohort_no_recorded_delivery" ~ "Supplied pregnancy rows without a recorded delivery; the only outcome used to increase the Bookings uplift.",
+      Column == "Cohort_no_recorded_delivery" ~ "Supplied pregnancy rows without a recorded delivery; the only outcome used to increase the maternity pathway adjustment.",
       Column == "Cluster_pregnancies" ~ "All supplied pregnancy rows among residents of the configured cluster LAs at this same age.",
       Column == "Cluster_recorded_births" ~ "Recorded deliveries among residents of the configured cluster LAs at this same age, counted once per pregnancy.",
       Column == "Cluster_bookings_uplift" ~ "Same-age cluster pregnancy count / recorded delivery count; the outside-LA proxy, with no cross-age fallback.",
@@ -2007,7 +2007,7 @@ projection_column_dictionary <- function(master) {
       Column == "Adjusted_maternities" ~ "Exact_age_live_births * Stillbirth_factor * Multiplicity_factor * Bookings_uplift_modifier; shared allocation total.",
       Column == "Delivery_projection_base" ~ "Adjusted maternities available for delivery allocation.",
       Column == "Booking_projection_base" ~ "The same adjusted maternity total used for delivery allocation.",
-      grepl("_proportion_", Column) ~ "Destination count / (recorded resident deliveries * Bookings uplift) at the same LA and age, fixed across projection years.",
+      grepl("_proportion_", Column) ~ "Destination count / (recorded resident deliveries * maternity pathway adjustment) at the same LA and age, fixed across projection years.",
       grepl("_count_", Column) ~ "Corresponding Delivery_projection_base or Booking_projection_base * destination proportion.",
       grepl("denominator", Column) ~ "The shared estimated resident maternity denominator at this LA(R)/Age (SY).",
       TRUE ~ "Source identifier or intermediate count; see the numbered model steps."))
@@ -2542,9 +2542,9 @@ build_first_draft_projections <- function(baseline_fy = projection_baseline,
     dplyr::mutate(Percent_change = relative_change(Projected, Projected[Year == ons_reference_year])) |>
     dplyr::ungroup()
   projection_note <- paste("ONS births (L) × local exact-age share × [1 + S/L]",
-    "× M/(L+S) × Bookings uplift modifier × LA/age destination proportion.",
+    "× M/(L+S) × maternity pathway adjustment × LA/age destination proportion.",
     "National Table 5 counts pool 2023--2025; MSDS calibration uses supplied cohort rows aged 13--54.",
-    "Outside LAs use the same-age cluster-resident uplift as a proxy.",
+    "Outside LAs use the same-age cluster-resident pathway factor as a proxy.",
     "Both allocations use one adjusted total. Home, no recorded delivery/booking, unknowns",
     "and the Booking Denominator Factor remain separate. No rebasing to observed activity.")
   result <- list(calculation_version = "ons-shared-age-calculations-v17", organisations = organisations, feeder_shares = feeder_shares,
@@ -2641,20 +2641,20 @@ build_first_draft_projections <- function(baseline_fy = projection_baseline,
       Resident_birth_gap, Cohort_no_recorded_delivery, Bookings_uplift_modifier,
       Bookings_uplift_source, Shared_maternity_denominator, Booking_Denominator_Factor,
       Birth_gap_review, Calibration_issue) |>
-    base_table("Bookings uplift and denominator reconciliation by LA and age") |>
+    base_table("Maternity pathway adjustment and denominator reconciliation by LA and age") |>
     gt::fmt_number(columns = c("MSDS_resident_count", "Cohort_recorded_births", "Resident_birth_gap",
       "Cohort_no_recorded_delivery", "Shared_maternity_denominator", "Booking_Denominator_Factor"), decimals = 1) |>
     gt::fmt_number(columns = "Bookings_uplift_modifier", decimals = 3) |>
     gt::cols_label(LA_name = "Resident LA", LA = "LA code", Age = "Age (SY)",
       MSDS_resident_count = "Resident births", Cohort_recorded_births = "Cohort births",
       Resident_birth_gap = "Birth gap", Cohort_no_recorded_delivery = "Cohort: no recorded delivery",
-      Bookings_uplift_modifier = "Bookings uplift", Bookings_uplift_source = "Uplift source",
+      Bookings_uplift_modifier = "Maternity pathway adjustment", Bookings_uplift_source = "Pathway factor source",
       Shared_maternity_denominator = "Shared denominator", Booking_Denominator_Factor = "Booking Denominator Factor",
       Birth_gap_review = "Birth-count check", Calibration_issue = "Allocation check")
   result$unestimated_cells_table <- result$unestimated_cells |>
-    base_table("LA/age projections without uplift evidence", "Missing estimates are not replaced with zero or a rate from another age") |>
+    base_table("LA/age projections without pathway factor evidence", "Missing estimates are not replaced with zero or a rate from another age") |>
     gt::cols_label(LA_name = "Resident LA", LA = "LA code", Age = "Age (SY)",
-      ONS_age = "ONS source age", Bookings_uplift_source = "Uplift evidence")
+      ONS_age = "ONS source age", Bookings_uplift_source = "Pathway factor evidence")
   result$booking_gap_table <- result$booking_gap_by_la |>
     dplyr::filter(Year %in% c(ons_reference_year, max(projection_years))) |>
     base_table("Booking Denominator Factor: projected volume", "Estimated residual group; unavailable where a positive source contribution cannot be estimated or allocated") |>
@@ -3033,7 +3033,7 @@ build_first_draft_projections <- function(baseline_fy = projection_baseline,
       Delivery_destination = "Delivery trust", ONS_live_births = "ONS live births",
       Age_weight = "Age weight", Exact_age_live_births = "Live births after age split",
       Stillbirth_factor = "Stillbirth factor", Multiplicity_factor = "Multiplicity factor",
-      Bookings_uplift_modifier = "Bookings uplift", Adjusted_maternities = "Adjusted maternities",
+      Bookings_uplift_modifier = "Maternity pathway adjustment", Adjusted_maternities = "Adjusted maternities",
       Destination_proportion = "Delivery share", Projected_maternities = "Projected deliveries") |>
     gt::fmt_number(columns = c("ONS_live_births", "Age_weight", "Exact_age_live_births", "Stillbirth_factor", "Multiplicity_factor",
       "Bookings_uplift_modifier", "Adjusted_maternities", "Projected_maternities"), decimals = 3) |>

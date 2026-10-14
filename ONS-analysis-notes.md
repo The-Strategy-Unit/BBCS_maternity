@@ -11,7 +11,7 @@ All adjusted projections use one LA(R) × Age (SY) × year master in
 2. Apply 1 + S/L from national Table 5 counts pooled across 2023–2025 at each
    published age.
 3. Apply M/(L+S) from those same national counts.
-4. Apply the Bookings uplift: all cohort pregnancies / recorded cohort deliveries
+4. Apply the maternity pathway adjustment: all cohort pregnancies / recorded cohort deliveries
    for each cluster LA/age. Only No recorded delivery drives the uplift;
    home births and Delivery location unknown remain recorded births.
 
@@ -27,8 +27,7 @@ exact age. Zero-weight source contributions remain zero.
 
 ## Shared denominator and residual groups
 
-At each LA/age, estimated resident maternities = resident deliveries × Bookings
-uplift. Both delivery and booking shares divide by this same denominator.
+At each LA/age, estimated resident maternities = resident deliveries × maternity pathway adjustment. Both delivery and booking shares divide by this same denominator.
 Both allocation bases equal the completed adjusted maternity projection.
 
 Retain observed trust, home and unknown-location counts. Resident deliveries
@@ -89,7 +88,7 @@ Inspect `projection_master`, `booking_modifications`, `ons_modifications`,
 split ages. `Delivery_projection_base` and `Booking_projection_base` are two
 references to the same `Adjusted_maternities` value. Do not add their totals.
 `National_conversion_factor` contains the two national factors only;
-the master's `Maternity_modifier` also includes the Bookings uplift and is
+the master's `Maternity_modifier` also includes the maternity pathway adjustment and is
 applied after the age split.
 Calculation version: `ons-shared-age-calculations-v17`.
 
@@ -111,7 +110,7 @@ the report. Secure-data execution remains necessary to inspect the actual gaps.
 The three registration workbooks (2023, 2024 and 2025) matched the ONS downloads
 checked on 6 October 2026. Table 5 supplies the stillbirth and multiplicity
 modifiers; BBCS cohort deliveries and outside-LA resident totals supply age weights, and the cohort supplies the
-Bookings uplift.
+maternity pathway adjustment.
 
 The report reads the existing supplied `data/2022 SNPP Births persons.csv` directly.
 That file is unchanged and matches the persons entry byte-for-byte in the official
@@ -148,3 +147,9 @@ Further arithmetic and chart checks can run with the optional local
 excluded from Git. They use small counted examples, not an alternative MSDS
 project dataset.
 Full secure-data execution is still required to verify the actual cohort results.
+
+The report calls the fourth modifier **Maternity pathway adjustment**. The existing
+`Bookings_uplift_modifier` column name is retained for compatibility; it still means
+all cohort pregnancies divided by recorded cohort deliveries, not bookings divided
+by deliveries. Within BBCS, allocating the shared total by B/T and D/T gives
+P × B/D bookings and P deliveries. Apply each share once; do not apply the factor again.

@@ -11,6 +11,13 @@ report_number <- function(x) {
   suppressWarnings(as.numeric(trimws(as.character(x))))
 }
 
+# Output aggregation only; never use this to fill missing source inputs.
+sum_available_projection <- function(x) {
+  if (!length(x)) return(0) # an empty structural category
+  if (!any(is.finite(x))) return(NA_real_) # no usable estimate
+  sum(x[is.finite(x)])
+}
+
 # Exact maternal age for calculations; invalid ages share one explicit missing cell.
 report_age <- function(x) {
   age <- report_number(x)
@@ -26,6 +33,29 @@ report_code <- function(x, missing = "Unknown") {
   code <- toupper(trimws(as.character(x)))
   code[is.na(code) | code == ""] <- missing
   code
+}
+
+# Local, versioned ONS crosswalk: names never determine a match. Read once
+# per source() rather than repeatedly for each chart/age/year calculation.
+report_la_crosswalk <- read.csv("data/lookups/la_to_2023.csv", stringsAsFactors = FALSE)
+stopifnot(!anyDuplicated(report_la_crosswalk$Source_code),
+  !anyNA(report_la_crosswalk$Target_code),
+  !any(report_la_crosswalk$Target_code %in% report_la_crosswalk$Source_code))
+
+# Harmonise MSDS residence only. No rows are replicated, dropped or weighted;
+# source parquet objects and ONS inputs are never modified.
+report_la_code <- function(x, missing = "Unknown LA") {
+  code <- report_code(x, missing)
+  row <- match(code, report_la_crosswalk$Source_code)
+  mapped <- !is.na(row)
+  code[mapped] <- report_la_crosswalk$Target_code[row[mapped]]
+  code
+}
+
+report_applied_geography <- function(cohort_codes, resident_codes = character()) {
+  used <- unique(report_code(c(cohort_codes, resident_codes)))
+  report_la_crosswalk[report_la_crosswalk$Source_code %in% used,
+    c("Source_code", "Source_name", "Target_code", "Target_name", "Treatment"), drop = FALSE]
 }
 
 report_age_band <- function(x) {
@@ -69,7 +99,8 @@ prepare_report_cohort <- function(cohort) {
     Year = year, Delivery_year = start, Delivery_date = report_date(cohort$birth_date),
     Birth_flag = report_number(cohort$birth_flag),
     Birth_recorded = Birth_flag %in% 1,
-    LA = report_code(cohort$la_of_mother, "Unknown LA"),
+    LA_source = report_code(cohort$la_of_mother, "Unknown LA"),
+    LA = report_la_code(cohort$la_of_mother),
     Age = report_age(cohort$age_at_birth_mother),
     Age_band = report_age_band(cohort$age_at_birth_mother),
     Trust = report_code(cohort$birth_provider, "Unknown provider"),

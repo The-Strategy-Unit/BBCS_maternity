@@ -12,6 +12,7 @@ format:
 #| label: method-1-setup
 #| include: false
 options(warn = 1) # Keep rendering warnings visible when they occur.
+source("R/disclosure.R")
 source("R/ons_data.R")
 source("R/age_boundary_review.R")
 library(gt)
@@ -46,6 +47,8 @@ read_completed_analysis <- function() {
 report_run <- read_completed_analysis()
 for (output_file in report_run$output_files) {
   output <- readRDS(output_file)
+  if (output_file != ".qa.rds" && !identical(attr(output, "disclosure_version"), msds_disclosure_version))
+    stop("Outputs predate the disclosure controls: ", output_file, ". Run R/Run analysis.R again.")
   if (!identical(attr(output, "run_id"), report_run$run_id))
     stop("Mixed or stale outputs: ", output_file, ". Run Run analysis.R again.")
 }
@@ -60,7 +63,7 @@ source("R/age_boundary_review.R")
 # ONS exploration prepared by R/Maternity analysis.R
 older_age_review <- ons_exploration$older_age_review
 msds_age_review <- if (file.exists(".projections.rds")) readRDS(".projections.rds")$age_boundary_review else NULL
-if (!is.null(msds_age_review) && !identical(msds_age_review$version, "age-review-counts-v4")) msds_age_review <- NULL
+if (!is.null(msds_age_review) && !identical(msds_age_review$version, "age-review-counts-v5")) msds_age_review <- NULL
 ```
 
 ```{r}
@@ -108,7 +111,7 @@ if (is.null(delivery_geography$chart_grids)) stop(
 #| include: false
 
 first_draft_projections <- readRDS(".projections.rds")
-if (!identical(first_draft_projections$calculation_version, "ons-shared-age-calculations-v17")) stop(
+if (!identical(first_draft_projections$calculation_version, "ons-shared-age-calculations-v19")) stop(
   "Saved projection outputs need refreshing for the current method. Run R/Run analysis.R in UDAL.")
 if (is.null(first_draft_projections$sankey_comparison) || is.null(first_draft_projections$input_variation)) stop(
   "Run Run analysis.R again to prepare the delivery flow comparison and input variation charts.")
@@ -130,6 +133,12 @@ if (is.null(ons_exploration$resident_comparison)) stop(
 **How might demand for deliveries and bookings at BBCS trusts change in future?** The report explores ONS and MSDS, explains the agreed calculation, and presents projections by trust, ICB, combined cluster and age band.
 
 [The model converts ONS projected live-born babies into maternities using age-specific adjustments, then applies MSDS booking and delivery shares to estimate activity at each provider. The adjustments cover the local age distribution, stillbirths, multiple births and pregnancies without a recorded delivery. (LM edit)]{.lm-edit}
+
+### Disclosure control {#disclosure-control}
+
+Final MSDS activity counts retain genuine zeros, show counts of 1–7 as 5, and round other counts to the nearest 5, following [NHS England’s MSDS publication suppression methodology (17 September 2026)](https://digital.nhs.uk/data-and-information/publications/statistical/maternity-services-monthly-statistics/final-june-2026-provisional-july-2026#publication-data-files-and-suppression-methodology). Percentages and rates use the controlled numerator and denominator; changes use controlled counts or rates. A zero denominator gives no percentage. Totals are aggregated from raw values and controlled independently, so displayed components and percentages may not sum exactly to totals or 100%.
+
+All model calculations and intermediate aggregations use raw values. These controls apply throughout the report, only when preparing final MSDS-derived or combined MSDS/ONS outputs, including tables, chart values, hover text and embedded interactive data. Modelled counts receive the same controls, with positive fractional counts below 8 shown as 5. ONS-only figures remain as published. Missing or unavailable estimates remain missing.
 
 ## 1.2 The BBCS cohort and cluster {#bbcs-cohort}
 
@@ -232,7 +241,14 @@ ONS registrations use calendar years; ONS birth projections cover successive mid
 
 #### LA geography used {#main-la-geography-check}
 
-The ONS projection uses **2023 LA geography**. The 2023/24–2025/26 MSDS inputs are used as supplied, with LA codes matched directly. No additional boundary conversion is applied.
+The ONS projection uses **2023 LA geography**. Before aggregation, MSDS residence codes in both the pregnancy cohort and resident delivery totals are harmonised using the [ONS code-change list](https://github.com/ONSdigital/uk-topojson/blob/1fcecd26ccf6abf84bb46204ae32179be480b46d/input/changes.csv). Former districts are combined into their 2023 successors, including successive mergers where needed. Each supplied pregnancy or count contributes once; original source codes are retained for audit. The same geography is used for descriptive views, denominators, allocations and QA. ONS values are unchanged.
+
+The 2025 codes for **Barnsley (E08000038)** and **Sheffield (E08000039)** are mapped to their 2023 predecessors **E08000016** and **E08000019**. This is a boundary approximation: the [2025 change transferred land between the two authorities](https://www.legislation.gov.uk/uksi/2024/1328/pdfs/uksi_20241328_en.pdf), and LA-level counts cannot identify the affected residents. Counts remain with the named authority; they are not reallocated across that boundary. Welsh codes are retained. Unlisted codes remain unchanged and any unresolved source gaps remain visible in the coverage checks.
+
+```{r}
+#| label: applied-la-geography
+first_draft_projections$geography_table
+```
 
 #### Saved ONS inputs {#method-1-data-supplied}
 
@@ -1637,12 +1653,12 @@ show_msds_age_review(msds_age_review, "trust_backtest")
 #| label: review-msds-readout
 if (!is.null(msds_age_review)) msds_age_review$readout |> gt() |>
   cols_label(series = "Maternal age", start = "2023/24 actual", finish = "2025/26 actual", model_start = "2023/24 model", model_finish = "2025/26 model",
-    observed_change = "Actual change", model_change = "Modelled change", difference = "Model minus actual",
+    matched_finish = "2025/26 matched actual", observed_change = "Actual change", model_change = "Modelled change", difference = "Model minus matched actual",
     percent_difference = "% difference") |>
-  fmt_number(columns = c(start, finish, model_start, model_finish, difference), decimals = 1) |>
+  fmt_number(columns = c(start, finish, matched_finish, model_start, model_finish, difference), decimals = 1) |>
   fmt_percent(columns = c(observed_change, model_change, percent_difference), decimals = 1) |>
-  sub_missing(missing_text = "No positive reference count") |>
-  tab_source_note("MSDS recorded deliveries and modelled deliveries for 2023/24 to 2025/26.")
+  sub_missing(missing_text = "Unavailable") |>
+  tab_source_note("Recorded counts retain all activity. Partial model counts retain available allocations; differences use recorded deliveries from matching LA/age cells. Zero reference counts and wholly unavailable estimates have no percentage difference.")
 ```
 :::
 
@@ -1903,6 +1919,17 @@ projection_plot(
 
 ## 3.3 Delivery projections {#delivery-projections}
 
+### Projection coverage {#provider-projection-coverage}
+
+Provider charts retain the allocations that can be calculated. An unmatched record no longer removes the whole provider estimate: **Partial** means the displayed count covers usable LA/age cells, while **No usable estimate** remains unavailable. Missing ages are not redistributed. Unknown residence, source-geography differences and unresolved calibration remain explicit limitations. Zero counts are used for absent recorded categories within supported data, not for missing source areas, unknown ages or undefined rates.
+
+The table below counts the supplied cohort separately for bookings and deliveries. It shows the proportion of recorded activity with usable LA/age evidence; this is not a claim that the same percentage of future activity is covered. Unknown-age records cannot be assigned to individual age bands and can therefore flag several bands, but are counted only once in each provider total. Recorded historical totals retain all activity; delivery percentage comparisons use only recorded activity from the same usable LA/age cells as the projection. Booking and age-specific growth compare the same modelled cells across years.
+
+```{r}
+#| label: provider-projection-coverage-summary
+first_draft_projections$provider_coverage_table
+```
+
 ### 3.3.1 Total deliveries and patient flows {#projection-total-maternities}
 
 The total charts compare **blue: modelled deliveries**, **orange: ONS base**, and **green: recorded MSDS deliveries**. The ONS base distributes the original projected live births using the same delivery-provider shares as the model, after splitting the combined age groups but before applying the stillbirth, multiplicity and maternity pathway adjustment factors. It shows the model's live-birth starting point allocated to providers; it is not a separate provider forecast published by ONS.
@@ -2028,7 +2055,7 @@ htmltools::browsable(first_draft_projections$age_tables$incoming_table)
 
 ### 3.3.3 Change from recorded 2025/26 deliveries {#projection-percentage-change}
 
-These charts compare each modelled ONS-year total with the organisation's **recorded MSDS deliveries in 2025/26**. The percentage is **(modelled deliveries ÷ recorded 2025/26 deliveries − 1) × 100**. The modelled 2025 point can therefore be above or below zero. Later values include both the difference in starting levels and subsequent modelled change. A zero recorded count or incomplete provider projection has no calculable percentage change.
+These charts compare each modelled ONS-year total with the organisation's **recorded MSDS deliveries in 2025/26 from the same usable LA/age cells**. The percentage is **(modelled deliveries ÷ matched recorded 2025/26 deliveries − 1) × 100**. The modelled 2025 point can therefore be above or below zero. Later values include both the difference in starting levels and subsequent modelled change. Partial projections remain visible and are labelled in the charts and tables; they are not complete provider totals. A zero matched recorded count or no usable projection has no calculable percentage change. Full recorded counts remain visible in the total charts for context.
 
 ::: panel-tabset
 #### Trusts
@@ -2240,7 +2267,7 @@ resident_level_check <- observed_trajectory |>
   rename(Published = maternities) |>
   left_join(projected_trajectory |> rename(Projected = maternities),
             by = c("area_name", "year")) |>
-  mutate(Difference = Projected - Published,
+  mutate(Projected = dc_count(Projected), Difference = Projected - Published,
          Percent_difference = Difference / Published)
 
 resident_level_check |>
@@ -2262,6 +2289,8 @@ The difference from published ONS maternities is **`r scales::percent(resident_l
 ### 3.5.2 Retrospective delivery comparison, 2023/24–2025/26 {#projection-retrospective-check}
 
 These charts apply the model to ONS projected counts for 2023–2025 and compare the results with recorded MSDS deliveries in the corresponding financial years, 2023/24–2025/26. The same supplied cohort contributes to both the provider shares and the recorded comparison, so this shows how the model fits its input data; it is not an independent forecast test. Positive differences mean modelled activity is higher.
+
+The recorded line retains all provider deliveries. Differences and percentage differences use **matched recorded deliveries** from the model's usable LA/age cells in each comparison year; the table includes both full and matched observed counts. Partial estimates show available allocations only. Matching coverage does not remove the calendar/projection-year versus financial-year limitation described above.
 
 ::: panel-tabset
 #### Trusts

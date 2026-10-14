@@ -249,19 +249,37 @@ build_msds_age_review <- function(cohort, projections, historical, trust_labels,
   # Reuse the retrospective model with full-cohort proportions.
   # The observed comparison years are included in calibration; not held-out validation.
   model <- historical$single_age_projections |> dplyr::filter(Key %in% orgs$Key, !is.na(Age)) |>
-    dplyr::transmute(Key, Year, Age, Modelled = Projected, In_model = TRUE)
+    dplyr::transmute(Key, Year, Age, Modelled = Projected, Coverage_status,
+      Matched_support = Matched_cohort_rows, In_model = TRUE)
+  supported <- historical$master |> dplyr::group_by(LA, Age) |>
+    dplyr::summarise(Usable = all(Projection_available & Allocation_available), .groups = "drop") |>
+    dplyr::filter(Usable)
+  matched <- eligible |> dplyr::semi_join(supported, by = c("LA", "Age")) |>
+    dplyr::count(Trust, Year, Age, name = "Observed_matched") |>
+    dplyr::left_join(orgs, by = "Trust") |>
+    dplyr::select(Key, Year, Age, Observed_matched)
   exact_model <- exact |>
+    dplyr::left_join(matched, by = c("Key", "Year", "Age")) |>
     dplyr::left_join(model, by = c("Key", "year" = "Year", "Age")) |>
-    dplyr::mutate(Modelled = dplyr::if_else(is.na(In_model), 0, Modelled))
+    dplyr::mutate(Observed_matched = dplyr::coalesce(Observed_matched, 0L),
+      Modelled = dplyr::if_else(is.na(In_model), 0, Modelled))
   gaps <- historical$provider_projection_gaps |>
     dplyr::filter(Allocation == "Delivery", Level == "Trust")
   incomplete <- paste(exact_model$Key, exact_model$Age) %in% paste(gaps$Key, gaps$Age) |
     exact_model$Key %in% gaps$Key[is.na(gaps$Age)]
-  exact_model$Modelled[incomplete] <- NA_real_
+  exact_model$Modelled[incomplete & is.na(exact_model$In_model)] <- NA_real_
+  exact_model$Matched_support <- dplyr::coalesce(exact_model$Matched_support, 0L)
+  exact_model$Incomplete <- incomplete | is.na(exact_model$Modelled)
+  review_sum <- function(values, support, incomplete) {
+    if (sum(support) == 0 && any(incomplete)) return(NA_real_)
+    sum_available_projection(values)
+  }
   comparison <- exact_model |>
     dplyr::filter(Age >= 40) |>
     dplyr::group_by(Key, Organisation, year, series) |>
-    dplyr::summarise(Observed = sum(Observed), Modelled = sum(Modelled), .groups = "drop")
+    dplyr::summarise(Observed = sum(Observed), Observed_matched = sum(Observed_matched),
+      Modelled = review_sum(Modelled, Matched_support, Incomplete),
+      Matched_support = sum(Matched_support), Incomplete = any(Incomplete), .groups = "drop")
   coverage <- eligible |> dplyr::group_by(Year) |>
     dplyr::summarise(Deliveries = dplyr::n(), Missing_age = sum(is.na(Age)),
       Age_44_plus = sum(Age >= 44, na.rm = TRUE), .groups = "drop")
@@ -271,39 +289,50 @@ build_msds_age_review <- function(cohort, projections, historical, trust_labels,
   counts <- review_index(counts, "series", "Observed", 2023)
   old <- exact |> dplyr::filter(Age >= 40) |> dplyr::group_by(Age, year) |>
     dplyr::summarise(Observed = sum(Observed), .groups = "drop")
-  profile <- ggplot2::ggplot(old, ggplot2::aes(Age, Observed, colour = factor(year), group = year)) +
+  profile <- ggplot2::ggplot(dc_counts(old, "Observed"), ggplot2::aes(Age, Observed, colour = factor(year), group = year)) +
     ggplot2::geom_line() + ggplot2::geom_point() + ggplot2::scale_x_continuous(breaks = model_ages[model_ages >= 40]) +
     ggplot2::labs(title = "Actual older-age starting counts: cluster trusts combined", x = "Exact age at birth",
       y = "Recorded non-home deliveries", colour = "Year",
       caption = "Recorded non-home deliveries at cluster trusts, ages 40-54. Each pregnancy counts once, including live births and stillbirths.") +
     ggplot2::theme_minimal(base_family = "sans") + ggplot2::theme(legend.position = "bottom")
   combined <- comparison |> dplyr::group_by(year, series) |>
-    dplyr::summarise(Observed = sum(Observed), Modelled = sum(Modelled), .groups = "drop")
+    dplyr::summarise(Observed = sum(Observed), Observed_matched = sum(Observed_matched),
+      Modelled = review_sum(Modelled, Matched_support, Incomplete), .groups = "drop")
   long <- combined |> tidyr::pivot_longer(c(Observed, Modelled), names_to = "measure", values_to = "value") |>
     dplyr::rename(age_group = series) |> dplyr::mutate(series = measure)
   by_trust <- comparison |> dplyr::filter(series != "40-43") |>
     dplyr::group_by(Organisation, year) |>
-    dplyr::summarise(Observed = sum(Observed), Modelled = sum(Modelled), .groups = "drop") |>
+    dplyr::summarise(Observed = sum(Observed), Modelled = review_sum(Modelled, Matched_support, Incomplete), .groups = "drop") |>
     tidyr::pivot_longer(c(Observed, Modelled), names_to = "series", values_to = "value")
   last_year <- exact_model |> dplyr::filter(year == 2025, Age >= 40) |>
-    dplyr::group_by(Age) |> dplyr::summarise(Observed = sum(Observed), Modelled = sum(Modelled), .groups = "drop") |>
+    dplyr::group_by(Age) |> dplyr::summarise(Observed = sum(Observed), Modelled = review_sum(Modelled, Matched_support, Incomplete), .groups = "drop") |>
     tidyr::pivot_longer(c(Observed, Modelled), names_to = "series", values_to = "value")
+  last_year <- dc_counts(last_year, "value")
   exact_check <- ggplot2::ggplot(last_year, ggplot2::aes(Age, value, colour = series, group = series)) +
     ggplot2::geom_line() + ggplot2::geom_point() + ggplot2::scale_x_continuous(breaks = model_ages[model_ages >= 40]) +
     ggplot2::labs(title = "Deliveries by age: modelled 2025 and recorded 2025/26", x = "Exact maternal age",
       y = "Recorded / modelled non-home deliveries", colour = NULL,
-      caption = "Cluster trusts combined. ONS counts use all four modifiers and full-cohort allocation proportions.\nIncomplete provider/age estimates remain unavailable; unmatched records are not treated as zero demand.") +
+      caption = "Cluster trusts combined. ONS counts use all four modifiers and full-cohort allocation proportions.\nPartial model counts retain available allocations; recorded counts retain all activity. See provider coverage.") +
     ggplot2::theme_minimal(base_family = "sans") + ggplot2::theme(legend.position = "bottom")
   age_mix <- counts |> dplyr::filter(series != "40-43") |> dplyr::group_by(year) |>
     dplyr::mutate(denominator = sum(Observed), share = ifelse(denominator > 0, Observed / denominator * 100, NA_real_)) |>
     dplyr::ungroup()
+  # All aggregations above use raw counts. Build independent display copies now.
+  age_mix <- dc_cells(age_mix, c("Observed", "denominator"), list(share = c("Observed", "denominator")))
+  age_mix$share <- age_mix$share * 100
+  counts <- counts |> dplyr::select(-base, -index) |> dc_counts("Observed") |>
+    review_index("series", "Observed", 2023)
+  long <- dc_counts(long, "value")
+  by_trust <- dc_counts(by_trust, "value")
   readout <- combined |> dplyr::group_by(series) |>
     dplyr::summarise(start = Observed[year == 2023], finish = Observed[year == 2025],
+      matched_finish = Observed_matched[year == 2025],
       model_start = Modelled[year == 2023], model_finish = Modelled[year == 2025], .groups = "drop") |>
+    dc_counts(c("start", "finish", "matched_finish", "model_start", "model_finish")) |>
     dplyr::mutate(observed_change = ifelse(start > 0, finish/start-1, NA_real_),
       model_change = ifelse(model_start > 0, model_finish/model_start-1, NA_real_),
-      difference = model_finish - finish,
-      percent_difference = ifelse(finish > 0, difference/finish, NA_real_))
+      difference = model_finish - matched_finish,
+      percent_difference = ifelse(matched_finish > 0, difference/matched_finish, NA_real_))
   plots <- list(profile = profile,
     exact_backtest = exact_check,
     age_mix = review_line(age_mix, "share", "Recorded age mix within 44+", "% of known-age 44+ deliveries",
@@ -313,15 +342,15 @@ build_msds_age_review <- function(cohort, projections, historical, trust_labels,
     change = review_line(counts, "index", "MSDS age trends compared on a common scale", "Deliveries: 2023/24 = 100",
       "A zero reference count has no index. Differences can reflect case mix, provider flows or recording, not just demography.", index = TRUE),
     backtest = review_line(long, "value", "Modelled and recorded deliveries by age", "Deliveries",
-      "ONS 2023 to 2025 projections with the model's adjustments and provider shares.\nMSDS counts use the corresponding financial years.", "age_group"),
+      "ONS 2023 to 2025 projections with the model's adjustments and provider shares.\nPartial model counts retain available allocations; MSDS retains all recorded activity in each financial year.", "age_group"),
     trust_backtest = review_line(by_trust, "value", "Modelled and recorded deliveries at each trust: ages 44+", "Deliveries",
-      "Recorded MSDS deliveries compared with adjusted ONS projections.", "Organisation"))
-  list(version = "age-review-counts-v4", plots = plots, exact = exact, bands = bands, share = share,
+      "Recorded MSDS deliveries compared with available ONS-based allocations; see provider coverage.", "Organisation"))
+  list(version = "age-review-counts-v5", plots = plots, exact = exact, bands = bands, share = share,
     comparison = comparison, exact_comparison = exact_model, coverage = coverage, readout = readout, age_mix = age_mix)
 }
 
 show_msds_age_review <- function(review, plot) {
-  if (is.null(review) || !identical(review$version, "age-review-counts-v4")) {
+  if (is.null(review) || !identical(review$version, "age-review-counts-v5")) {
     htmltools::div(class = "callout callout-note",
       "MSDS evidence is not available in this render. Run Run analysis.R again in the secure environment. ")
   } else review$plots[[plot]]

@@ -40,6 +40,14 @@ install.packages(c("dplyr", "tidyr", "readr", "readxl", "janitor", "purrr",
 # The parquet reader additionally uses arrow, AzureKeyVault, AzureStor, cli and glue.
 ```
 
+## Disclosure controls
+
+The final report follows the [MSDS activity reporting rules](https://digital.nhs.uk/data-and-information/publications/statistical/maternity-services-monthly-statistics/final-june-2026-provisional-july-2026#publication-data-files-and-suppression-methodology): zero stays zero, counts 1–7 become 5, and other counts round to the nearest 5. Percentages use the controlled numerator and denominator. Positive fractional model outputs below 8 also become 5; exact half-five ties round upwards. Missing estimates stay missing. ONS-only figures are unchanged.
+
+`R/disclosure.R` applies these rules to publication copies after each final aggregation. The master, calibration and internal reconciliation data retain raw precision. Independently controlled totals may differ from sums of displayed components. Plotly construction data is removed before embedding; the runner checks the finished HTML before copying it to `_site/index.html`. Old prepared outputs cannot render with the new template: rerun the analysis once after updating. The HTML is the report artifact; the intermediate RDS files and RStudio inspection objects retain raw data and are not part of it.
+
+Regression checks: `Rscript R/test_disclosure.R` and `Rscript R/test_projection_scale.R`.
+
 ## Where to edit
 
 | File | Purpose |
@@ -83,7 +91,7 @@ Birth and population projections use the 2022-based migration-category variant
 on 2023 LA geography. Sources and methods are in the report and
 `ONS-analysis-notes.md`.
 
-The two small files in `data/lookups/` supply chart and table labels. Keep them
+The name files in `data/lookups/` supply chart and table labels. Keep them
 with the code when moving the project into the secure environment; the analysis
 reads these local copies and does not download lookups when it runs. They change
 names only, not LA boundaries, trust membership or projection calculations.
@@ -94,6 +102,30 @@ with codes present only in the
 [April 2023 list](https://www.data.gov.uk/dataset/fb6edb97-5fff-4bce-a74c-3aa4f167d307/local-authority-districts-april-2023-names-and-codes-in-the-uk).
 `trust_names.csv` contains the code and name columns from the
 [NHS ODS trusts download](https://digital.nhs.uk/services/organisation-data-service/data-search-and-export/csv-downloads/other-nhs-organisations).
+
+These are report-side display lookups, separate from Sarah's parquet reader.
+Residence harmonisation is separate, using `data/lookups/la_to_2023.csv` and
+`report_la_code()` in `R/report_cohort.R`. The crosswalk is derived from the
+[versioned ONS code-change list](https://github.com/ONSdigital/uk-topojson/blob/1fcecd26ccf6abf84bb46204ae32179be480b46d/input/changes.csv)
+(retrieved 14 October 2026). It maps 42 former English district codes through
+whole-district mergers in 2019–2023 to their 2023 successors, including successive
+Somerset mergers. It also maps the two 2025 codes back to their 2023 predecessors.
+ONS confirms that
+[Barnsley](https://www.ons.gov.uk/explore-local-statistics/areas/E08000038-barnsley)
+and [Sheffield](https://www.ons.gov.uk/explore-local-statistics/areas/E08000039-sheffield)
+changed boundaries/codes in 2025: E08000016/E08000019 became E08000038/E08000039.
+The supplied 2023-geography projection correctly retains the earlier codes.
+For Barnsley and Sheffield this is an explicit boundary approximation, because
+the 2025 change transferred land between them. LA-level counts cannot identify
+the affected residents, so they remain assigned to the named authority.
+The same mapping is applied to MSDS cohort and resident totals before filtering
+or aggregation, across descriptions, denominators, allocations and QA. Each
+source record/count contributes once; `LA_source` retains the original code in
+the prepared cohort, and the parquet-backed inputs are unchanged. ONS inputs,
+Welsh codes and codes absent from the crosswalk are unchanged. Unresolved gaps
+remain in coverage checks. The report geography table lists conversions actually
+used in the run. Keep this crosswalk with the project; no runtime download is needed.
+Run `Rscript R/test_geography.R` for the invented-data geography regression.
 
 Sarah's reader loads these Azure parquet datasets into R:
 
@@ -223,17 +255,27 @@ orange ONS base projections and green recorded MSDS counts. The ONS line is
 and booking adjustments, using the same provider shares as the model. It remains
 a live-birth baseline, not an ONS provider or booking forecast. Historical points
 use the existing delivery-year or booking-year counts for 2023/24–2025/26; their
-x-axis position is the financial year's start. Missing projection coverage stays
-unavailable, while recorded historical counts remain visible.
+x-axis position is the financial year's start. Partial projections retain their
+available allocations with coverage labels; wholly unsupported estimates remain
+unavailable. Recorded historical totals retain all activity for context.
 
 Both sections retain age-band charts and total-change charts, with age-band change
-also available for bookings. Existing percentage-change references are unchanged:
-recorded 2025/26 for delivery totals; modelled 2025 for booking totals and age bands.
+also available for bookings. Delivery-total percentage changes use recorded
+2025/26 deliveries from the same usable LA/age cells; booking totals and age bands
+use modelled 2025 on the same support. Retrospective differences likewise use
+matched recorded deliveries; the full recorded totals are retained separately.
+Coverage counts and percentages describe the supplied cohort, not an estimated
+percentage of future demand. Unknown ages are not redistributed. A missing
+destination within valid source coverage is zero; missing source geographies,
+explicit missing values and zero-denominator rates are not converted to zero.
+`R/HH scratch area.R` holds optional snippets to select and run against Sarah's
+loaded parquet objects, including missing-age checks and raw/harmonised LA codes.
+It is not a report step and does not require a particular saved output.
 Run `Rscript R/test_projection_scale.R` to check the three chart series with
 invented data and confirm that outside-LA bookings use the shared resident
 denominator rather than being scaled up to the whole LA population.
 
-The report requires calculation version `ons-shared-age-calculations-v17`.
+The report requires calculation version `ons-shared-age-calculations-v19`.
 The three ONS registration workbooks were checked against the public downloads
 on 6 October 2026 and matched exactly. Table 5 supplies the two national modifiers; Table 7
 remains descriptive evidence about multiplicity.

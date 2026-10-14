@@ -134,7 +134,7 @@ local({
       year <- as.numeric(trace$x)
       expected <- expected_total(key, if (series == "MSDS recorded") rep(2025, length(year)) else year, bookings)
       if (series == "ONS base") expected <- expected / 1.2
-      near(trace$y, expected)
+      near(trace$y, dc_count(expected))
       if (series == "MSDS recorded") near(year, 2023:2025) else near(year, 2025:2047)
     }
   }
@@ -155,7 +155,7 @@ local({
     for (trace in traces) {
       if (trace$name == "No allocated bookings") { near(trace$y, rep(0, length(trace$y))); next }
       n_ages <- sum(report_age_band(15:44) == trace$name)
-      near(trace$y, expected_total(key, as.numeric(trace$x), TRUE) * n_ages / 30)
+      near(trace$y, dc_count(expected_total(key, as.numeric(trace$x), TRUE) * n_ages / 30))
     }
   }
   # A tenfold uplift must cancel in provider allocation when the same denominator
@@ -191,15 +191,54 @@ local({
   near(check$Booking_denominator, 360)
   # The old method's 30 / 30 booking share would incorrectly allocate 100.
   near(check$Exact_age_live_births * (30 / 30), 100)
-  # Incomplete model coverage does not erase observed historical records.
-  incomplete <- result$maternity_projections
-  incomplete$Projected[incomplete$Key == "trust-rq3"] <- NA_real_
-  incomplete$Projection_complete[incomplete$Key == "trust-rq3"] <- FALSE
-  comparison <- build_provider_total_comparison(m, prepare_report_cohort(final_cohort_2326),
-    result$organisations, incomplete, "Delivery")
-  affected <- comparison[comparison$Key == "trust-rq3", ]
-  stopifnot(all(is.na(affected$Value[affected$Series != "MSDS recorded"])))
-  near(affected$Value[affected$Series == "MSDS recorded"], rep(300, 3))
+  # Unknown age and unmatched LA must not erase other valid provider allocations.
+  gaps <- original_cohort[rep(1, 4), ]
+  gaps$birth_yr <- "2025/26"
+  gaps$age_at_birth_mother <- c(NA, 25, NA, NA)
+  gaps$la_of_mother[2] <- "W06000002"
+  gaps$birth_provider[3] <- gaps$booking_provider[3] <- "RXT"
+  gaps$birth_flag[4] <- 0L
+  final_cohort_2326 <- dplyr::bind_rows(original_cohort, gaps)
+  partial_master <- build_projection_master(final_cohort_2326, total_births_by_LA_2326, ons, counts)
+  partial <- build_first_draft_projections(master = partial_master)
+  for (field in c("maternity_projections", "booking_total_projections")) {
+    shown <- partial[[field]]
+    affected <- shown[shown$Key == "trust-rq3", ]
+    near(affected$Projected, result[[field]]$Projected[result[[field]]$Key == "trust-rq3"])
+    stopifnot(all(affected$Coverage_status == "Partial"), all(!affected$Projection_complete),
+      all(is.na(shown$Projected[shown$Key == "trust-rxt"])),
+      all(shown$Coverage_status[shown$Key == "trust-rxt"] == "No usable estimate"),
+      all(shown$Projected[shown$Key == "trust-rbk"] == 0))
+  }
+  rq3 <- partial$maternity_projections |> dplyr::filter(Key == "trust-rq3", Year == 2025)
+  near(rq3$Observed_baseline, 302)
+  near(rq3$Observed_matched_baseline, 300)
+  near(rq3$Percent_change, 0)
+  comparison <- partial$total_comparison$Delivery
+  near(comparison$Value[comparison$Key == "trust-rq3" & comparison$Series == "MSDS recorded"], c(300,300,302))
+  near(comparison$Value[comparison$Key == "trust-rq3" & comparison$Series == "Modelled projection"],
+    result$maternity_projections$Projected[result$maternity_projections$Key == "trust-rq3"])
+  traces <- plotly::plotly_build(partial$forecast_outputs[["trust-rq3"]]$total_chart)$x$data
+  model_trace <- traces[[which(vapply(traces, function(x) x$meta$Series == "Modelled projection", logical(1)))]]
+  stopifnot(all(is.finite(model_trace$y)), all(grepl("Partial", model_trace$text)))
+  age_review <- build_msds_age_review(final_cohort_2326, partial, partial, trust_labels, cluster_trusts)
+  check_age <- age_review$exact_comparison |> dplyr::filter(year == 2025, Age == 25)
+  stopifnot(is.finite(check_age$Modelled[check_age$Key == "trust-rq3"]),
+    is.na(check_age$Modelled[check_age$Key == "trust-rxt"]))
+  near(sum_available_projection(c(NA, 12, 0)), 12)
+  stopifnot(is.na(sum_available_projection(c(NA_real_, NA_real_))), sum_available_projection(numeric()) == 0)
+  final_cohort_2326 <- original_cohort
+  # Sparse destinations are zero, but absent calibration cannot create a rate.
+  near(m$Delivery_count_RL4[m$LA == "E08000025"], rep(0, sum(m$LA == "E08000025")))
+  empty_cell <- original_cohort[!(original_cohort$la_of_mother == "E08000025" &
+    original_cohort$age_at_birth_mother == 25), ]
+  empty_master <- build_projection_master(empty_cell, total_births_by_LA_2326, ons, counts)
+  empty <- empty_master |> dplyr::filter(LA == "E08000025", Age == 25, Year == 2025)
+  stopifnot(!empty$Allocation_available, is.na(empty$Delivery_denominator))
+  near(empty$Delivery_count_Unallocated, empty$Adjusted_maternities)
+  invalid_residents <- feeder_residents
+  invalid_residents$count[invalid_residents$la_of_mother == "E09999999"] <- NA_real_
+  stopifnot(inherits(try(build_allocation_tables(feeder_cohort, invalid_residents), silent = TRUE), "try-error"))
   stopifnot(all(c("Trust", "ICB_Cluster") %in% names(result$delivery_total_grids)),
     all(c("Trust", "ICB_Cluster") %in% names(result$delivery_change_grids)),
     all(c("Trust", "ICB_Cluster") %in% names(result$booking_total_charts)),

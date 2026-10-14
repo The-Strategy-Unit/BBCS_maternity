@@ -90,6 +90,7 @@ run_maternity_project <- function() {
       'To retry rendering only, run system2(Sys.which("quarto"), c("render", "index.qmd")).',
       call. = FALSE)
   }
+  audit_disclosure_html(file.path(rendered_site, "index.html"))
   if (!file.copy(rendered_site, project_root, recursive = TRUE) ||
       !file.exists("_site/index.html")) stop("Could not save the finished report.")
   saveRDS(run_info, ".analysis_run.rds")

@@ -57,7 +57,7 @@ home_flags <- report_number(recorded_deliveries$home_birth)
 qa_check("Recorded deliveries have home flags of 0 or 1", all(home_flags %in% c(0, 1)),
          paste(sum(!home_flags %in% c(0, 1)), "records have missing or invalid home flags"))
 resident_records <- total_births_by_LA_2326 |>
-  dplyr::mutate(LA = report_code(la_of_mother), Age = report_age(age_at_birth_mother)) |>
+  dplyr::mutate(LA = report_la_code(la_of_mother), Age = report_age(age_at_birth_mother)) |>
   dplyr::filter(LA %in% prepared_records$LA, !LA %in% read_area_config()$area_code,
     as.character(birth_yr) %in% qa_years)
 if (file.exists(".projections.rds")) {
@@ -412,7 +412,7 @@ if (file.exists(".delivery_geography.rds")) {
 if (file.exists(".projections.rds")) {
   projections <- readRDS(".projections.rds")
   qa_check("Projection outputs use the current four-modifier method",
-    identical(projections$calculation_version, "ons-shared-age-calculations-v17"))
+    identical(projections$calculation_version, "ons-shared-age-calculations-v19"))
   flows <- projections$sankey_comparison
   qa_check("Delivery Sankey recorded flows match the observed cluster total",
     !is.null(flows) && numbers_match(sum(flows$flows$Observed),
@@ -520,12 +520,21 @@ if (file.exists(".projections.rds")) {
         paste(paste(reasons$Allocation, reasons$Rows, reasons$Reason, sep = ": "), collapse = "; ")
       } else "No unmatched provider flows")
     for (shown in list(base$maternity_projections, base$booking_total_projections)) {
-      complete <- shown$Projection_complete
+      usable <- shown$Coverage_status != "No usable estimate"
       qa_check(paste(label, if (identical(shown, base$maternity_projections)) "delivery" else "booking",
-        "incomplete provider estimates and changes remain missing"),
-        all(is.na(shown$Projected[!complete])) && all(is.na(shown$Percent_change[!complete])) &&
-          numbers_match(shown$Projected[complete], shown$Available_projected[complete]))
+        "partial estimates remain visible and unsupported estimates remain missing"),
+        all(is.na(shown$Projected[!usable])) && all(is.na(shown$Percent_change[!usable])) &&
+          numbers_match(shown$Projected[usable], shown$Available_projected[usable]) &&
+          all(shown$Coverage_status[!shown$Projection_complete & usable] == "Partial"))
     }
+    qa_check(paste(label, "provider coverage partitions recorded activity without losing rows"),
+      all(base$provider_coverage$Matched_rows + base$provider_coverage$Unmatched_rows ==
+        base$provider_coverage$Cohort_rows))
+    delivery_comparison <- base$maternity_projections
+    expected_change <- ifelse(delivery_comparison$Observed_matched_baseline > 0,
+      delivery_comparison$Projected / delivery_comparison$Observed_matched_baseline - 1, NA_real_)
+    qa_check(paste(label, "delivery changes use matching observed LA/age coverage"),
+      projection_numbers_match(delivery_comparison$Percent_change, expected_change))
     totals <- base$maternity_projections |> dplyr::group_by(Level, Year) |>
       dplyr::summarise(N = sum(Available_projected), .groups = "drop") |>
       tidyr::pivot_wider(names_from = Level, values_from = N)

@@ -90,7 +90,7 @@ references to the same `Adjusted_maternities` value. Do not add their totals.
 `National_conversion_factor` contains the two national factors only;
 the master's `Maternity_modifier` also includes the maternity pathway adjustment and is
 applied after the age split.
-Calculation version: `ons-shared-age-calculations-v17`.
+Calculation version: `ons-shared-age-calculations-v19`.
 
 Resident charts sum the master before allocation; trust charts sum completed
 provider contributions. The historical comparison is in-sample, not independent
@@ -147,6 +147,23 @@ Further arithmetic and chart checks can run with the optional local
 excluded from Git. They use small counted examples, not an alternative MSDS
 project dataset.
 Full secure-data execution is still required to verify the actual cohort results.
+
+Provider coverage: available allocations remain visible when other records cannot
+be matched. Counts are labelled complete, partial or no usable estimate, with a
+cohort coverage table. Delivery changes and retrospective differences use matched
+recorded LA/age cells; full recorded activity remains visible as context. Booking
+and age-band growth compare modelled counts on the same fixed support. No missing
+age redistribution is applied. MSDS residence codes are harmonised to the ONS
+2023 codes using the versioned crosswalk in `data/lookups/la_to_2023.csv` before
+aggregation in both inputs. Whole-district mergers combine their constituent
+counts; the 2025 Barnsley/Sheffield codes use their 2023 predecessors as a documented
+boundary approximation, without attempting to redistribute the transferred area.
+The report lists applied mappings and cites the ONS change list. Original source
+objects and ONS values are unchanged. Structural absent count
+categories within supported inputs are zero; missing source areas, explicit NAs
+and undefined zero-denominator rates remain unavailable. The HH scratch file is
+a collection of optional snippets to select and run against the parquet-backed
+objects; it is not a pipeline step and does not create a prescribed output.
 
 The report calls the fourth modifier **Maternity pathway adjustment**. The existing
 `Bookings_uplift_modifier` column name is retained for compatibility; it still means

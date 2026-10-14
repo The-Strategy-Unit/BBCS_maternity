@@ -487,6 +487,7 @@ ons_table_style <- function(table) {
 }
 
 projection_plot <- function(data, caption, colours) {
+  data <- dc_counts(data, "projected_maternities")
   ggplot2::ggplot(data, ggplot2::aes(year, projected_maternities,
                                     colour = area_name, group = area_name)) +
     ggplot2::geom_line(linewidth = 1.05) +
@@ -536,6 +537,7 @@ published_maternities_plot <- function(data, colours) {
 }
 
 maternity_trajectory_plot <- function(observed, projected, caption, colours) {
+  projected <- dc_counts(projected, "maternities")
   ggplot2::ggplot() +
     ggplot2::geom_line(data = observed,
       ggplot2::aes(year, maternities, colour = area_name, group = area_name), linewidth = 1.2) +

@@ -10,6 +10,9 @@
 !/R/Read parquet files from azure.R
 !/R/Maternity analysis.R
 !/R/ons_data.R
+!/R/disclosure.R
+!/R/test_disclosure.R
+!/R/test_geography.R
 !/R/report_cohort.R
 !/R/age_boundary_review.R
 !/R/QA.R
@@ -39,6 +42,7 @@
 !/data/ons_live_births_la_2013_2025.csv
 !/data/lookups/
 !/data/lookups/la_names.csv
+!/data/lookups/la_to_2023.csv
 !/data/lookups/trust_names.csv
 !/ONS Birth Methods Review.docx
 

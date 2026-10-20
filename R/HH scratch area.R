@@ -1,59 +1,74 @@
-#scratch area
-
-# SIMPLE COUNTS DIRECTLY FROM SARAH'S TWO LOADED OBJECTS.
-# Run Sarah's parquet reader first, then select any of these four chunks.
-# No hh_ objects, copies, joins, deduplication or report functions.
+# UNFILTERED COUNTS DIRECTLY FROM SARAH'S TWO LOADED OBJECTS.
+# Phase-1-Final: run R/Read parquet files from azure.R, then any chunk below.
+# No rows removed, no source fields overwritten, no deduplication or null cleanup.
+# NA, blank and literal "null" values stay distinct. Print every group.
+# Rows = source records, not assumed bookings/deliveries when evidence is missing.
+# Only chunk 2 derives a year; chunk 3 shows the original date values unchanged.
 library(dplyr)
 
-# 1. FINAL COHORT: bookings by appointment financial year (April to March).
-# Cluster bookings use Sarah's booking_provider_flag.
+# 1. COHORT: supplied birth FY and flags, including every NA/unexpected flag.
+# birth_flag: 1 = recorded delivery; booking/birth_provider_flag: 1 = cluster.
+# Every source row contributes to exactly one group; sum Rows = nrow(source).
 final_cohort_2326 |>
-  filter(!is.na(antenatal_app_date)) |>
-  mutate(booking_date = as.Date(antenatal_app_date, format = "%Y-%m-%d"),
-    FY_start = as.integer(format(booking_date, "%Y")) -
-      as.integer(as.integer(format(booking_date, "%m")) < 4),
-    FY = if_else(is.na(FY_start), NA_character_,
-      paste0(FY_start, "/", substr(FY_start + 1, 3, 4)))) |>
-  group_by(FY) |>
-  summarise(All_bookings = n(),
-    Cluster_provider_bookings = sum(booking_provider_flag %in% 1), .groups = "drop") |>
-  print(n = Inf)
+  count(birth_yr, birth_flag, booking_provider_flag, birth_provider_flag,
+    name = "Rows", .drop = FALSE) |>
+  print(n = Inf, width = Inf)
 
-# 2. FINAL COHORT: deliveries by Sarah's birth financial year.
-# Cluster deliveries use Sarah's birth_provider_flag; no home/age/LA exclusions.
+# 2. COHORT: booking FY derived from appointment date, with all rows retained.
+# FY = NA includes absent/unparsed dates; the two explicit checks distinguish them.
+# A row without a usable booking date is not labelled a confirmed booking.
+# No year-range filter: earlier/later years and NA all appear.
 final_cohort_2326 |>
-  filter(birth_flag == 1) |>
-  group_by(birth_yr) |>
-  summarise(All_deliveries = n(),
-    Cluster_provider_deliveries = sum(birth_provider_flag %in% 1), .groups = "drop") |>
-  print(n = Inf)
+  mutate(Diagnostic_booking_date = as.Date(antenatal_app_date, format = "%Y-%m-%d"),
+    Diagnostic_missing_date = is.na(antenatal_app_date),
+    Diagnostic_unparsed_date = !is.na(antenatal_app_date) & is.na(Diagnostic_booking_date),
+    Diagnostic_FY_start = as.integer(format(Diagnostic_booking_date, "%Y")) -
+      as.integer(as.integer(format(Diagnostic_booking_date, "%m")) < 4),
+    Diagnostic_booking_FY = if_else(is.na(Diagnostic_FY_start), NA_character_,
+      paste0(Diagnostic_FY_start, "/", substr(Diagnostic_FY_start + 1, 3, 4)))) |>
+  count(Diagnostic_booking_FY, Diagnostic_missing_date, Diagnostic_unparsed_date,
+    birth_yr, birth_flag, booking_provider_flag, name = "Rows", .drop = FALSE) |>
+  print(n = Inf, width = Inf)
 
-# 3. LA FILE: deliveries by birth financial year. SUM count, not rows.
-# Cluster = residents of Birmingham, Dudley, Sandwell, Solihull, Walsall, Wolverhampton.
+# 3. COHORT: original appointment dates and booking flags, without date parsing.
+# This may print many rows. Includes NA, blanks and any unexpected source values.
+final_cohort_2326 |>
+  count(antenatal_app_date, booking_provider_flag, name = "Rows", .drop = FALSE) |>
+  print(n = Inf, width = Inf)
+
+# 4. LA FILE: BOTH supplied year fields together, including null combinations.
+# birth_yr present = deliveries; birth_yr NA = the added antenatal bookings.
+# estimated_yr is due FY. Do not combine these into a cleaned/coalesced year.
+# Total_count includes every row; cluster/unknown-LA columns are extra subtotals.
+# No na.rm: an NA count stays visible as an NA sum, with Missing_count_rows shown.
 total_births_by_LA_2326 |>
-  filter(!is.na(birth_yr)) |>
-  group_by(birth_yr) |>
-  summarise(All_deliveries = sum(count),
-    Cluster_resident_deliveries = sum(count[la_of_mother %in%
+  group_by(birth_yr, estimated_yr, .drop = FALSE) |>
+  summarise(Source_rows = n(), Total_count = sum(count),
+    Cluster_resident_count = sum(count[la_of_mother %in%
       c("E08000025", "E08000027", "E08000028", "E08000029", "E08000030", "E08000031")]),
-    .groups = "drop") |>
-  print(n = Inf)
+    NA_LA_count = sum(count[is.na(la_of_mother)]),
+    Missing_count_rows = sum(is.na(count)), .groups = "drop") |>
+  print(n = Inf, width = Inf)
 
-# 4. LA FILE: added bookings (birth_yr missing), by estimated due financial year.
-# These are antenatal-only records; their year is due FY, not appointment FY.
+# 5. LA FILE: raw LA/year combinations so unexpected LA values remain visible.
 total_births_by_LA_2326 |>
-  filter(is.na(birth_yr)) |>
-  group_by(estimated_yr) |>
-  summarise(All_bookings = sum(count),
-    Cluster_resident_bookings = sum(count[la_of_mother %in%
-      c("E08000025", "E08000027", "E08000028", "E08000029", "E08000030", "E08000031")]),
-    .groups = "drop") |>
-  print(n = Inf)
+  group_by(la_of_mother, birth_yr, estimated_yr, .drop = FALSE) |>
+  summarise(Source_rows = n(), Total_count = sum(count),
+    Missing_count_rows = sum(is.na(count)), .groups = "drop") |>
+  print(n = Inf, width = Inf)
 
-# Whole-file size checks (all years, including records without a year).
-nrow(final_cohort_2326)
-sum(total_births_by_LA_2326$count)
-# END SIMPLE SOURCE COUNTS. Older detailed checks below are separate.
+# 6. Whole-file totals: compare these with the sums of the groups above.
+# Each cohort table counts the same full set of source rows in a different way.
+final_cohort_2326 |>
+  summarise(Source_rows = n()) |>
+  print(width = Inf)
+total_births_by_LA_2326 |>
+  summarise(Source_rows = n(), Total_count = sum(count),
+    Missing_count_rows = sum(is.na(count))) |>
+  print(width = Inf)
+
+# END LATEST UNFILTERED DIAGNOSTICS.
+# OLDER DETAILED CHECKS BELOW: these retain their original filters and processing.
 
 library(dplyr)
 source("R/report_cohort.R")

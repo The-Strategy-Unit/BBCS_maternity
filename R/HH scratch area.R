@@ -3,6 +3,18 @@
 library(dplyr)
 source("R/report_cohort.R")
 
+
+dplyr::glimpse(total_births_by_LA_2326)
+
+
+
+
+
+
+
+
+
+
 # Use exactly the report's birth-age / booking-age fallback rule.
 prepared_age_check <- prepare_report_cohort(final_cohort_2326)
 # Raw diagnostic counts behind the report's age-completeness table.

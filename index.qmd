@@ -154,7 +154,7 @@ The supplied cohort includes pregnancies identified through delivery at a BBCS t
 The upstream extract removes duplicate booking or birth records on the same date, retaining a record with a provider where the alternative has none. Where same-date bookings have different providers, or two pregnancy IDs share the same initial booking date, one record is selected at random. The analysis counts the supplied pregnancy rows: multiple babies count as one delivery, and separate pregnancies for the same woman count separately. Home birth is identified upstream by site code ZZ201 or maternity care setting 04. Recorded deliveries include live births and stillbirths.
 
 | Cluster group | Resident LAs | Named acute trusts |
-|----|----|----|
+|------------------------|------------------------|------------------------|
 | Black Country ICB (QUA) | Dudley, Sandwell, Walsall, Wolverhampton | Walsall Healthcare (RBK); Royal Wolverhampton (RL4); Dudley Group (RNA); Sandwell and West Birmingham (RXK) |
 | Birmingham and Solihull ICB (QHL) | Birmingham, Solihull | Birmingham Women's and Children's (RQ3); University Hospitals Birmingham (RRK) |
 
@@ -167,7 +167,7 @@ The combined cluster sums its provider ICB groups. The configured provider looku
 **For this project, a maternity is one pregnancy entering maternity care through booking and/or delivery.** This includes live births, stillbirths and booked pregnancies without a recorded delivery.
 
 | Term | Meaning | Use in this analysis or pathway model |
-|----|----|----|
+|------------------------|------------------------|------------------------|
 | **Live birth** | One baby born showing signs of life. | The unit in the ONS birth projections used here. Two live-born twins count as two. |
 | **Stillbirth** | One baby born without signs of life at 24 or more completed weeks. | Included in births (L+S); a delivery outcome within the maternity pathway. |
 | **Total births** | Live births plus stillbirths: a count of babies. | Always specify “live births” or “total births”; the projected input here is live births. |
@@ -185,7 +185,7 @@ ONS source definitions follow the [birth statistics user guide](https://www.ons.
 ### Terms used in the calculations {#method-1-terms-used-in-the-calculations}
 
 | Term | Meaning here |
-|----|----|
+|------------------------------------|------------------------------------|
 | **Recorded / observed / published count** | MSDS recorded activity or ONS registered events that have already happened. The source and counting unit are identified alongside the figure. |
 | **Projected live births** | [Future baby counts from the [ONS subnational population projection model](#method-1-ref-snpp-method), conditional on its assumptions. (LM edit)]{.lm-edit} |
 | **Estimated / projected maternities** | [Counts calculated from ONS projected live births after the local age split, an allowance for stillbirths and a multiplicity adjustment to account for multiple births. The maternity pathway adjustment then includes pregnancies without a recorded delivery, giving the project's wider maternity total. (LM edit)]{.lm-edit} The Private–NHS modifier is applied between multiplicity and the maternity pathway adjustment. |
@@ -205,7 +205,7 @@ ONS source definitions follow the [birth statistics user guide](https://www.ons.
 [The displayed birth rates provide demographic context and are not applied within this conversion; fertility assumptions already enter the ONS birth projection. (LM edit)]{.lm-edit}
 
 | Shorthand | Meaning here |
-|----|----|
+|------------------------------------|------------------------------------|
 | Births (L); births (L+S) | Live-born babies; live-born plus stillborn babies. |
 | Age (SY); Age (B) | Individual year of age; reporting age band. |
 | LA(R) | Mother's local authority of residence. |
@@ -228,7 +228,7 @@ The diagram shows how the five adjustments produce one maternity total for each 
 The six authorities are Birmingham, Dudley, Sandwell, Solihull, Walsall and Wolverhampton. The following series are kept distinct:
 
 | Series | Period | Source and use |
-|----|----|----|
+|------------------------|------------------------|------------------------|
 | Observed live births | 2013–2025 | Nomis local-authority births (L), shown directly in total and source age bands; no maternity conversion. |
 | Observed GFR and maternities | 2023–2025 | ONS registration workbooks, Tables 1 and 3; published values used directly. |
 | England maternities by delivery setting and age band | 2023–2025 | Table 4 supplies pooled Private–NHS rates; the same rate is assumed for bookings and deliveries. |
@@ -595,7 +595,7 @@ population_plot(
 ### 2.2.1 Inputs and counting rules {#msds-inputs}
 
 | Input | Unit and detail | Use |
-|----|----|----|
+|------------------------|------------------------|------------------------|
 | Supplied pregnancy cohort | One pregnancy row; resident LA, maternal age, booking provider/date and recorded delivery details | Recorded activity, patient flows, BBCS resident delivery counts and age distributions, maternity pathway adjustment and provider counts |
 | Wider resident-LA totals | Recorded resident deliveries by delivery financial year and maternal age | Delivery totals and age distributions for contributing LAs outside BBCS; includes their residents delivering at BBCS trusts, elsewhere or at home |
 
@@ -669,8 +669,9 @@ cat(cluster_activity$total_text)
 
 ```{r}
 #| label: cluster-activity-local
+#| eval: false #when quarto gets here it will skip this chunk
 
-cluster_activity$local_table
+cluster_activity$local_table 
 ```
 
 ```{r}
@@ -1219,7 +1220,7 @@ delivery_over_time$change_table
 These charts repeat section 2.2.6 with cluster deliveries split in two ways: **same or different trust from booking**, and **same or different ICB from booking**. Both divide by all antenatal bookings at that organisation in the booking year and use the same follow-up rules and relative-change calculation.
 
 | Comparison | Same as booking | Different within the cluster |
-|----|----|----|
+|------------------------|------------------------|------------------------|
 | Trust | Delivery at same trust as booking | Delivery at different trust within cluster |
 | ICB | Delivery ICB same as booking ICB | Delivery ICB different to booking ICB but within cluster |
 
@@ -1391,7 +1392,7 @@ htmltools::browsable(first_draft_projections$input_variation$age_mix_chart)
 ### 2.3.1 Comparing units and coverage {#source-comparability}
 
 | Comparison | ONS | MSDS |
-|----|----|----|
+|------------------------|------------------------|------------------------|
 | Births versus maternities | Projected births count live-born babies; published maternities count pregnancies reaching a live birth or stillbirth | Supplied resident totals count recorded deliveries once per pregnancy; the cohort also includes antenatal bookings without a recorded delivery |
 | Residence versus provider | Local published counts describe usual residence | Resident-LA totals and cluster-provider activity describe different populations |
 | Maternal age | Projected source rows combine ≤15 and 44+ | Ages 13–15 and 44–54 provide the local distributions used to split these groups |
@@ -1540,7 +1541,7 @@ The final chart shows annual national conversion evidence at each published age.
 **The ONS projection contains live-born babies.** The conversion to ONS-defined maternities accounts for stillbirths and multiple births. Let L = live births, S = stillbirths and M = ONS maternities, pooled over 2023–2025 at the **same published age and population**:
 
 | Step | Factor | What it does |
-|----|----|----|
+|------------------------|------------------------|------------------------|
 | Live births → all babies | (L + S) ÷ L | Allows for stillborn babies. |
 | All babies → maternities | M ÷ (L + S) | Converts babies to pregnancies, including multiple births. |
 | Combined | **M ÷ L** | Includes both effects once. |
@@ -1799,7 +1800,7 @@ These identities describe the local BBCS calculation where the cohort supplies t
 **Fictional counts and factors.** An LA has 200 projected live births in the combined ≤15 row. Local age shares split the count before the other four modifiers are applied. For transparent arithmetic, the fictional Private–NHS modifier is 0.99 and the maternity pathway adjustment is 1.25.
 
 | Age (SY) | Age share | Live births after split | Stillbirth factor | Live + stillborn babies | Multiplicity factor | Private–NHS modifier | Pathway factor | Adjusted maternities |
-|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+|-------:|-------:|-------:|-------:|-------:|-------:|-------:|-------:|-------:|
 | 13 | 10% | 20 | 1.05 | 21 | 0.98 | 0.99 | 1.25 | 25.46775 |
 | 14 | 20% | 40 | 1.025 | 41 | 0.98 | 0.99 | 1.25 | 49.72275 |
 | 15 | 70% | 140 | 1.00 | 140 | 0.99 | 0.99 | 1.25 | 171.51750 |
@@ -1827,7 +1828,7 @@ Trusts outside the cluster retain their own shares. Adding every provider and th
 ##### 1. Adjust the resident projections
 
 | LA(R) / Age (SY) | ONS live births | National factor | Private–NHS modifier | Pathway factor | Adjusted maternities |
-|----|---:|---:|---:|---:|---:|
+|------------|-----------:|-----------:|-----------:|-----------:|-----------:|
 | B / 25 | 100 | 1.01 × 0.99 = 0.9999 | 0.99 | 1.20 | 118.78812 |
 | C / 30 | 200 | 1.02 × 0.98 = 0.9996 | 0.99 | 1.25 | 247.40100 |
 
@@ -1837,10 +1838,10 @@ For B: **100 × 0.9999 × 0.99 × 1.20 = 118.78812**.
 ::: example-step
 ##### 2. Calculate Trust A's shares
 
-| LA / age | Resident deliveries | All pregnancies | Trust A deliveries | Trust A bookings |
-|----|---:|---:|---:|---:|---:|
-| B / 25 | 100 | 120 | 60 | 72 |
-| C / 30 | 200 | 250 | 100 | 150 |
+| LA / age | Resident deliveries | All pregnancies | Trust A deliveries | Trust A bookings |   |
+|------------|-----------:|-----------:|-----------:|-----------:|-----------:|
+| B / 25 | 100 | 120 | 60 | 72 |  |
+| C / 30 | 200 | 250 | 100 | 150 |  |
 
 For B, the shared denominator is **100 × 1.20 = 120**. Trust A's delivery share is **60/120 = 50%** and its booking share is **72/120 = 60%**. For C, the shares are **40%** and **60%**.
 :::
@@ -1848,10 +1849,10 @@ For B, the shared denominator is **100 × 1.20 = 120**. Trust A's delivery share
 ::: example-step
 ##### 3. Allocate each contribution
 
-| LA / age | Projected Trust A deliveries | Projected Trust A bookings |
-|----------|-----------------------------:|---------------------------:|
-| B / 25   |       118.78812 × 50% = 59.39406 |    118.78812 × 60% = 71.272872 |
-| C / 30   |       247.401 × 40% = 98.9604 |   247.401 × 60% = 148.4406 |
+| LA / age | Projected Trust A deliveries |  Projected Trust A bookings |
+|----------|-----------------------------:|----------------------------:|
+| B / 25   |   118.78812 × 50% = 59.39406 | 118.78812 × 60% = 71.272872 |
+| C / 30   |      247.401 × 40% = 98.9604 |    247.401 × 60% = 148.4406 |
 
 Both views use the same adjusted maternity total. Each applies its own provider share once.
 :::
@@ -1861,8 +1862,8 @@ Both views use the same adjusted maternity total. Each applies its own provider 
 
 | Trust A            | Projected activity |
 |--------------------|-------------------:|
-| Deliveries         |        **158.35446** |
-| Antenatal bookings |       **219.713472** |
+| Deliveries         |      **158.35446** |
+| Antenatal bookings |     **219.713472** |
 
 Other providers and non-provider categories retain their shares. Add the unrounded LA/age contributions before displaying trust, ICB and cluster totals; bookings and deliveries are separate views of the same pregnancies.
 :::

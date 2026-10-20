@@ -180,4 +180,10 @@ icb_matrix_data<- get_su_lakemart_parquet_file(
   az_container
 )|>    janitor::clean_names()
 
+demographics<- get_su_lakemart_parquet_file(
+  "demographics.parquet/part",
+  az_files,
+  az_container
+)|>    janitor::clean_names()
+
 

@@ -1,109 +1,59 @@
 #scratch area
 
-# SARAH'S RAW PARQUET OUTPUTS: select this whole block through END RAW TOTALS.
-# Run R/Read parquet files from azure.R first to initialise Azure/the read helper.
-# These TWO FRESH READS are the only data inputs. Existing tables are not used.
-# No report/model code, joins, deduplication, age exclusions or rounding.
-# Internal diagnostics only. Count pregnancy rows in cohort; SUM count in LA file.
-hh_source_cohort <- get_su_lakemart_parquet_file(
-  "final_cohort_2326.parquet/part", az_files, az_container
-) |> janitor::clean_names()
-hh_source_la <- get_su_lakemart_parquet_file(
-  "total_births_by_LA_2326.parquet/part", az_files, az_container
-) |> janitor::clean_names()
-stopifnot(all(c("antenatal_app_date", "birth_yr", "birth_flag", "la_of_mother",
-  "booking_provider_flag", "birth_provider_flag") %in% names(hh_source_cohort)),
-  all(c("birth_yr", "estimated_yr", "la_of_mother", "count") %in% names(hh_source_la)))
-hh_source_las <- c("E08000025", "E08000027", "E08000028",
-  "E08000029", "E08000030", "E08000031") # Birmingham, Dudley, Sandwell,
-                                         # Solihull, Walsall, Wolverhampton.
-hh_source_years <- c("2023/24", "2024/25", "2025/26")
-hh_source_periods <- c(hh_source_years, "Other / missing FY", "ALL YEARS")
-hh_source_text <- function(x) {
-  x <- trimws(as.character(x))
-  x[is.na(x) | tolower(x) %in% c("", "null", "na")] <- NA_character_
-  x
-}
-hh_source_in_period <- function(year, period) {
-  if (period == "ALL YEARS") return(rep(TRUE, length(year)))
-  if (period == "Other / missing FY") return(!year %in% hh_source_years)
-  year %in% period
-}
-# Only derive booking FY from the supplied date: April to March.
-hh_source_booking_date <- hh_source_cohort$antenatal_app_date
-hh_source_date_text <- hh_source_text(hh_source_booking_date)
-if (inherits(hh_source_booking_date, "Date") || inherits(hh_source_booking_date, "POSIXt")) {
-  hh_source_booking_date <- as.Date(hh_source_booking_date)
-} else {
-  hh_source_booking_date <- as.Date(hh_source_date_text, format = "%Y-%m-%d")
-  hh_source_retry <- is.na(hh_source_booking_date) & !is.na(hh_source_date_text)
-  hh_source_booking_date[hh_source_retry] <- as.Date(
-    hh_source_date_text[hh_source_retry], format = "%d/%m/%Y")
-}
-hh_source_start <- as.integer(format(hh_source_booking_date, "%Y")) -
-  as.integer(as.integer(format(hh_source_booking_date, "%m")) < 4L)
-hh_source_booking_fy <- ifelse(is.na(hh_source_start), NA_character_,
-  paste0(hh_source_start, "/", substr(hh_source_start + 1L, 3, 4)))
-hh_source_birth_fy <- hh_source_text(hh_source_cohort$birth_yr)
-hh_source_birth <- hh_source_cohort$birth_flag %in% 1
-hh_source_resident <- hh_source_cohort$la_of_mother %in% hh_source_las
+# SIMPLE COUNTS DIRECTLY FROM SARAH'S TWO LOADED OBJECTS.
+# Run Sarah's parquet reader first, then select any of these four chunks.
+# No hh_ objects, copies, joins, deduplication or report functions.
+library(dplyr)
 
-# 1. FINAL_COHORT: actual bookings by booking FY; deliveries by supplied birth FY.
-# Cluster providers use Sarah's booking_provider_flag / birth_provider_flag,
-# i.e. RNA, RXK, RBK, RL4, RRK, RQ3 in her saved extraction notebook.
-# Resident totals are a separate view, matching the six-LA definition below.
-hh_source_cohort_totals <- do.call(rbind, lapply(
-  c("Whole file", "Cluster providers (source flags)", "Cluster LA residents"), function(scope) {
-    booking_scope <- switch(scope, "Whole file" = rep(TRUE, nrow(hh_source_cohort)),
-      "Cluster providers (source flags)" = hh_source_cohort$booking_provider_flag %in% 1,
-      "Cluster LA residents" = hh_source_resident)
-    delivery_scope <- switch(scope, "Whole file" = rep(TRUE, nrow(hh_source_cohort)),
-      "Cluster providers (source flags)" = hh_source_cohort$birth_provider_flag %in% 1,
-      "Cluster LA residents" = hh_source_resident)
-    data.frame(Scope = scope, FY = hh_source_periods,
-      Bookings = vapply(hh_source_periods, function(y) sum(booking_scope &
-        !is.na(hh_source_booking_date) & hh_source_in_period(hh_source_booking_fy, y)), numeric(1)),
-      Deliveries = vapply(hh_source_periods, function(y) sum(delivery_scope &
-        hh_source_birth & hh_source_in_period(hh_source_birth_fy, y)), numeric(1)), row.names = NULL)
-  }))
-cat("\nFINAL_COHORT_2326: source pregnancy rows, no report filters\n")
-print(hh_source_cohort_totals, row.names = FALSE)
-cat("Source rows:", nrow(hh_source_cohort),
-  "| Missing booking dates:", sum(is.na(hh_source_date_text)),
-  "| Supplied booking dates not parsed:",
-  sum(!is.na(hh_source_date_text) & is.na(hh_source_booking_date)),
-  "| Recorded deliveries without birth FY:", sum(hh_source_birth & is.na(hh_source_birth_fy)), "\n")
+# 1. FINAL COHORT: bookings by appointment financial year (April to March).
+# Cluster bookings use Sarah's booking_provider_flag.
+final_cohort_2326 |>
+  filter(!is.na(antenatal_app_date)) |>
+  mutate(booking_date = as.Date(antenatal_app_date, format = "%Y-%m-%d"),
+    FY_start = as.integer(format(booking_date, "%Y")) -
+      as.integer(as.integer(format(booking_date, "%m")) < 4),
+    FY = if_else(is.na(FY_start), NA_character_,
+      paste0(FY_start, "/", substr(FY_start + 1, 3, 4)))) |>
+  group_by(FY) |>
+  summarise(All_bookings = n(),
+    Cluster_provider_bookings = sum(booking_provider_flag %in% 1), .groups = "drop") |>
+  print(n = Inf)
 
-# 2. LA FILE: use count, never nrow, for activity totals. No age filtering.
-# The added bookings are rows with birth_yr missing; use estimated_yr for FY.
-# Bookings_due_FY sums those antenatal records by DUE FY, as supplied.
-# All_records = deliveries + these bookings. Delivered rows count only as deliveries.
-# Cluster means residents of the six LAs; provider-based totals are unavailable.
-hh_source_weights <- as.numeric(as.character(hh_source_la$count))
-stopifnot(all(is.finite(hh_source_weights)), all(hh_source_weights >= 0))
-hh_source_la_birth_fy <- hh_source_text(hh_source_la$birth_yr)
-hh_source_la_due_fy <- hh_source_text(hh_source_la$estimated_yr)
-hh_source_la_totals <- do.call(rbind, lapply(c("Whole file", "Cluster LA residents"), function(scope) {
-  keep <- if (scope == "Whole file") rep(TRUE, nrow(hh_source_la)) else
-    hh_source_la$la_of_mother %in% hh_source_las
-  result <- data.frame(Scope = scope, FY = hh_source_periods,
-    Deliveries = vapply(hh_source_periods, function(y) sum(hh_source_weights[keep &
-      !is.na(hh_source_la_birth_fy) & hh_source_in_period(hh_source_la_birth_fy, y)]), numeric(1)),
-    Bookings_due_FY = vapply(hh_source_periods, function(y) sum(hh_source_weights[keep &
-      is.na(hh_source_la_birth_fy) & hh_source_in_period(hh_source_la_due_fy, y)]), numeric(1)),
-    row.names = NULL)
-  result$All_records <- result$Deliveries + result$Bookings_due_FY
-  result
-}))
-cat("\nTOTAL_BIRTHS_BY_LA_2326: sum(count), no report filters\n")
-print(hh_source_la_totals, row.names = FALSE)
-cat("LA bookings use estimated due FY; cohort bookings above use appointment FY.\n",
-  "Source rows:", nrow(hh_source_la), "| Total count:", sum(hh_source_weights),
-  "| Count with neither birth nor due FY:", sum(hh_source_weights[
-    is.na(hh_source_la_birth_fy) & is.na(hh_source_la_due_fy)]), "\n")
-stopifnot(hh_source_la_totals$All_records[hh_source_la_totals$Scope == "Whole file" &
-  hh_source_la_totals$FY == "ALL YEARS"] == sum(hh_source_weights))
-# END RAW TOTALS. Existing detailed checks below are optional/separate.
+# 2. FINAL COHORT: deliveries by Sarah's birth financial year.
+# Cluster deliveries use Sarah's birth_provider_flag; no home/age/LA exclusions.
+final_cohort_2326 |>
+  filter(birth_flag == 1) |>
+  group_by(birth_yr) |>
+  summarise(All_deliveries = n(),
+    Cluster_provider_deliveries = sum(birth_provider_flag %in% 1), .groups = "drop") |>
+  print(n = Inf)
+
+# 3. LA FILE: deliveries by birth financial year. SUM count, not rows.
+# Cluster = residents of Birmingham, Dudley, Sandwell, Solihull, Walsall, Wolverhampton.
+total_births_by_LA_2326 |>
+  filter(!is.na(birth_yr)) |>
+  group_by(birth_yr) |>
+  summarise(All_deliveries = sum(count),
+    Cluster_resident_deliveries = sum(count[la_of_mother %in%
+      c("E08000025", "E08000027", "E08000028", "E08000029", "E08000030", "E08000031")]),
+    .groups = "drop") |>
+  print(n = Inf)
+
+# 4. LA FILE: added bookings (birth_yr missing), by estimated due financial year.
+# These are antenatal-only records; their year is due FY, not appointment FY.
+total_births_by_LA_2326 |>
+  filter(is.na(birth_yr)) |>
+  group_by(estimated_yr) |>
+  summarise(All_bookings = sum(count),
+    Cluster_resident_bookings = sum(count[la_of_mother %in%
+      c("E08000025", "E08000027", "E08000028", "E08000029", "E08000030", "E08000031")]),
+    .groups = "drop") |>
+  print(n = Inf)
+
+# Whole-file size checks (all years, including records without a year).
+nrow(final_cohort_2326)
+sum(total_births_by_LA_2326$count)
+# END SIMPLE SOURCE COUNTS. Older detailed checks below are separate.
 
 library(dplyr)
 source("R/report_cohort.R")

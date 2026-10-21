@@ -1,8 +1,4 @@
-<<<<<<< HEAD
-usethis::edit_r_environ()
 
-
-=======
 # COUNTRY MATCHING IMPACT: overview tables only ------------------------
 # Run with final_cohort_2326 loaded; no full analysis needed.
 source("R/Country matching overview.R")

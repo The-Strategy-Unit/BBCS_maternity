@@ -76,7 +76,7 @@ final_cohort_2326 |>
   tibble::as_tibble() |>
   print(n = Inf, width = Inf)
 total_births_by_LA_2326 |>
-  dplyr::group_by(dplyr::across(dplyr::any_of(c("birth_yr", "estimated_yr"))),
+  dplyr::group_by(dplyr::across(dplyr::any_of(c("birth_yr", "edd_yr", "group"))),
     .drop = FALSE) |>
   dplyr::summarise(Source_rows = dplyr::n(), Total_count = sum(count),
     Missing_counts = sum(is.na(count)), .groups = "drop") |>
@@ -87,6 +87,15 @@ qa_check("LA geography lookup has unique sources and complete final targets",
     !any(report_la_crosswalk$Target_code %in% report_la_crosswalk$Source_code))
 cohort_records <- final_cohort_2326
 prepared_records <- prepare_report_cohort(cohort_records)
+qa_expected_fy <- report_pregnancy_fy(cohort_records$birth_yr,
+  if ("edd_yr" %in% names(cohort_records)) cohort_records$edd_yr else rep(NA_character_, nrow(cohort_records)))
+qa_check("Booking and delivery use one pregnancy FY: birth first, otherwise EDD",
+  identical(prepared_records$Pregnancy_FY, qa_expected_fy) &&
+    identical(prepared_records$Booking_year, report_fy_start(qa_expected_fy)) &&
+    identical(prepared_records$Delivery_year, prepared_records$Booking_year))
+qa_details$pregnancy_year_assignment <- prepared_records |>
+  dplyr::count(Birth_FY, Due_FY, Pregnancy_FY, Pregnancy_year_source,
+    Birth_recorded, name = "Pregnancies")
 expected_age <- report_age(cohort_records$age_at_birth_mother)
 fallback_rows <- is.na(cohort_records$age_at_birth_mother)
 expected_age[fallback_rows] <- report_age(cohort_records$age_at_booking_mother[fallback_rows])
@@ -115,30 +124,36 @@ qa_check("One consistent cohort record per mother and pregnancy", !any(repeated_
          paste(sum(repeated_pregnancies), "additional rows repeat an identified pregnancy; no rows are removed by this check"))
 recorded_deliveries <- cohort_records[prepared_records$Birth_recorded &
   prepared_records$Year %in% qa_years, , drop = FALSE]
-qa_check("Recorded births have a valid delivery financial year",
+qa_check("Recorded births have a valid assigned pregnancy financial year",
   !any(prepared_records$Birth_recorded & is.na(prepared_records$Year)),
-  paste(sum(prepared_records$Birth_recorded & is.na(prepared_records$Year)), "recorded births cannot be assigned to a delivery year"))
+  paste(sum(prepared_records$Birth_recorded & is.na(prepared_records$Year)), "recorded births cannot be assigned to a pregnancy year"))
 qa_check("Supplied birth flags are 0 or 1", all(prepared_records$Birth_flag %in% c(0, 1)),
   paste(sum(!prepared_records$Birth_flag %in% c(0, 1)), "missing/invalid flags; not counted as recorded deliveries"))
-missing_delivery_years <- setdiff(qa_years, as.character(recorded_deliveries$birth_yr))
+missing_delivery_years <- setdiff(qa_years, prepared_records$Pregnancy_FY[prepared_records$Birth_recorded])
 qa_check("Recorded deliveries cover all three financial years", !length(missing_delivery_years),
          paste("Missing:", paste(missing_delivery_years, collapse = ", ")))
 home_flags <- report_number(recorded_deliveries$home_birth)
 qa_check("Recorded deliveries have home flags of 0 or 1", all(home_flags %in% c(0, 1)),
          paste(sum(!home_flags %in% c(0, 1)), "records have missing or invalid home flags"))
 # Inspect the WHOLE expanded LA extract, including antenatal-only/unknown years.
-resident_records <- total_births_by_LA_2326
+resident_records <- prepare_la_records(total_births_by_LA_2326)
 resident_counts <- report_number(resident_records$count)
 valid_resident_counts <- is.finite(resident_counts) & resident_counts >= 0 &
   resident_counts == floor(resident_counts)
 qa_check("Resident LA counts are nonnegative whole numbers", all(valid_resident_counts),
          paste(sum(!valid_resident_counts), "invalid counts"))
-resident_cell_columns <- intersect(c("birth_yr", "estimated_yr", "la_of_mother",
+resident_cell_columns <- intersect(c("birth_yr", "edd_yr", "group", "la_of_mother",
   "age_at_birth_mother", "age_at_booking_mother"), names(resident_records))
 repeated_resident_cells <- duplicated(resident_records[resident_cell_columns])
-qa_check("Resident totals have one row per supplied LA/year/birth-age/booking-age combination",
+qa_check("Resident totals have one row per supplied LA/year/group/birth-age/booking-age combination",
   !any(repeated_resident_cells),
   paste(sum(repeated_resident_cells), "repeated complete source cells"))
+qa_check("Resident pathway groups are recognised", !anyNA(resident_records$Pathway_group),
+  paste(sum(is.na(resident_records$Pathway_group)), "source rows have unknown/missing groups"))
+resident_records |>
+  dplyr::group_by(group, Pathway_group, Pregnancy_FY, .drop = FALSE) |>
+  dplyr::summarise(Source_rows = dplyr::n(), Count = sum(count),
+    Missing_counts = sum(is.na(count)), .groups = "drop") |> print(n = Inf, width = Inf)
 qa_la_deliveries <- prepare_la_deliveries(resident_records)
 qa_la_antenatal <- prepare_la_antenatal_only(resident_records)
 cat("\nLA deliveries after combining booking-age splits (all birth ages retained)\n")
@@ -148,26 +163,25 @@ qa_la_deliveries |>
     Unknown_age_count = sum(count[is.na(age_at_birth_mother)]),
     Missing_count_cells = sum(is.na(count)), .groups = "drop") |>
   print(n = Inf, width = Inf)
-cat("\nLA antenatal-only pregnancies by DUE FY (not booking FY)\n")
+cat("\nLA antenatal-only group by assigned FY (birth first, otherwise EDD)\n")
 qa_la_antenatal |>
-  dplyr::group_by(estimated_yr, .drop = FALSE) |>
+  dplyr::group_by(edd_yr, .drop = FALSE) |>
   dplyr::summarise(Antenatal_only_count = sum(count),
     Unknown_age_count = sum(count[is.na(age_at_booking_mother)]),
     Missing_count_cells = sum(is.na(count)), .groups = "drop") |>
   print(n = Inf, width = Inf)
 cat("\nLA records without either year\n")
 resident_records |>
-  dplyr::filter(is.na(birth_yr), is.na(estimated_yr)) |>
+  dplyr::filter(report_year_missing(birth_yr), report_year_missing(edd_yr)) |>
   dplyr::summarise(Source_rows = dplyr::n(), Total_count = sum(count),
     Missing_count_rows = sum(is.na(count))) |>
   print(width = Inf)
 qa_check("Combining booking-age splits preserves the LA delivery total",
   isTRUE(all.equal(sum(qa_la_deliveries$count),
-    sum(resident_records$count[!is.na(resident_records$birth_yr)]))))
+    sum(resident_records$count[resident_records$Has_delivery]))))
 qa_check("Prepared antenatal-only totals preserve source counts",
   isTRUE(all.equal(sum(qa_la_antenatal$count),
-    sum(resident_records$count[is.na(resident_records$birth_yr) &
-      !is.na(resident_records$estimated_yr)]))))
+    sum(resident_records$count[resident_records$Pathway_group %in% "antenatal only"]))))
 qa_check("One denominator returns a separate percentage for every numerator",
   numbers_match(dc_ratio(c(100, 60, 30, 10), 100), c(1, .6, .3, .1)))
 
@@ -559,7 +573,7 @@ qa_section("5. Projection factors and allocations")
 if (file.exists(".projections.rds")) {
   projections <- readRDS(".projections.rds")
   qa_check("Projection outputs use the current five-modifier method",
-    identical(projections$calculation_version, "ons-shared-age-calculations-v22"))
+    identical(projections$calculation_version, "ons-shared-age-calculations-v24"))
   flows <- projections$sankey_comparison
   qa_check("Delivery Sankey recorded flows match the observed cluster total",
     !is.null(flows) && numbers_match(sum(flows$flows$Observed),
@@ -579,7 +593,7 @@ if (file.exists(".projections.rds")) {
         !nrow(dplyr::anti_join(qa_ons_expected, qa_ons_cells, by = c("LA", "ONS_age", "Year"))) &&
         all(is.finite(qa_ons_cells$ONS_live_births) & qa_ons_cells$ONS_live_births >= 0))
     qa_check(paste(label, "master uses the expected version and reference period"),
-      identical(attr(m, "calculation_version"), "ons-shared-age-calculations-v22") &&
+      identical(attr(m, "calculation_version"), "ons-shared-age-calculations-v24") &&
         all(m$Baseline_FY == base$baseline_fy) &&
         all(m$ONS_reference_year == as.integer(substr(base$baseline_fy, 1, 4))))
     for (rates in list(base$allocation_tables$delivery, base$allocation_tables$booking)) {
@@ -658,9 +672,9 @@ if (file.exists(".projections.rds")) {
         valid_calibration$Shared_maternity_denominator))
     qa_check(paste(label, "every LA uses its own deliveries and antenatal-only counts"),
       projection_numbers_match(calibration$Bookings_uplift_modifier,
-        ifelse(calibration$MSDS_resident_count > 0,
+        ifelse(calibration$Resident_unclassified_rows > 0, NA_real_, ifelse(calibration$MSDS_resident_count > 0,
           (calibration$MSDS_resident_count + calibration$Resident_antenatal_only) /
-            calibration$MSDS_resident_count, 0)))
+            calibration$MSDS_resident_count, 0))))
     split_check <- m |> dplyr::group_by(Source_cell_id) |>
       dplyr::summarise(Source = dplyr::first(ONS_live_births), Split = sum(Exact_age_live_births), .groups = "drop")
     qa_check(paste(label, "age split preserves each ONS births (L) total"),

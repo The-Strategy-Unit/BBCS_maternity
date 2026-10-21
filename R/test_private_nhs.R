@@ -88,12 +88,12 @@ local({
     antenatal_app_date=as.Date(paste0(substr(cells$FY,1,4),"-06-01")))
   resident <- cohort |> dplyr::filter(birth_flag == 1) |>
     dplyr::count(la_of_mother,age_at_birth_mother,birth_yr,name="count") |>
-    dplyr::mutate(age_at_booking_mother = NA_real_, estimated_yr = NA_character_)
+    dplyr::mutate(age_at_booking_mother = NA_real_, group = "antenatal+delivery", edd_yr = NA_character_)
   resident <- dplyr::bind_rows(resident,
     cohort |> dplyr::filter(birth_flag == 0) |>
       dplyr::count(la_of_mother, age_at_booking_mother = age_at_birth_mother,
-        estimated_yr = birth_yr, name = "count") |>
-      dplyr::mutate(age_at_birth_mother = NA_real_, birth_yr = NA_character_))
+        edd_yr = birth_yr, name = "count") |>
+      dplyr::mutate(group = "antenatal only", age_at_birth_mother = NA_real_, birth_yr = NA_character_))
   ons <- tidyr::expand_grid(area_code="E08000025",age_group=as.character(15:44),year=2023:2027) |>
     dplyr::mutate(area_name=area_code,projected_births=100)
   counts <- read_national_age_counts()

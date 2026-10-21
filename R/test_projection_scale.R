@@ -42,13 +42,13 @@ local({
     dplyr::bind_rows(
       cohort |> dplyr::filter(birth_flag == 1) |>
         dplyr::transmute(la_of_mother, age_at_birth_mother, age_at_booking_mother,
-          birth_yr, estimated_yr = NA_character_),
+          birth_yr, edd_yr = NA_character_, group = "antenatal+delivery"),
       cohort |> dplyr::filter(birth_flag == 0) |>
         dplyr::transmute(la_of_mother,
           age_at_booking_mother = dplyr::coalesce(age_at_booking_mother, age_at_birth_mother),
           age_at_birth_mother = NA_real_,
-          estimated_yr = birth_yr, birth_yr = NA_character_)) |>
-      dplyr::count(la_of_mother, birth_yr, estimated_yr,
+          edd_yr = birth_yr, birth_yr = NA_character_, group = "antenatal only")) |>
+      dplyr::count(group, la_of_mother, birth_yr, edd_yr,
         age_at_birth_mother, age_at_booking_mother, name = "count")
   }
   total_births_by_LA_2326 <- test_la_extract(final_cohort_2326)
@@ -58,6 +58,30 @@ local({
   counts <- read_national_age_counts()
   counts$live_births <- counts$total_births <- counts$maternities <- 100
   counts$stillbirths <- 0
+  # Three disjoint source groups: 100 deliveries and 125 pregnancies.
+  group_cohort <- final_cohort_2326 |>
+    dplyr::filter(la_of_mother == "E08000025", age_at_birth_mother == 25)
+  group_totals <- data.frame(la_of_mother = "E08000025",
+    group = c("antenatal+delivery", "birth only", "antenatal only"),
+    birth_yr = c("2025/26", "2025/26", NA), edd_yr = c(NA, NA, "2025/26"),
+    age_at_birth_mother = c(25, 25, NA), age_at_booking_mother = c(NA, 24, 25),
+    count = c(80, 20, 25))
+  group_model <- build_projection_master(group_cohort, group_totals, ons, counts)
+  group_cell <- attr(group_model, "allocation_tables")$calibration |>
+    dplyr::filter(LA == "E08000025", Age == 25)
+  near(group_cell$MSDS_resident_count, 100)
+  near(group_cell$Resident_antenatal_only, 25)
+  near(group_cell$Shared_maternity_denominator, 125)
+  near(group_cell$Bookings_uplift_modifier, 1.25)
+  near(group_model$Adjusted_maternities[which(group_model$LA == "E08000025" &
+    group_model$Age == 25 & group_model$Year == 2025)], 12.5)
+  unknown_group <- dplyr::bind_rows(group_totals,
+    transform(group_totals[2, ], group = NA_character_, count = 5))
+  bad_group_cell <- build_allocation_tables(group_cohort, unknown_group)$calibration |>
+    dplyr::filter(LA == "E08000025", Age == 25)
+  stopifnot(!bad_group_cell$Allocation_available,
+    is.na(bad_group_cell$Bookings_uplift_modifier),
+    bad_group_cell$Calibration_issue == "Unknown/missing resident pathway group")
   m <- build_projection_master(final_cohort_2326, total_births_by_LA_2326, ons, counts)
   result <- build_first_draft_projections(master = m)
   # The model has every age 13--54, including zero activity. Supplied ages
@@ -79,7 +103,7 @@ local({
   # The national resident file must not expand the BBCS catchment or its QA.
   unrelated_residents <- dplyr::bind_rows(total_births_by_LA_2326,
     data.frame(la_of_mother = c("W06000002", "E07000028", "E07000001"),
-      age_at_birth_mother = 36, birth_yr = "2025/26", count = 10000))
+      age_at_birth_mother = 36, birth_yr = "2025/26", group = "birth only", count = 10000))
   unrelated_ons <- dplyr::bind_rows(ons, ons |> dplyr::filter(area_code == "E08000025") |>
     dplyr::mutate(area_code = "E07000001", area_name = "Unrelated area", projected_births = 10000))
   unrelated_cohort <- original_cohort[1, ]
@@ -95,7 +119,8 @@ local({
   unrelated_cohort$booking_provider <- "RQ3"
   unrelated_residents <- dplyr::bind_rows(unrelated_residents,
     data.frame(la_of_mother = "E07000001", age_at_birth_mother = NA_real_,
-      age_at_booking_mother = 36, birth_yr = NA_character_, estimated_yr = "2025/26", count = 1))
+      age_at_booking_mother = 36, birth_yr = NA_character_, edd_yr = "2025/26",
+      group = "antenatal only", count = 1))
   booking_feeder <- build_projection_master(dplyr::bind_rows(original_cohort, unrelated_cohort),
     unrelated_residents, unrelated_ons, counts)
   stopifnot("E07000001" %in% booking_feeder$LA,
@@ -110,7 +135,7 @@ local({
   final_cohort_2326 <- dplyr::bind_rows(original_cohort, outside_ages)
   outside_residents <- dplyr::bind_rows(total_births_by_LA_2326,
     data.frame(la_of_mother = "E08000025", age_at_birth_mother = c(12, 55, 61),
-      birth_yr = "2023/24", count = 1000))
+      birth_yr = "2023/24", group = "birth only", count = 1000))
   bounded <- build_projection_master(final_cohort_2326, outside_residents, ons, counts)
   bounded_result <- build_first_draft_projections(master = bounded, prepare_outputs = FALSE)
   final_cohort_2326 <- original_cohort
@@ -179,12 +204,13 @@ local({
   near(historic_base$Value, mapply(expected_total, historic_base$Key, historic_base$Year,
     MoreArgs = list(bookings = FALSE)) / 1.2)
   stopifnot(setequal(historic_base$Year, 2023:2024))
-  # Historical bookings follow booking FY, independently of delivery year,
-  # birth flag, age, geography, home-birth status and model coverage.
+  # Historical bookings follow birth FY first, otherwise EDD, regardless of appointment FY.
   booking_history <- original_cohort[rep(1, 11), ]
   booking_history$person_id_mother <- booking_history$uniq_preg_id <- 1:11
-  booking_history$birth_yr <- "2025/26"
-  booking_history$birth_yr[11] <- "2026/27"
+  booking_history$birth_yr <- c("2023/24", "2023/24", "2024/25", NA,
+    "2025/26", NA, "2026/27", "2025/26", "", NA, "2026/27")
+  booking_history$edd_yr <- c(rep("2025/26", 3), "2024/25", "2024/25",
+    "2025/26", "2025/26", "2024/25", "2025/26", NA, "2025/26")
   booking_history$birth_flag <- rep(c(0L, 1L), length.out = 11)
   booking_history$home_birth <- 1L
   booking_history$age_at_birth_mother <- NA_real_
@@ -195,15 +221,14 @@ local({
     "2026-04-01", "bad date", "", NA, "2025-12-01")
   prepared_history <- prepare_report_cohort(booking_history)
   near(prepared_history$Booking_year,
-    c(2023, 2023, 2024, 2024, 2025, 2025, 2026, NA, NA, NA, 2025))
+    c(2023, 2023, 2024, 2024, 2025, 2025, 2026, 2025, 2025, NA, 2026))
+  near(prepared_history$Delivery_year, prepared_history$Booking_year)
   stopifnot(nrow(prepared_history) == nrow(booking_history))
   history_check <- build_provider_total_comparison(m, prepared_history,
     result$organisations, result$booking_total_projections, "Booking") |>
     dplyr::filter(Series == "MSDS recorded", Key == "trust-rq3")
-  near(history_check$Value, c(2, 2, 3))
-  # A complete delivery-year extract can still omit later booking cohorts.
-  # Here all 36 delivery months exist; bookings precede deliveries by 180 days.
-  # This demonstrates the possible selection effect, not evidence about Azure.
+  near(history_check$Value, c(2, 2, 4))
+  # Earlier appointments must not create an artificial final-year booking drop.
   delivery_window <- original_cohort[rep(1, 36), ]
   delivery_window$person_id_mother <- delivery_window$uniq_preg_id <- 1:36
   delivery_window$birth_date <- seq(as.Date("2023-04-15"), by = "month", length.out = 36)
@@ -213,7 +238,7 @@ local({
   window_check <- build_provider_total_comparison(m, prepare_report_cohort(delivery_window),
     result$organisations, result$booking_total_projections, "Booking") |>
     dplyr::filter(Series == "MSDS recorded", Key == "trust-rq3")
-  near(window_check$Value, c(12, 12, 6))
+  near(window_check$Value, c(12, 12, 12))
   for (type in names(restored$total_comparison)) {
     totals <- restored$total_comparison[[type]] |>
       dplyr::group_by(Level, Series, Year) |>
@@ -251,7 +276,7 @@ local({
   feeder_cohort$person_id_mother <- feeder_cohort$uniq_preg_id <- seq_len(nrow(feeder_cohort))
   feeder_residents <- dplyr::bind_rows(total_births_by_LA_2326,
     data.frame(la_of_mother = "E09999999", age_at_birth_mother = 25,
-      birth_yr = c("2023/24", "2024/25", "2025/26"), count = 100))
+      birth_yr = c("2023/24", "2024/25", "2025/26"), group = "birth only", count = 100))
   feeder_ons <- ons[ons$area_code == "E08000025", ]
   feeder_ons$area_code <- feeder_ons$area_name <- "E09999999"
   feeder_ons$projected_births <- ifelse(feeder_ons$age_group == "25", 100, 0)

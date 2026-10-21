@@ -33,12 +33,42 @@ The completed `projection_master`, `projection_master_backtest`, `ons_modificati
 `delivery_proportions`, `booking_proportions`, `booking_modifications`, column dictionary,
 `private_nhs_modifications` are returned to the RStudio session for inspection.
 QA is a separate, explicit command: `source("R/QA.R")`.
+For small console investigations, run `source("R/ONS to MSDS Matching QA.R")`
+after loading the two MSDS inputs, or run its numbered sections individually.
+It prints raw totals, LA differences in both directions before/after geography
+mapping, age support, and provider mismatch reasons. Sections 4–5 use
+`first_draft_projections` from an analysis run with those same inputs to trace
+trust/ICB/cluster coverage and compare raw resident counts with model denominators.
+The `matching_*` objects remain available for inspection; NA and non-finite
+results are retained. These are internal unrounded counts, with no files written.
+Existing related checks are in `R/QA.R` section 5 and the prepared objects
+`first_draft_projections$provider_projection_gaps`, `$la_source_matching` and
+`$allocation_tables$calibration`. The gap object excludes known out-of-range
+ages; the new script includes them when reconciling the full coverage table.
+
+Run `source("R/Country matching overview.R")` with the cohort loaded, or the
+first section of `R/HH scratch area.R`, for country counts and percentages by
+assigned FY, plus pooled non-English age-band and destination trust/ICB splits.
+It produces overview tables only, without individual-LA lists or a report build.
+Counts are pregnancies per activity, not distinct mothers. Unknown residence
+and FY remain visible; percentages use all bookings or deliveries in the stated
+FY, age band or organisation. Section 4 of the matching script
+adds country contributions to trust/ICB/cluster gaps. The local name lookup has
+22 Welsh and 32 Scottish LA codes; the supplied ONS births projection CSV has
+296 English LAs and no Welsh or Scottish LAs. Both countries remain in MSDS
+observed counts. The model accepts their codes and uses their projections if
+matching rows are supplied. The merger crosswalk lists changes, not all valid LAs.
+The six-LA female-population and historic-birth extracts serve BBCS resident
+context charts. The England Table 4 private-care factor is an explicit national
+assumption, not a filter on MSDS residence. English IMD leaves non-English
+LSOAs unmatched (NA decile) while preserving their pregnancy rows.
+
 The runner requires the existing Azure access and packages in the secure
 environment. The project requires R and Quarto on the PATH. Main analysis packages:
 
 ```r
 install.packages(c("dplyr", "tidyr", "readr", "readxl", "janitor", "purrr",
-  "ggplot2", "gt", "plotly", "scales", "htmltools", "knitr", "rmarkdown"))
+  "ggplot2", "gt", "plotly", "scales", "htmltools", "knitr", "rmarkdown", "digest"))
 # The parquet reader additionally uses arrow, AzureKeyVault, AzureStor, cli and glue.
 ```
 
@@ -186,8 +216,9 @@ Calculation steps:
    non-NHS maternities / all maternities, within each available age band.
 5. Apply the maternity pathway adjustment from the expanded LA file:
    (deliveries + antenatal-only pregnancies) / deliveries at each LA and age.
-   Delivery uses birth financial year and age at birth; antenatal-only uses due
-   financial year and age at booking. Pool 2023/24–2025/26 for both components.
+   `group` identifies deliveries (`birth only` + `antenatal+delivery`) and
+   `antenatal only`. Both use birth FY first, otherwise EDD FY; birth age first,
+   otherwise booking age when birth age is NA. Pool 2023/24–2025/26 for both.
    Missing counts are zero; zero/missing delivery denominators give a zero factor.
    Every LA uses its own counts, with no borrowed cluster rate.
 6. Divide each delivery or booking category count by the shared denominator:
@@ -200,8 +231,14 @@ diagnostics retain missing counts, years and ages; the zero treatment applies
 only to model counts. With a zero pathway factor, the adjusted projection is zero.
 
 Resident delivery counts and age distributions for every LA come from
-`total_births_by_LA_2326`, summed by LA, birth year and birth age to collapse the
-additional booking-age splits. Cohort provider counts come from `final_cohort_2326`,
+`total_births_by_LA_2326`, summed by LA, assigned pregnancy FY and resolved age.
+Its required columns are `la_of_mother`, `birth_yr`, `edd_yr`, `age_at_birth_mother`,
+`age_at_booking_mother`, `group` and `count`. The three disjoint group values are
+`antenatal+delivery`, `antenatal only` and `birth only`. Deliveries include both
+groups with birth/delivery; bookings include both groups with antenatal activity.
+The pathway numerator includes all three groups once. Unknown groups remain in
+raw QA and prevent allocation for the affected LA/age; they never become a
+delivery or antenatal-only record based on dates. Cohort provider counts come from `final_cohort_2326`,
 using `age_at_birth_mother`, with `age_at_booking_mother` used only where birth age is `NA`.
 Both age columns are required in the updated cohort. The same resolved age feeds all
 cohort-based charts, calibration and allocations. Booking age is used directly, without
@@ -218,13 +255,18 @@ Raw console counts are in `record_completeness_counts`; report copies use the
 usual disclosure rounding. These are descriptive outputs, not automatic QA gates.
 The pathway factor uses the LA extract's disjoint delivery and antenatal-only
 counts; provider counts come from the pregnancy cohort.
-Delivery financial year comes only from `birth_yr`, which Sarah derives from the
-delivery date. Appointment financial year comes only from `antenatal_app_date`,
-with an April boundary. Cohort `edd_yr` and LA `estimated_yr` mean estimated due
-financial year: neither establishes that a delivery occurred or supplies a
-missing appointment year. No missing day or month is invented. A month-only
-`birth_date` remains available in the raw extract; it is not needed to derive the
-delivery year. Cohort delivery status continues to use the supplied `birth_flag`.
+Each pregnancy is assigned one FY: `birth_yr` first; if NA or blank, use cohort
+`edd_yr` in either extract. Both booking and recorded delivery
+use that assigned FY, even when the appointment was in an earlier FY. A supplied
+but invalid birth FY remains unresolved rather than being replaced by EDD.
+`Pregnancy_FY` / `Pregnancy_year` retain the shared year and `Pregnancy_year_source`
+identifies birth/EDD/missing. `Year`, `Booking_year` and `Delivery_year` are
+compatibility fields for the same assignment. `Birth_FY` and `Due_FY` retain
+the separate source years; original appointment dates remain available. An absent EDD
+column leaves the fallback unavailable; it never triggers appointment-year dating.
+Unknown assigned years stay in pooled model shares but not annual points.
+No missing day or month is invented. Delivery evidence still requires
+`birth_flag`; a due year alone does not establish either a delivery or booking.
 The MSDS inputs section includes an age-completeness table for the whole supplied
 cohort: missing birth ages by recorded-birth status, recovery from booking age,
 and both ages missing. Percentages explicitly identify their denominator. These
@@ -298,7 +340,7 @@ There are no organisation-specific marker shapes. The ONS line is
 and booking adjustments, using the same provider shares as the model. It remains
 a live-birth baseline, not an ONS provider or booking forecast; earlier values
 come from the same existing master and remain projection-derived. Historical MSDS values
-use the existing delivery-year or booking-year counts for 2023/24–2025/26; their
+use the shared pregnancy-year counts for 2023/24–2025/26; their
 x-axis position is the financial year's start. Partial projections retain their
 available allocations with coverage labels; wholly unsupported estimates remain
 unavailable. Recorded historical totals retain all activity for context. Overlapping
@@ -328,9 +370,12 @@ invented data and confirm that outside-LA bookings use the shared resident
 denominator rather than being scaled up to the whole LA population.
 Run `Rscript R/test_age_fallback.R` to check birth-age precedence, the booking-age
 fallback, remaining unknown ages, age-band boundaries and downstream allocations,
-plus separate event years and completeness charts that retain unknown groups.
+plus shared birth/EDD financial years and completeness charts that retain unknown groups.
 
-The current calculation version is `ons-shared-age-calculations-v22`.
+The current calculation version is `ons-shared-age-calculations-v24`.
+Run `Rscript R/test_pregnancy_year.R` for the birth-first/EDD-fallback rule and
+the resident-file partition. Rerun `source("R/Run analysis.R")` with the loaded
+secure inputs to regenerate all annual views and projection comparisons.
 The three ONS registration workbooks were checked against the public downloads
 on 6 October 2026 and matched exactly. Table 5 supplies the two national modifiers; Table 7
 remains descriptive evidence about multiplicity.
@@ -353,7 +398,7 @@ The trust-comparison panels retain this split when grouped into ICB and cluster 
 Separate ICB-comparison tabs compare the booking trust's ICB with
 the delivery trust's ICB: a transfer between trusts in the same ICB stays in the
 same-ICB group. The combined cluster pools these comparisons across both ICBs.
-Both views use all antenatal bookings in the booking year as their denominator, with the same follow-up rules
+Both views use all antenatal bookings in the assigned pregnancy year as their denominator, with the same follow-up rules
 and relative-percentage-change calculation; they do not use residence ICB.
 
 ## Saved outputs and missing sections
@@ -425,7 +470,7 @@ report's saved RDS files.
 | **Maternity — this project** | One pregnancy entering maternity care through booking and/or delivery, regardless of pregnancy outcome. | Includes live births, stillbirths and booked pregnancies without a recorded delivery. Counted once per pregnancy: a booking followed by a delivery is the same maternity, and twins or triplets also count as one. |
 | **Maternity — ONS** | One pregnancy resulting in at least one live birth or stillbirth. | The source definition used in ONS maternity tables and conversion factors. |
 | **Delivery** | One pregnancy resulting in at least one live birth or stillbirth, counted once even when there are twins or triplets. | MSDS resident delivery totals include home deliveries and deliveries outside the cluster. Trust delivery totals require a recorded non-home delivery at that provider. Pregnancies without a recorded delivery are excluded from delivery counts. |
-| **Antenatal booking** | A pregnancy with recorded antenatal booking information, counted once rather than once per appointment. | Provider counts use the recorded booking provider, including pregnancies without a recorded delivery. Historical counts also need a booking date to identify the financial year. “Bookings” is used as a short form of “antenatal bookings”. |
+| **Antenatal booking** | A pregnancy with recorded antenatal booking information, counted once rather than once per appointment. | Provider counts use the recorded booking provider, including pregnancies without a recorded delivery. Historical counts use birth financial year first, otherwise estimated due financial year; an appointment date is not required. “Bookings” is used as a short form of “antenatal bookings”. |
 | **All pregnancies** | Pregnancies regardless of outcome or contact with maternity services. | The project cohort covers those entering the maternity pathway. |
 | **Unique women / mothers** | Individual people counted once during a defined period. | Not supplied by the maternity total: one woman can have more than one maternity during that period. |
 | **Singleton / multiple maternity** | One baby / two or more babies from one pregnancy. | “Multiplicity” describes how many babies are involved. It explains why baby and maternity counts differ. |
@@ -513,12 +558,50 @@ Booking evidence is a supplied provider or appointment date. Delivery evidence
 is birth flag 1. The three requested pathway statuses remain separate, plus
 neither event recorded where present. Each supplied pregnancy counts once;
 separate pregnancies for one mother are not collapsed. The period label comes
-from the supplied extract; due years are never substituted for event years.
+from the supplied extract. Annual views use birth FY first, otherwise due FY;
+appointment dates remain evidence/audit fields rather than the model-year basis.
 
-Demographics joins on the original `person_id_mother`; missing IDs never match.
-Identical lookup rows collapse, while conflicting matches cannot multiply
-pregnancies. Supplied categories remain unchanged, including compound values,
-NA and blanks. Age follows the shared birth-age-first rule. Broad ethnicity
-never fills a missing ethnicity description. Existing disclosure controls apply
-after aggregation. Chart objects are saved to the ignored `.demo_sankeys.rds`.
+The unchanged `demographics.parquet` filename now supplies `person_id_mother`,
+`lsoa_2011` and `ethnicity`. `R/demographics.R` prepares `demographics_cleaned`
+before the pregnancy join. Its first four columns are mother ID, broad ethnicity,
+ethnicity description and IMD decile; audit columns retain both raw strings,
+the chosen LSOA/position, seed, source descriptions and cleaning status.
+Missing/blank mother IDs never match. Identical source rows collapse; conflicting
+rows for one mother stop the join rather than multiplying pregnancies.
+
+For two pipe-separated LSOAs, a seeded pseudo-random first/second choice is made
+once per mother. Seed `20261021` and a hash of the mother ID make it repeatable
+across reruns and row reordering without altering R's random-number state.
+The choice is made before lookup, so an unmatched choice is not replaced with
+the other option. IMD is **2019 on 2011 LSOAs**, not a 2011 deprivation release:
+`data/lookups/imd2019_lsoa2011.csv` retains the LSOA code and overall IMD decile
+from [official IoD 2019 File 7](https://assets.publishing.service.gov.uk/media/5dc407b440f0b6379a7acc8d/File_7_-_All_IoD2019_Scores__Ranks__Deciles_and_Population_Denominators_3.csv),
+retrieved 21 October 2026 (32,844 English LSOAs). Decile 1 is most deprived;
+10 is least deprived. Missing, malformed, more-than-two and unmatched LSOAs
+retain NA deciles and a review status. Non-English LSOAs have no English IMD decile.
+The local lookup is bundled, so report runs do not download anything.
+
+Ethnicity labels follow the [NHS ethnic category dictionary](https://www.datadictionary.nhs.uk/data_elements/ethnic_category.html)
+(verified against the [official archived dictionary](https://archive.datadictionary.nhs.uk/DD%20Release%20November%202021/data_elements/ethnic_category.html)
+because the current page denied automated access). `data/lookups/ethnic_category.csv`
+maps the 17 supplied codes to seven groups: White; Mixed; Asian or Asian British;
+Black or Black British; Other ethnic groups - Chinese; Other ethnic groups - Any
+other; Not stated. `ethnicity_pair_rules.csv` transcribes Heather's supplied grid:
+rows are the second code and columns the first. `OOC` and the key's `OC` mean
+Chinese; `TC` stays **Two conflicting**, a separate unresolved category.
+For example, S|N becomes Black or Black British, A|H is Two conflicting, and
+L|R becomes Chinese. Mixed takes precedence wherever shown in the grid.
+Single categories retain their full NHS description. Resolved pairs use the
+broad result as their description because the grid does not assign a detailed
+subtype; both original descriptions remain in `ethnicity_source_description`.
+Whitespace/case are normalised and repeated identical codes act as one category.
+NA, blanks, code 99 (Not known), unrecognised codes and more than two supplied
+values stay unresolved (NA broad group) with their source value/status retained;
+they are not silently converted to Z (Not stated).
+
+Inspect aggregate cleaning results with `demographics_qa(demographics_cleaned)`;
+these are internal, unrounded counts. Run `Rscript R/test_demographics.R` for the
+synthetic grid, selection and join checks. Age follows the shared birth-age-first
+rule. Existing disclosure controls apply after aggregation. Chart objects are
+saved to the ignored `.demo_sankeys.rds`; no mother IDs or raw LSOAs enter them.
 No QA or audit is added to the normal run.

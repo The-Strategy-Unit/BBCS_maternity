@@ -68,10 +68,13 @@ local({
     if (is.call(statement) && identical(statement[[1]], as.name("<-")) &&
         as.character(statement[[2]])[1] %in% c("cluster_icbs", "icb_provider_codes", "provider_icb",
           "cluster_trusts", "trust_labels", "flow_trust_labels", "group_flow_code", "classify_pathway_outcome",
-          "icb_labels", "outcome_columns", "outcome_labels", "outcome_colours", "outcome_key", "pathway_legend"))
+          "icb_labels", "outcome_columns", "outcome_labels", "outcome_colours", "outcome_key", "pathway_legend",
+          "make_sankey", "flow_palette", "trust_source_order", "trust_target_order"))
       eval(statement)
   }
   for (statement in parse("R/Demo Sankeys.R")) {
+    if (is.call(statement) && identical(statement[[1]], as.name("<-")) &&
+        identical(statement[[2]], as.name("demo_pathway_colours"))) eval(statement)
     if (is.call(statement) && identical(statement[[1]], as.name("<-")) &&
         is.call(statement[[3]]) && identical(statement[[3]][[1]], as.name("function"))) eval(statement)
   }
@@ -92,10 +95,35 @@ local({
     sum(master$N[master$ethnicity_broad %in% "Two conflicting"]) == 1,
     !any(grepl("person|preg|lsoa|raw", names(master))),
     nrow(distinct(filter(master, ethnicity_broad == "Black or Black British"),
-      imd_decile, ethnicity_description)) == 1,
+      imd_quintile, ethnicity_description)) == 1,
     n_distinct(master$Age_band[master$ethnicity_broad %in% "Black or Black British"]) == 2)
-  for (field in c("ethnicity_broad", "ethnicity_description", "imd_decile", "Age_band"))
+  for (field in c("ethnicity_broad", "ethnicity_description", "imd_quintile", "Age_band"))
     stopifnot(sum((master |> group_by(.data[[field]]) |> summarise(N = sum(N)))$N) == nrow(cohort))
+  # Pair all ten deciles before rounding; retain an unknown and repeated pregnancies.
+  quintile_cohort <- cohort[rep(1L, 11L), ]
+  quintile_cohort$person_id_mother <- as.character(1:11)
+  quintile_cohort$uniq_preg_id <- as.character(1:11)
+  quintile_lookup <- data.frame(person_id_mother = as.character(1:11),
+    ethnicity_broad = "White", ethnicity_description = "White - British",
+    imd_decile = c(1:10, NA_integer_))
+  quintile_before <- quintile_lookup
+  quintile_master <- build_demo_sankeys(quintile_cohort, quintile_lookup)
+  quintile_totals <- quintile_master |> group_by(imd_quintile) |> summarise(N = sum(N))
+  stopifnot(identical(quintile_lookup, quintile_before), sum(quintile_master$N) == 11L,
+    identical(quintile_totals$imd_quintile, c(1:5, NA_integer_)),
+    identical(quintile_totals$N, c(rep(2L, 5), 1L)),
+    identical(demo_category_values(quintile_master, "imd_quintile"), c(as.character(1:5), NA_character_)))
+  quintile_display <- demo_outcome_counts(quintile_master, "imd_quintile")
+  stopifnot(all(quintile_display$N == 5), all(quintile_display$Organisation_total == 10))
+  bar <- plotly::plotly_build(demo_overview_bar(quintile_master, "imd_quintile"))
+  stopifnot(all(unlist(lapply(bar$x$data, function(trace) trace$x)) == 5),
+    all(paste("IMD quintile", 1:5) %in% bar$x$layout$yaxis$categoryarray))
+  for (proportions in c(FALSE, TRUE)) {
+    payload <- htmlwidgets:::createPayload(demo_outcome_sankey(quintile_master, "imd_quintile", proportions))$x
+    stopifnot(all(payload$data[[1]]$link$value == if (proportions) 100 else 5),
+      any(grepl("IMD quintile 5", payload$data[[1]]$node$label, fixed = TRUE)),
+      any(grepl("Unknown (NA)", payload$data[[1]]$node$label, fixed = TRUE)))
+  }
   outcome_rows <- data.frame(ethnicity_description = c("A", "A", "A", "B", "B", NA),
     Outcome = c("Within cluster", "Within cluster", "Outside cluster", "Within cluster",
       "No recorded delivery", "Unknown location"), N = c(1, 1, 8, 13, 2, 4))
@@ -120,6 +148,7 @@ local({
     if (!is.list(x) || is.data.frame(x)) return(0L)
     sum(vapply(x, count_widgets, integer(1)))
   }
+  stopifnot(count_widgets(demo_sankey_grid(quintile_master, "imd_quintile")) == 6L)
   for (group in c("Trust", "ICB_Cluster")) {
     expected <- sum(demo_pathway_summary(master, group)$Starts > 0)
     for (proportions in c(FALSE, TRUE)) stopifnot(
@@ -128,4 +157,5 @@ local({
   stopifnot(!inherits(demo_outcome_sankey(outcome_rows[0, ], "ethnicity_description"), "plotly"))
   cat("PASS: 289 ethnicity pairs, singles/unknowns, repeatable LSOA selection, IMD lookup and pregnancy join.\n")
   cat("PASS: one outcome Sankey per organisation, protected counts/hover rates and equal-height category normalisation.\n")
+  cat("PASS: IMD quintiles combine all ten deciles before disclosure, preserve unknowns and appear in overview/pathway/outcome charts.\n")
 })

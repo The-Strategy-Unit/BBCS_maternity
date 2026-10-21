@@ -22,7 +22,8 @@ demo_icb <- function(provider, stage) {
 # 1. PREPARE THE MASTER TABLE -------------------------------------------
 build_demo_sankeys <- function(cohort, demographics, episodes = prepare_report_cohort(cohort)) {
   lookup <- demographics |>
-    dplyr::select(person_id_mother, ethnicity_broad, ethnicity_description, imd_decile) |>
+    dplyr::transmute(person_id_mother, ethnicity_broad, ethnicity_description,
+      imd_quintile = as.integer(ceiling(imd_decile / 2))) |>
     dplyr::distinct()
 
   # The supplied three-year cohort is the population. Count each pregnancy row
@@ -51,7 +52,7 @@ build_demo_sankeys <- function(cohort, demographics, episodes = prepare_report_c
       relationship = "many-to-one")
   records |>
     dplyr::count(Booking, Delivery, Booking_ICB, Delivery_ICB, Pathway, Outcome,
-      ethnicity_broad, ethnicity_description, imd_decile, Age_band,
+      ethnicity_broad, ethnicity_description, imd_quintile, Age_band,
       name = "N", .drop = FALSE)
 }
 
@@ -88,7 +89,7 @@ demo_sankey_chart <- function(master, compact = FALSE) {
 demo_category_values <- function(master, field) {
   values <- unique(as.character(master[[field]]))
   preferred <- switch(field,
-    imd_decile = as.character(1:10),
+    imd_quintile = as.character(1:5),
     ethnicity_broad = unname(demographic_ethnicity_groups),
     Age_band = report_age_bands,
     character())
@@ -99,8 +100,8 @@ demo_category_values <- function(master, field) {
 
 demo_category_label <- function(value, field) {
   label <- if (is.na(value)) "Unknown (NA)" else if (value == "") "Blank" else value
-  if (field == "imd_decile" && !is.na(value) && nzchar(value))
-    label <- paste("IMD decile", label)
+  if (field == "imd_quintile" && !is.na(value) && nzchar(value))
+    label <- paste("IMD quintile", label)
   label
 }
 
@@ -244,7 +245,7 @@ demo_pathway_tabs <- function(master, group) {
   list(overall = demo_pathway_grid(master, group),
     ethnicity = versions("ethnicity_broad"),
     ethnicity_description = versions("ethnicity_description"),
-    imd = versions("imd_decile"),
+    imd = versions("imd_quintile"),
     age = versions("Age_band"))
 }
 
@@ -299,7 +300,7 @@ demo_overview_grid <- function(master, mode, group, field) {
 
 demo_overview_tabs <- function(master, mode) {
   stats::setNames(lapply(c("Trust", "ICB_Cluster"), function(group) {
-    fields <- c(age = "Age_band", imd = "imd_decile", ethnicity = "ethnicity_broad",
+    fields <- c(age = "Age_band", imd = "imd_quintile", ethnicity = "ethnicity_broad",
       ethnicity_description = "ethnicity_description")
     lapply(fields, function(field) demo_overview_grid(master, mode, group, field))
   }), c("Trust", "ICB_Cluster"))
@@ -310,13 +311,13 @@ demo_overview_tabs <- function(master, mode) {
 demographics_cleaned <- prepare_demographics(demographics)
 `Demo Sankeys` <- build_demo_sankeys(final_cohort_2326, demographics_cleaned, report_episodes)
 demo_sankey_charts <- list(
-  version = "demographic-outcomes-v2",
+  version = "demographic-outcomes-v3-quintiles",
   cohort_total = dc_count(sum(`Demo Sankeys`$N)),
   overview_delivery = demo_overview_tabs(`Demo Sankeys`, "Delivery"),
   overview_booking = demo_overview_tabs(`Demo Sankeys`, "Booking"),
   overall = demo_sankey_chart(`Demo Sankeys`),
   ethnicity = demo_sankey_grid(`Demo Sankeys`, "ethnicity_broad"),
-  imd = demo_sankey_grid(`Demo Sankeys`, "imd_decile"),
+  imd = demo_sankey_grid(`Demo Sankeys`, "imd_quintile"),
   age = demo_sankey_grid(`Demo Sankeys`, "Age_band"),
   booking_icb = demo_pathway_tabs(`Demo Sankeys`, "ICB_Cluster"),
   booking_trust = demo_pathway_tabs(`Demo Sankeys`, "Trust"))

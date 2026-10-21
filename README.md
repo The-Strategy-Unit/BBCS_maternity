@@ -547,7 +547,7 @@ The total `Maternity_modifier` includes the new reduction and pathway uplift.
 `R/Run analysis.R` runs `R/Demo Sankeys.R` after the main analysis. The RStudio
 object `Demo Sankeys` is one aggregate table for the whole supplied three-year
 BBCS cohort. It contains `Booking`, `Delivery`, `Booking_ICB`, `Delivery_ICB`,
-`Pathway`, `Outcome`, `ethnicity_broad`, `ethnicity_description`, `imd_decile`,
+`Pathway`, `Outcome`, `ethnicity_broad`, `ethnicity_description`, `imd_quintile`,
 `Age_band` and `N`. There are no mother/pregnancy IDs, repeated event views or
 additional year filters. ``sum(`Demo Sankeys`$N)`` equals the source pregnancy-row count.
 
@@ -566,7 +566,17 @@ category bars. Its outcome widths give equal weight to categories, not patients.
 Hover percentages use independently controlled category/organisation totals in
 both views, so within-category widths can differ from hover percentages after
 rounding. Every demographic split reconciles to the same
-whole-cohort population before display controls.
+whole-cohort population before display controls. All section 4 IMD views use
+quintiles: source deciles 1–2, 3–4, 5–6, 7–8 and 9–10 form quintiles 1–5.
+Quintile 1 is most deprived; quintile 5 is least deprived. Unknowns stay separate.
+Raw counts are aggregated into quintiles before disclosure controls; the cleaned
+demographics lookup retains its source decile for audit.
+
+Run `Rscript R/test_demo_disclosure.R` for the section 4 publication check. It
+generates all demographic charts from invented records in an isolated folder,
+checks saved/reloaded outputs, rounded counts and independent percentage
+denominators, and audits chart coordinates, hover counts and embedded HTML data.
+It does not load Azure data or replace the production report.
 
 Booking evidence is a supplied provider or appointment date. Delivery evidence
 is birth flag 1. The three requested pathway statuses remain separate, plus

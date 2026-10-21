@@ -17,6 +17,7 @@
 !/R/ons_data.R
 !/R/disclosure.R
 !/R/test_disclosure.R
+!/R/test_demo_disclosure.R
 !/R/test_geography.R
 !/R/report_cohort.R
 !/R/age_boundary_review.R

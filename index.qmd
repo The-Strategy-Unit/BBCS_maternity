@@ -59,8 +59,8 @@ if (is.null(patient_flows$country_coverage$tables))
 delivery_geography <- read_report_rds(".delivery_geography.rds", report_run$run_id)
 first_draft_projections <- read_report_rds(".projections.rds", report_run$run_id)
 demo_sankey_charts <- read_report_rds(".demo_sankeys.rds", report_run$run_id)
-if (!identical(demo_sankey_charts$version, "demographic-outcomes-v2"))
-  stop("Regenerate the demographic charts with R/Run analysis.R before rendering section 4.3.")
+if (!identical(demo_sankey_charts$version, "demographic-outcomes-v3-quintiles"))
+  stop("Regenerate the demographic charts with R/Run analysis.R before rendering section 4 with IMD quintiles.")
 ```
 
 ```{r}
@@ -2452,7 +2452,7 @@ first_draft_projections$backtest$all_table
 
 All charts in this section use the **whole supplied BBCS cohort, pooled across 2023/24–2025/26**. Each supplied pregnancy row contributes once, whether it has a delivery and booking, a delivery without a recorded booking, or a booking without a recorded delivery. Separate pregnancies for the same woman remain separate. Records without either event remain visible too. There is no further event-year filter: missing dates and bookings before the delivery year do not remove a cohort record.
 
-A booking is recorded when a booking provider or appointment date is supplied; a delivery uses the recorded birth flag. Due years do not establish either event. Maternal age uses birth age first and booking age only when birth age is NA. Where two residence LSOAs are supplied, one is selected at random with a repeatable choice per mother, then linked to [English IMD 2019 on 2011 LSOAs](https://www.gov.uk/government/statistics/english-indices-of-deprivation-2019). Decile 1 is most deprived and 10 least deprived; missing or unmatched LSOAs retain an unknown decile. Ethnicity uses NHS category descriptions and seven broad groups, with paired codes resolved using the agreed combination grid. Unresolved conflicting pairs remain **Two conflicting**; unknown codes remain visible separately from **Not stated**. Detailed descriptions are retained for single categories; paired categories show the broad result without inferring a subtype. Counts are controlled independently for display, so displayed subgroup totals can differ from the overall total, particularly when many small groups are shown.
+A booking is recorded when a booking provider or appointment date is supplied; a delivery uses the recorded birth flag. Due years do not establish either event. Maternal age uses birth age first and booking age only when birth age is NA. Where two residence LSOAs are supplied, one is selected at random with a repeatable choice per mother, then linked to [English IMD 2019 on 2011 LSOAs](https://www.gov.uk/government/statistics/english-indices-of-deprivation-2019). The source deciles are combined into quintiles: deciles 1–2 form quintile 1 (most deprived), 3–4 form quintile 2, 5–6 form quintile 3, 7–8 form quintile 4 and 9–10 form quintile 5 (least deprived). Missing or unmatched LSOAs retain an unknown quintile. Counts are combined before disclosure controls are applied. Ethnicity uses NHS category descriptions and seven broad groups, with paired codes resolved using the agreed combination grid. Unresolved conflicting pairs remain **Two conflicting**; unknown codes remain visible separately from **Not stated**. Detailed descriptions are retained for single categories; paired categories show the broad result without inferring a subtype. Counts are controlled independently for display, so displayed subgroup totals can differ from the overall total, particularly when many small groups are shown.
 
 ## 4.1 Demographic overview {#demographic-overview}
 
@@ -2473,7 +2473,7 @@ Trusts and ICBs are grouped by the provider for the selected event. No provider 
 htmltools::browsable(demo_sankey_charts$overview_delivery$Trust$age)
 ```
 
-##### IMD
+##### IMD quintile
 
 ```{r}
 #| label: demo-overview-delivery-trust-imd
@@ -2506,7 +2506,7 @@ htmltools::browsable(demo_sankey_charts$overview_delivery$Trust$ethnicity_descri
 htmltools::browsable(demo_sankey_charts$overview_delivery$ICB_Cluster$age)
 ```
 
-##### IMD
+##### IMD quintile
 
 ```{r}
 #| label: demo-overview-delivery-icb_cluster-imd
@@ -2544,7 +2544,7 @@ htmltools::browsable(demo_sankey_charts$overview_delivery$ICB_Cluster$ethnicity_
 htmltools::browsable(demo_sankey_charts$overview_booking$Trust$age)
 ```
 
-##### IMD
+##### IMD quintile
 
 ```{r}
 #| label: demo-overview-booking-trust-imd
@@ -2577,7 +2577,7 @@ htmltools::browsable(demo_sankey_charts$overview_booking$Trust$ethnicity_descrip
 htmltools::browsable(demo_sankey_charts$overview_booking$ICB_Cluster$age)
 ```
 
-##### IMD
+##### IMD quintile
 
 ```{r}
 #| label: demo-overview-booking-icb_cluster-imd
@@ -2621,7 +2621,7 @@ htmltools::browsable(demo_sankey_charts$overall)
 htmltools::browsable(demo_sankey_charts$ethnicity)
 ```
 
-### IMD
+### IMD quintile
 
 ```{r}
 #| label: demo-sankey-imd
@@ -2697,7 +2697,7 @@ htmltools::browsable(demo_sankey_charts$booking_icb$ethnicity_description$propor
 
 :::
 
-#### IMD
+#### IMD quintile
 
 ::: panel-tabset
 ##### Between category
@@ -2785,7 +2785,7 @@ htmltools::browsable(demo_sankey_charts$booking_trust$ethnicity_description$prop
 
 :::
 
-#### IMD
+#### IMD quintile
 
 ::: panel-tabset
 ##### Between category

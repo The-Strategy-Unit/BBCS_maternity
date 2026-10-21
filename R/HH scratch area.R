@@ -1,3 +1,7 @@
+usethis::edit_r_environ()
+
+
+
 # QUICK COMPARISON: ALL LAs AND COMBINED COHORT LAs ----------------------
 # Run this section only. Reads Sarah's two loaded objects directly.
 # Cohort LAs = Birmingham, Dudley, Sandwell, Solihull, Walsall, Wolverhampton.

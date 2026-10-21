@@ -1,3 +1,4 @@
+
 # COUNTRY MATCHING IMPACT: overview tables only ------------------------
 # Run with final_cohort_2326 loaded; no full analysis needed.
 source("R/Country matching overview.R")
@@ -25,6 +26,7 @@ hh_uplift |> filter(Missing_counts > 0 | Unknown_groups > 0 | !is.finite(Raw_upl
 # Model counts currently replace NA with zero and use zero for no deliveries.
 # This raw check keeps NA/Inf/NaN and includes all supplied LAs, before catchment selection.
 # END QUICK RAW UPLIFT --------------------------------------------------
+
 
 # QUICK COMPARISON: ALL LAs AND COMBINED COHORT LAs ----------------------
 # Run this section only. Reads Sarah's two loaded objects directly.

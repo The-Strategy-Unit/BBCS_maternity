@@ -488,3 +488,32 @@ their published counts and the ratios calculated from them.
 `Maternities_before_private` and `Maternities_after_private` expose its effect.
 `National_conversion_factor` remains the Table 5 baby-to-maternity conversion.
 The total `Maternity_modifier` includes the new reduction and pathway uplift.
+
+## Demographic Sankeys
+
+`R/Run analysis.R` runs `R/Demo Sankeys.R` after the main analysis. It creates
+the RStudio object `Demo Sankeys` (use backticks for its name in R), with columns
+`View`, `FY`, `Booking`, `Delivery`, `Outcome`, `ethnicity_broad`,
+`ethnicity_description`, `imd_decile`, `Age_band` and `N`.
+This master contains raw aggregate counts, with no mother or pregnancy IDs.
+Section 4.1 uses `View == "Delivery flows"` for the overall 2025/26
+booking-to-delivery Sankey and three-column demographic grids. Section 4.2
+uses `View == "Booking outcomes"` for the antenatal-booking outcome Sankeys,
+with nested ICB/cluster and trust tabs and demographic grids, including separate
+broad-ethnicity and ethnicity-description tabs. Each uses its supplied column;
+missing descriptions are not filled from broad ethnicity. These are
+different event populations; never sum across `View`.
+
+The delivery-flow population matches section 2.2.5: delivery year 2025/26,
+birth flag 1 and home-birth flag 0. The booking-outcome population matches
+section 2.2.2 e/f: booking year 2025/26 and a cluster booking trust, keeping
+every delivery outcome and using the shared `classify_pathway_outcome()`.
+Demographics joins on the original `person_id_mother` with
+missing IDs never matching. Identical selected lookup rows collapse; conflicting
+rows for a matched mother stop the join rather than multiply pregnancy counts.
+Supplied demographic categories remain unchanged, including compound values;
+NA and blank categories have visible panels. Maternal age follows the shared
+birth-age-first rule. Existing disclosure controls apply to charts, after
+aggregation. Only prepared chart objects are saved to `.demo_sankeys.rds` for
+rendering; this generated file stays outside Git. No additional QA is run by
+the report process.

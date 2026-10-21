@@ -21,7 +21,7 @@ run_maternity_project <- function(refresh_data = FALSE) {
 
   # Replace saved outputs so failed runs don't break things
   output_files <- c(".ons_exploration.rds", ".patient_flows.rds",
-    ".delivery_geography.rds", ".projections.rds")
+    ".delivery_geography.rds", ".projections.rds", ".demo_sankeys.rds")
   generated_paths <- c(output_files, ".analysis_run.rds", "_site")
   for (item in generated_paths[file.exists(generated_paths)]) {
     resolved <- normalizePath(item, winslash = "/", mustWork = TRUE)
@@ -58,6 +58,7 @@ run_maternity_project <- function(refresh_data = FALSE) {
   # ONS / MSDS exploration, projections, charts and tables.
   message("Preparing analysis, charts and tables...")
   suppressPackageStartupMessages(source("R/Maternity analysis.R", local = .GlobalEnv))
+  source("R/Demo Sankeys.R", local = .GlobalEnv)
 
   # 3. MARK THE SAVED ANALYSIS READY -------------------------------------
   # save_report_rds attaches run metadata during the original write.

@@ -51,6 +51,7 @@ list2env(ons_exploration, envir = knitr::knit_global())
 patient_flows <- readRDS(".patient_flows.rds")
 delivery_geography <- readRDS(".delivery_geography.rds")
 first_draft_projections <- readRDS(".projections.rds")
+demo_sankey_charts <- readRDS(".demo_sankeys.rds")
 ```
 
 ```{r}
@@ -2407,6 +2408,130 @@ htmltools::browsable(htmltools::tagList(first_draft_projections$backtest$icb_clu
 first_draft_projections$backtest$all_table
 ```
 :::
+
+# 4. Demographic Sankeys {#demographic-sankeys}
+
+## 4.1 Booking trust to delivery trust {#demographic-booking-delivery}
+
+Recorded non-home deliveries in **2025/26**, using the same population and provider groups as section 2.2.5. The year is the delivery financial year; bookings may have occurred earlier. Home births, unknown home-birth status and records without a recorded delivery are excluded from this particular view.
+
+Ethnicity uses `ethnicity_broad` and deprivation uses `imd_decile`, joined by mother ID. Age uses the supplied maternal age at birth, falling back to booking age only when birth age is NA. Missing demographics remain visible as unknown; other supplied categories are retained. IMD panels show individual deciles. Each panel is scaled to its own flows, so ribbon widths should be compared within a panel; the displayed total shows its size.
+
+::: panel-tabset
+### 2025/26 overall
+
+```{r}
+#| label: demo-sankey-overall
+htmltools::browsable(demo_sankey_charts$overall)
+```
+
+### Ethnicity
+
+```{r}
+#| label: demo-sankey-ethnicity
+htmltools::browsable(demo_sankey_charts$ethnicity)
+```
+
+### IMD
+
+```{r}
+#| label: demo-sankey-imd
+htmltools::browsable(demo_sankey_charts$imd)
+```
+
+### Age band
+
+```{r}
+#| label: demo-sankey-age
+htmltools::browsable(demo_sankey_charts$age)
+```
+:::
+
+## 4.2 Outcomes of antenatal bookings {#demographic-booking-outcomes}
+
+These charts split the antenatal-booking Sankeys from **2.2.2 e and f** by demographics. They include pregnancies booked at cluster trusts in **2025/26**, with recorded delivery outcomes from any year. Home births, unknown delivery locations and no recorded delivery remain included. ICBs refer to the booking trust's ICB, not residence.
+
+Within each demographic tab, categories have separate headings and organisations appear three across. The two ICBs together make up the combined cluster; the cluster panel is their total, not an additional group. The two ethnicity tabs use `ethnicity_broad` and `ethnicity_description` respectively; missing descriptions remain unknown. Age and the other demographic fields follow the same rules as section 4.1. Counts are controlled independently for display, so displayed subgroup totals can differ slightly from the overall total. No recorded delivery does not establish that there was no birth.
+
+:::: panel-tabset
+### ICBs and combined cluster
+
+::: panel-tabset
+#### 2025/26 overall
+
+```{r}
+#| label: demo-booking-icb-overall
+htmltools::browsable(demo_sankey_charts$booking_icb$overall)
+```
+
+#### Ethnicity (broad)
+
+```{r}
+#| label: demo-booking-icb-ethnicity
+htmltools::browsable(demo_sankey_charts$booking_icb$ethnicity)
+```
+
+#### Ethnicity description
+
+```{r}
+#| label: demo-booking-icb-ethnicity-description
+htmltools::browsable(demo_sankey_charts$booking_icb$ethnicity_description)
+```
+
+#### IMD
+
+```{r}
+#| label: demo-booking-icb-imd
+htmltools::browsable(demo_sankey_charts$booking_icb$imd)
+```
+
+#### Age band
+
+```{r}
+#| label: demo-booking-icb-age
+htmltools::browsable(demo_sankey_charts$booking_icb$age)
+```
+:::
+
+### Trusts
+
+::: panel-tabset
+#### 2025/26 overall
+
+```{r}
+#| label: demo-booking-trust-overall
+htmltools::browsable(demo_sankey_charts$booking_trust$overall)
+```
+
+#### Ethnicity (broad)
+
+```{r}
+#| label: demo-booking-trust-ethnicity
+htmltools::browsable(demo_sankey_charts$booking_trust$ethnicity)
+```
+
+#### Ethnicity description
+
+```{r}
+#| label: demo-booking-trust-ethnicity-description
+htmltools::browsable(demo_sankey_charts$booking_trust$ethnicity_description)
+```
+
+#### IMD
+
+```{r}
+#| label: demo-booking-trust-imd
+htmltools::browsable(demo_sankey_charts$booking_trust$imd)
+```
+
+#### Age band
+
+```{r}
+#| label: demo-booking-trust-age
+htmltools::browsable(demo_sankey_charts$booking_trust$age)
+```
+:::
+::::
 
 # References {#method-1-references}
 

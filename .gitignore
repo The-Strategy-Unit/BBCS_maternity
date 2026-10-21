@@ -9,6 +9,7 @@
 !/R/HH scratch area.R
 !/R/Read parquet files from azure.R
 !/R/Maternity analysis.R
+!/R/Demo Sankeys.R
 !/R/ons_data.R
 !/R/disclosure.R
 !/R/test_disclosure.R

@@ -1,6 +1,22 @@
 # DEMOGRAPHIC SANKEYS ===================================================
 # Run after Maternity analysis.R; Run analysis.R does this automatically.
 # The master is an aggregate table: no mother or pregnancy IDs are retained.
+demo_period <- "2023/24\u20132025/26"
+
+demo_provider_labels <- function() {
+  extra <- setdiff(cluster_trusts, names(flow_trust_labels))
+  c(flow_trust_labels, stats::setNames(extra, extra),
+    `No booking` = "No recorded booking", `No delivery` = "No recorded delivery",
+    Home = "Home birth")
+}
+
+demo_icb <- function(provider, stage) {
+  icb <- unname(provider_icb[provider])
+  icb[is.na(icb)] <- ifelse(grepl("^R[A-Z0-9]{2}$", provider[is.na(icb)]), "Other", "Unknown")
+  special <- stage %in% c("No booking", "No delivery", "Home")
+  icb[special] <- stage[special]
+  icb
+}
 
 # 1. PREPARE THE MASTER TABLE -------------------------------------------
 build_demo_sankeys <- function(cohort, demographics, episodes = prepare_report_cohort(cohort)) {
@@ -8,51 +24,57 @@ build_demo_sankeys <- function(cohort, demographics, episodes = prepare_report_c
     dplyr::select(person_id_mother, ethnicity_broad, ethnicity_description, imd_decile) |>
     dplyr::distinct()
 
-  # Keep the two event populations separate: delivery FY for 4.1, booking FY
-  # for 4.2. A pregnancy can belong to both views; never sum across View.
+  # The supplied three-year cohort is the population. Count each pregnancy row
+  # once, without another event-year filter or duplication across chart views.
   # Join on the original mother ID. Missing IDs never match each other.
   # many-to-one prevents conflicting duplicate mother records multiplying flows.
   records <- episodes |>
-    dplyr::filter((Delivery_year %in% 2025L & Birth_recorded & Home %in% 0) |
-      (Booking_year %in% 2025L & Booking_Trust %in% cluster_trusts)) |>
     dplyr::mutate(
       person_id_mother = cohort$person_id_mother[Row],
+      Has_booking = Booking_provider_supplied | Booking_date_supplied,
+      Pathway = dplyr::case_when(
+        Birth_recorded & Has_booking ~ "Delivery with recorded booking",
+        Birth_recorded ~ "Delivery without recorded booking",
+        Has_booking ~ "Booking without recorded delivery",
+        TRUE ~ "Neither event recorded"),
+      Booking = ifelse(Has_booking, group_flow_code(Booking_Trust,
+        union(setdiff(names(trust_labels), "Other"), cluster_trusts)), "No booking"),
+      Delivery = dplyr::case_when(
+        !Birth_recorded ~ "No delivery", Home %in% 1 ~ "Home",
+        TRUE ~ group_flow_code(Trust, union(setdiff(names(trust_labels), "Other"), cluster_trusts))),
+      Booking_ICB = demo_icb(Booking_Trust, Booking),
+      Delivery_ICB = demo_icb(Trust, Delivery),
       Outcome = classify_pathway_outcome(data.frame(birth_recorded = Birth_recorded,
         home_birth = Home, birth_code = Trust))) |>
     dplyr::left_join(lookup, by = "person_id_mother", na_matches = "never",
       relationship = "many-to-one")
-  dplyr::bind_rows(
-    records |>
-      dplyr::filter(Delivery_year == 2025L, Birth_recorded, Home == 0) |>
-      dplyr::transmute(View = "Delivery flows", FY = Year,
-        Booking = group_flow_code(Booking_Trust, setdiff(names(trust_labels), "Other")),
-        Delivery = group_flow_code(Trust, setdiff(names(trust_labels), "Other")),
-        Outcome = NA_character_, ethnicity_broad, ethnicity_description, imd_decile, Age_band),
-    records |>
-      dplyr::filter(Booking_year == 2025L, Booking_Trust %in% cluster_trusts) |>
-      dplyr::transmute(View = "Booking outcomes", FY = "2025/26",
-        Booking = Booking_Trust, Delivery = NA_character_, Outcome,
-        ethnicity_broad, ethnicity_description, imd_decile, Age_band)) |>
-    dplyr::count(View, FY, Booking, Delivery, Outcome, ethnicity_broad, ethnicity_description, imd_decile, Age_band,
+  records |>
+    dplyr::count(Booking, Delivery, Booking_ICB, Delivery_ICB, Pathway, Outcome,
+      ethnicity_broad, ethnicity_description, imd_decile, Age_band,
       name = "N", .drop = FALSE)
 }
 
 # 2. FORM CHARTS FROM THE MASTER ONLY -----------------------------------
 demo_sankey_chart <- function(master, compact = FALSE) {
-  master <- dplyr::filter(master, View == "Delivery flows")
+  if (!nrow(master)) return(htmltools::div("No supplied cohort pregnancies."))
   links <- master |>
     dplyr::group_by(source = Booking, target = Delivery) |>
     dplyr::summarise(n = sum(N), .groups = "drop")
-  chart <- make_sankey(list(links = links), flow_trust_labels,
-    " (booking)", " (delivery)", trust_source_order, trust_target_order)
+  source_order <- unique(c(trust_source_order, names(demo_provider_labels())))
+  target_order <- unique(c(trust_target_order, names(demo_provider_labels())))
+  chart <- make_sankey(list(links = links), demo_provider_labels(),
+    " (booking)", " (delivery)", source_order, target_order)
   if (!compact || !nrow(links)) return(chart)
 
   # Short node labels fit three panels across. Hover retains the full names.
   short <- c(RNA = "Dudley", RL4 = "Wolverhampton", RQ3 = "Birmingham W&C",
     RXK = "Sandwell & W Birmingham", RBK = "Walsall", RRK = "UHB",
-    Other = "Other trusts", Unknown = "Unknown provider")
-  nodes <- c(trust_source_order[trust_source_order %in% links$source],
-    trust_target_order[trust_target_order %in% links$target])
+    Other = "Other trusts", Unknown = "Unknown provider", Home = "Home birth",
+    `No booking` = "No recorded booking", `No delivery` = "No recorded delivery")
+  nodes <- c(source_order[source_order %in% links$source],
+    target_order[target_order %in% links$target])
+  extra <- setdiff(nodes, names(short))
+  short <- c(short, stats::setNames(extra, extra))
   chart <- plotly::plotly_build(chart)
   chart$x$data[[1]]$node$label <- unname(short[nodes])
   chart$x$data[[1]]$node$pad <- 12
@@ -81,9 +103,8 @@ demo_category_label <- function(value, field) {
 }
 
 demo_sankey_grid <- function(master, field) {
-  master <- dplyr::filter(master, View == "Delivery flows")
   values <- demo_category_values(master, field)
-  if (!length(values)) return(htmltools::div("No recorded non-home deliveries in 2025/26."))
+  if (!length(values)) return(htmltools::div("No supplied cohort pregnancies."))
   panels <- lapply(values, function(value) {
     selected <- if (is.na(value)) is.na(master[[field]]) else
       !is.na(master[[field]]) & as.character(master[[field]]) == value
@@ -91,27 +112,38 @@ demo_sankey_grid <- function(master, field) {
     label <- demo_category_label(value, field)
     htmltools::div(class = "demo-sankey-panel",
       htmltools::tags$h4(label),
-      htmltools::tags$p(paste0(scales::comma(dc_count(sum(rows$N))), " deliveries")),
-      htmltools::tags$p(class = "demo-sankey-stages", "Booking trust \u2192 Delivery trust"),
+      htmltools::tags$p(paste0(scales::comma(dc_count(sum(rows$N))), " pregnancies")),
+      htmltools::tags$p(class = "demo-sankey-stages", "Booking \u2192 Delivery"),
       demo_sankey_chart(rows, compact = TRUE))
   })
   htmltools::div(class = "demo-sankey-grid", panels)
 }
 
-# 3. ANTENATAL BOOKING OUTCOMES (SECTION 2.2.2 e/f) ----------------------
+# 3. ORGANISATION GROUPS AND RECORDED DELIVERY OUTCOMES -----------------
+demo_org_codes <- function(master, mode, group) {
+  if (group == "Trust") unique(c(setdiff(names(trust_labels), "Other"), master[[mode]])) else
+    unique(c(cluster_icbs, master[[paste0(mode, "_ICB")]], "Cluster"))
+}
+
+demo_org_rows <- function(master, mode, group, code) {
+  if (group != "Trust" && code == "Cluster") return(master)
+  field <- if (group == "Trust") mode else paste0(mode, "_ICB")
+  master[master[[field]] %in% code, , drop = FALSE]
+}
+
+demo_org_label <- function(code, group) {
+  labels <- if (group == "Trust") demo_provider_labels() else
+    c(icb_labels, Unknown = "Unknown ICB", `No booking` = "No recorded booking",
+      `No delivery` = "No recorded delivery", Home = "Home birth", Cluster = "Whole BBCS cohort")
+  label <- unname(labels[code])
+  if (is.na(label)) code else label
+}
+
 demo_pathway_summary <- function(master, group, codes = NULL) {
-  master <- dplyr::filter(master, View == "Booking outcomes")
-  if (is.null(codes)) codes <- if (group == "Trust")
-    unique(c(setdiff(names(trust_labels), "Other"), master$Booking)) else
-    c(cluster_icbs, "Cluster")
+  if (is.null(codes)) codes <- demo_org_codes(master, "Booking", group)
   dplyr::bind_rows(lapply(codes, function(code) {
-    keep <- if (group == "Trust") master$Booking == code else
-      if (code == "Cluster") rep(TRUE, nrow(master)) else
-        unname(provider_icb[master$Booking]) %in% code
-    rows <- master[keep, , drop = FALSE]
-    organisation <- if (group == "Trust") unname(trust_labels[code]) else
-      if (code == "Cluster") cluster_label else unname(icb_labels[code])
-    if (is.na(organisation)) organisation <- code
+    rows <- demo_org_rows(master, "Booking", group, code)
+    organisation <- demo_org_label(code, group)
     data.frame(Code = code, Organisation = organisation, Starts = sum(rows$N),
       Within = sum(rows$N[rows$Outcome == "Within cluster"]),
       Outside = sum(rows$N[rows$Outcome == "Outside cluster"]),
@@ -121,7 +153,6 @@ demo_pathway_summary <- function(master, group, codes = NULL) {
 }
 
 demo_pathway_grid <- function(master, group, field = NULL) {
-  master <- dplyr::filter(master, View == "Booking outcomes")
   organisations <- demo_pathway_summary(master, group)$Code
   panels <- function(rows) {
     summary <- demo_pathway_summary(rows, group, organisations)
@@ -129,12 +160,13 @@ demo_pathway_grid <- function(master, group, field = NULL) {
       lapply(seq_len(nrow(summary)), function(i) {
         htmltools::div(class = "demo-sankey-panel",
           htmltools::tags$h5(summary$Organisation[i]),
-          make_pathway_sankey(summary[i, , drop = FALSE]))
+          make_pathway_sankey(summary[i, , drop = FALSE],
+            count_label = "Pregnancies", period = demo_period))
       }))
   }
   if (is.null(field)) return(htmltools::tagList(pathway_legend, panels(master)))
   categories <- demo_category_values(master, field)
-  if (!length(categories)) return(htmltools::div("No cluster antenatal bookings in 2025/26."))
+  if (!length(categories)) return(htmltools::div("No supplied cohort pregnancies."))
   htmltools::tagList(pathway_legend, lapply(categories, function(value) {
     selected <- if (is.na(value)) is.na(master[[field]]) else
       !is.na(master[[field]]) & as.character(master[[field]]) == value
@@ -152,11 +184,71 @@ demo_pathway_tabs <- function(master, group) {
     age = demo_pathway_grid(master, group, "Age_band"))
 }
 
-# 4. OBJECTS FOR RSTUDIO AND THE REPORT ---------------------------------
+# 4. POOLED DEMOGRAPHIC BAR CHARTS -------------------------------------
+demo_pathway_colours <- c(
+  "Delivery with recorded booking" = "#00856A",
+  "Delivery without recorded booking" = "#005EB8",
+  "Booking without recorded delivery" = "#D55E00",
+  "Neither event recorded" = "#727272")
+
+demo_overview_bar <- function(rows, field) {
+  if (!nrow(rows)) return(htmltools::div("No pregnancies in this group."))
+  categories <- demo_category_values(rows, field)
+  labels <- vapply(categories, demo_category_label, character(1), field = field)
+  counts <- rows |>
+    dplyr::group_by(Category = as.character(.data[[field]]), Pathway) |>
+    dplyr::summarise(N = sum(N), .groups = "drop") |>
+    dplyr::mutate(Category = factor(labels[match(Category, categories)], levels = labels),
+      Pathway = factor(Pathway, levels = names(demo_pathway_colours)),
+      N = dc_count(N),
+      Hover = paste0(Category, "<br>", Pathway, "<br>Pregnancies: ", scales::comma(N)))
+  plotly::plot_ly(counts, x = ~N, y = ~Category, color = ~Pathway,
+    colors = demo_pathway_colours, type = "bar", orientation = "h",
+    text = ~Hover, hovertemplate = "%{text}<extra></extra>",
+    height = max(320, 32 * length(categories) + 70)) |>
+    plotly::layout(barmode = "stack", showlegend = FALSE,
+      xaxis = list(title = "Pregnancies", rangemode = "tozero"),
+      yaxis = list(title = "", categoryorder = "array", categoryarray = rev(labels),
+        tickmode = "array", tickvals = labels,
+        ticktext = vapply(labels, function(label) paste(strwrap(label, width = 24), collapse = "<br>"), character(1)),
+        automargin = TRUE),
+      margin = list(l = 100, r = 12, t = 12, b = 50),
+      font = list(family = "Arial", size = 11)) |>
+    plotly::config(displayModeBar = FALSE, responsive = TRUE)
+}
+
+demo_overview_grid <- function(master, mode, group, field) {
+  codes <- demo_org_codes(master, mode, group)
+  legend <- htmltools::div(style = "display:flex; flex-wrap:wrap; gap:12px; margin-bottom:16px;",
+    lapply(names(demo_pathway_colours), function(label) htmltools::span(
+      htmltools::span(style = paste0("display:inline-block; width:12px; height:12px; margin-right:6px; background:",
+        demo_pathway_colours[[label]]), `aria-hidden` = "true"), label)))
+  htmltools::tagList(legend, htmltools::div(class = "demo-sankey-grid",
+    lapply(codes, function(code) {
+      rows <- demo_org_rows(master, mode, group, code)
+      htmltools::div(class = "demo-sankey-panel",
+        htmltools::tags$h5(demo_org_label(code, group)),
+        htmltools::tags$p(paste0(scales::comma(dc_count(sum(rows$N))), " pregnancies")),
+        demo_overview_bar(rows, field))
+    })))
+}
+
+demo_overview_tabs <- function(master, mode) {
+  stats::setNames(lapply(c("Trust", "ICB_Cluster"), function(group) {
+    fields <- c(age = "Age_band", imd = "imd_decile", ethnicity = "ethnicity_broad",
+      ethnicity_description = "ethnicity_description")
+    lapply(fields, function(field) demo_overview_grid(master, mode, group, field))
+  }), c("Trust", "ICB_Cluster"))
+}
+
+# 5. OBJECTS FOR RSTUDIO AND THE REPORT ---------------------------------
 # Keep supplied demographic categories, including pipe-separated values.
 # NA is labelled only for display; no other ethnicity/IMD fields are substituted.
 `Demo Sankeys` <- build_demo_sankeys(final_cohort_2326, demographics, report_episodes)
 demo_sankey_charts <- list(
+  cohort_total = dc_count(sum(`Demo Sankeys`$N)),
+  overview_delivery = demo_overview_tabs(`Demo Sankeys`, "Delivery"),
+  overview_booking = demo_overview_tabs(`Demo Sankeys`, "Booking"),
   overall = demo_sankey_chart(`Demo Sankeys`),
   ethnicity = demo_sankey_grid(`Demo Sankeys`, "ethnicity_broad"),
   imd = demo_sankey_grid(`Demo Sankeys`, "imd_decile"),

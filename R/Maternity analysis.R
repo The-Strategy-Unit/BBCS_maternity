@@ -840,7 +840,7 @@ pathway_legend <- htmltools::div(
   htmltools::tagList(lapply(seq_along(outcome_labels), function(i) outcome_key(i, outcome_labels[i])))
 )
 
-make_pathway_sankey <- function(row) {
+make_pathway_sankey <- function(row, count_label = "Antenatal bookings", period = "2025/26") {
   organisation <- row$Organisation[[1]]
   counts <- as.numeric(unlist(row[outcome_columns], use.names = FALSE))
   total <- dc_count(row$Starts[[1]])
@@ -856,7 +856,7 @@ make_pathway_sankey <- function(row) {
       color = c(main_chart_colour, outcome_colours),
       x = c(0.01, rep(0.99, 4)), y = c(0.5, 0.08, 0.35, 0.62, 0.89),
       pad = 18, thickness = 18,
-      customdata = paste0(c(organisation, outcome_text), "<br>Antenatal bookings: ", c(total, counts)),
+      customdata = paste0(c(organisation, outcome_text), "<br>", count_label, ": ", c(total, counts)),
       hovertemplate = "%{customdata}<extra></extra>"
     ),
     link = list(source = rep(0L, 4), target = 1:4, value = counts,
@@ -869,7 +869,7 @@ make_pathway_sankey <- function(row) {
       paper_bgcolor = "white", plot_bgcolor = "white") |>
     plotly::config(displayModeBar = FALSE, responsive = TRUE)
   if (total == 0) {
-    return(htmltools::div("No antenatal bookings recorded for this organisation in 2025/26."))
+    return(htmltools::div(paste0("No ", tolower(count_label), " recorded for this organisation in ", period, ".")))
   }
   # Zero-width flows: colour keys and percentages below the chart
   htmltools::tagList(chart, if (any(counts == 0)) {

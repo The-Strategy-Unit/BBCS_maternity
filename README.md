@@ -491,29 +491,34 @@ The total `Maternity_modifier` includes the new reduction and pathway uplift.
 
 ## Demographic Sankeys
 
-`R/Run analysis.R` runs `R/Demo Sankeys.R` after the main analysis. It creates
-the RStudio object `Demo Sankeys` (use backticks for its name in R), with columns
-`View`, `FY`, `Booking`, `Delivery`, `Outcome`, `ethnicity_broad`,
-`ethnicity_description`, `imd_decile`, `Age_band` and `N`.
-This master contains raw aggregate counts, with no mother or pregnancy IDs.
-Section 4.1 uses `View == "Delivery flows"` for the overall 2025/26
-booking-to-delivery Sankey and three-column demographic grids. Section 4.2
-uses `View == "Booking outcomes"` for the antenatal-booking outcome Sankeys,
-with nested ICB/cluster and trust tabs and demographic grids, including separate
-broad-ethnicity and ethnicity-description tabs. Each uses its supplied column;
-missing descriptions are not filled from broad ethnicity. These are
-different event populations; never sum across `View`.
+`R/Run analysis.R` runs `R/Demo Sankeys.R` after the main analysis. The RStudio
+object `Demo Sankeys` is one aggregate table for the whole supplied three-year
+BBCS cohort. It contains `Booking`, `Delivery`, `Booking_ICB`, `Delivery_ICB`,
+`Pathway`, `Outcome`, `ethnicity_broad`, `ethnicity_description`, `imd_decile`,
+`Age_band` and `N`. There are no mother/pregnancy IDs, repeated event views or
+additional year filters. ``sum(`Demo Sankeys`$N)`` equals the source pregnancy-row count.
 
-The delivery-flow population matches section 2.2.5: delivery year 2025/26,
-birth flag 1 and home-birth flag 0. The booking-outcome population matches
-section 2.2.2 e/f: booking year 2025/26 and a cluster booking trust, keeping
-every delivery outcome and using the shared `classify_pathway_outcome()`.
-Demographics joins on the original `person_id_mother` with
-missing IDs never matching. Identical selected lookup rows collapse; conflicting
-rows for a matched mother stop the join rather than multiply pregnancy counts.
-Supplied demographic categories remain unchanged, including compound values;
-NA and blank categories have visible panels. Maternal age follows the shared
-birth-age-first rule. Existing disclosure controls apply to charts, after
-aggregation. Only prepared chart objects are saved to `.demo_sankeys.rds` for
-rendering; this generated file stays outside Git. No additional QA is run by
-the report process.
+Section 4.1 shows stacked demographic bars with separate delivery-provider and
+booking-provider views. Both retain all cohort rows: no recorded event and
+unknown/other providers remain separate. ICB comes from that event's provider,
+without borrowing the other provider or residence. Whole BBCS cohort is the
+sum of all ICB/event groups, not just the two named ICBs. Section 4.2 shows all
+booking-to-delivery paths, including no-booking, no-delivery and home-birth
+nodes. Section 4.3 groups all cohort pregnancies by booking provider/ICB and
+uses the existing four delivery outcomes, including delivery-only pregnancies
+in their own no-booking group. Every demographic split reconciles to the same
+whole-cohort population before display controls.
+
+Booking evidence is a supplied provider or appointment date. Delivery evidence
+is birth flag 1. The three requested pathway statuses remain separate, plus
+neither event recorded where present. Each supplied pregnancy counts once;
+separate pregnancies for one mother are not collapsed. The period label comes
+from the supplied extract; due years are never substituted for event years.
+
+Demographics joins on the original `person_id_mother`; missing IDs never match.
+Identical lookup rows collapse, while conflicting matches cannot multiply
+pregnancies. Supplied categories remain unchanged, including compound values,
+NA and blanks. Age follows the shared birth-age-first rule. Broad ethnicity
+never fills a missing ethnicity description. Existing disclosure controls apply
+after aggregation. Chart objects are saved to the ignored `.demo_sankeys.rds`.
+No QA or audit is added to the normal run.

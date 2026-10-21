@@ -2411,21 +2411,171 @@ first_draft_projections$backtest$all_table
 
 # 4. Demographic Sankeys {#demographic-sankeys}
 
-## 4.1 Booking trust to delivery trust {#demographic-booking-delivery}
+All charts in this section use the **whole supplied BBCS cohort, pooled across 2023/24–2025/26**. Each supplied pregnancy row contributes once, whether it has a delivery and booking, a delivery without a recorded booking, or a booking without a recorded delivery. Separate pregnancies for the same woman remain separate. Records without either event remain visible too. There is no further event-year filter: missing dates and bookings before the delivery year do not remove a cohort record.
 
-Recorded non-home deliveries in **2025/26**, using the same population and provider groups as section 2.2.5. The year is the delivery financial year; bookings may have occurred earlier. Home births, unknown home-birth status and records without a recorded delivery are excluded from this particular view.
+A booking is recorded when a booking provider or appointment date is supplied; a delivery uses the recorded birth flag. Due years do not establish either event. Maternal age uses birth age first and booking age only when birth age is NA. Demographics use `imd_decile`, `ethnicity_broad` and `ethnicity_description`; unknown values remain visible. Counts are controlled independently for display, so displayed subgroup totals can differ slightly from the overall total.
 
-Ethnicity uses `ethnicity_broad` and deprivation uses `imd_decile`, joined by mother ID. Age uses the supplied maternal age at birth, falling back to booking age only when birth age is NA. Missing demographics remain visible as unknown; other supplied categories are retained. IMD panels show individual deciles. Each panel is scaled to its own flows, so ribbon widths should be compared within a panel; the displayed total shows its size.
+## 4.1 Demographic overview {#demographic-overview}
+
+The pooled cohort contains **`r scales::comma(demo_sankey_charts$cohort_total)` pregnancies** after display rounding. Bars show demographic counts, stacked by recorded booking/delivery status. The delivery and antenatal-booking views each cover the whole pool and must not be added together.
+
+Trusts and ICBs are grouped by the provider for the selected event. No provider from the other event is substituted. No recorded event, unknown provider, home birth and other providers remain separate where applicable. The whole-cohort panel includes every group; it is a total, not an additional group to sum with the ICBs.
+
+### 4.1.1 Delivery view
+
+:::: panel-tabset
+#### Trusts
 
 ::: panel-tabset
-### 2025/26 overall
+##### Age bands
+
+```{r}
+#| label: demo-overview-delivery-trust-age
+htmltools::browsable(demo_sankey_charts$overview_delivery$Trust$age)
+```
+
+##### IMD
+
+```{r}
+#| label: demo-overview-delivery-trust-imd
+htmltools::browsable(demo_sankey_charts$overview_delivery$Trust$imd)
+```
+
+##### Ethnicity (broad)
+
+```{r}
+#| label: demo-overview-delivery-trust-ethnicity
+htmltools::browsable(demo_sankey_charts$overview_delivery$Trust$ethnicity)
+```
+
+##### Ethnicity description
+
+```{r}
+#| label: demo-overview-delivery-trust-ethnicity_description
+htmltools::browsable(demo_sankey_charts$overview_delivery$Trust$ethnicity_description)
+```
+
+:::
+
+#### ICBs and whole cohort
+
+::: panel-tabset
+##### Age bands
+
+```{r}
+#| label: demo-overview-delivery-icb_cluster-age
+htmltools::browsable(demo_sankey_charts$overview_delivery$ICB_Cluster$age)
+```
+
+##### IMD
+
+```{r}
+#| label: demo-overview-delivery-icb_cluster-imd
+htmltools::browsable(demo_sankey_charts$overview_delivery$ICB_Cluster$imd)
+```
+
+##### Ethnicity (broad)
+
+```{r}
+#| label: demo-overview-delivery-icb_cluster-ethnicity
+htmltools::browsable(demo_sankey_charts$overview_delivery$ICB_Cluster$ethnicity)
+```
+
+##### Ethnicity description
+
+```{r}
+#| label: demo-overview-delivery-icb_cluster-ethnicity_description
+htmltools::browsable(demo_sankey_charts$overview_delivery$ICB_Cluster$ethnicity_description)
+```
+
+:::
+
+::::
+
+### 4.1.2 Antenatal-booking view
+
+:::: panel-tabset
+#### Trusts
+
+::: panel-tabset
+##### Age bands
+
+```{r}
+#| label: demo-overview-booking-trust-age
+htmltools::browsable(demo_sankey_charts$overview_booking$Trust$age)
+```
+
+##### IMD
+
+```{r}
+#| label: demo-overview-booking-trust-imd
+htmltools::browsable(demo_sankey_charts$overview_booking$Trust$imd)
+```
+
+##### Ethnicity (broad)
+
+```{r}
+#| label: demo-overview-booking-trust-ethnicity
+htmltools::browsable(demo_sankey_charts$overview_booking$Trust$ethnicity)
+```
+
+##### Ethnicity description
+
+```{r}
+#| label: demo-overview-booking-trust-ethnicity_description
+htmltools::browsable(demo_sankey_charts$overview_booking$Trust$ethnicity_description)
+```
+
+:::
+
+#### ICBs and whole cohort
+
+::: panel-tabset
+##### Age bands
+
+```{r}
+#| label: demo-overview-booking-icb_cluster-age
+htmltools::browsable(demo_sankey_charts$overview_booking$ICB_Cluster$age)
+```
+
+##### IMD
+
+```{r}
+#| label: demo-overview-booking-icb_cluster-imd
+htmltools::browsable(demo_sankey_charts$overview_booking$ICB_Cluster$imd)
+```
+
+##### Ethnicity (broad)
+
+```{r}
+#| label: demo-overview-booking-icb_cluster-ethnicity
+htmltools::browsable(demo_sankey_charts$overview_booking$ICB_Cluster$ethnicity)
+```
+
+##### Ethnicity description
+
+```{r}
+#| label: demo-overview-booking-icb_cluster-ethnicity_description
+htmltools::browsable(demo_sankey_charts$overview_booking$ICB_Cluster$ethnicity_description)
+```
+
+:::
+
+::::
+
+## 4.2 Booking to delivery pathways {#demographic-booking-delivery}
+
+Each pregnancy appears once in this pooled booking-to-delivery flow. Explicit **No recorded booking** and **No recorded delivery** nodes retain pregnancies with only one recorded event; home births and unknown providers remain visible. Each demographic panel is scaled to its own flows, so compare ribbon widths within a panel and use the displayed total to compare its size.
+
+::: panel-tabset
+### 2023/24–2025/26 overall
 
 ```{r}
 #| label: demo-sankey-overall
 htmltools::browsable(demo_sankey_charts$overall)
 ```
 
-### Ethnicity
+### Ethnicity (broad)
 
 ```{r}
 #| label: demo-sankey-ethnicity
@@ -2445,19 +2595,20 @@ htmltools::browsable(demo_sankey_charts$imd)
 #| label: demo-sankey-age
 htmltools::browsable(demo_sankey_charts$age)
 ```
+
 :::
 
-## 4.2 Outcomes of antenatal bookings {#demographic-booking-outcomes}
+## 4.3 Recorded delivery outcomes {#demographic-booking-outcomes}
 
-These charts split the antenatal-booking Sankeys from **2.2.2 e and f** by demographics. They include pregnancies booked at cluster trusts in **2025/26**, with recorded delivery outcomes from any year. Home births, unknown delivery locations and no recorded delivery remain included. ICBs refer to the booking trust's ICB, not residence.
+These extend the outcome Sankeys from **2.2.2 e and f** to the whole three-year cohort. Panels group by booking trust or its ICB, including a **No recorded booking** group for delivery-only pregnancies. A supplied booking date without a provider belongs to the unknown-provider group. All cohort rows are included regardless of delivery outcome or date.
 
-Within each demographic tab, categories have separate headings and organisations appear three across. The two ICBs together make up the combined cluster; the cluster panel is their total, not an additional group. The two ethnicity tabs use `ethnicity_broad` and `ethnicity_description` respectively; missing descriptions remain unknown. Age and the other demographic fields follow the same rules as section 4.1. Counts are controlled independently for display, so displayed subgroup totals can differ slightly from the overall total. No recorded delivery does not establish that there was no birth.
+Each demographic category has its own heading, with organisations arranged three across. The whole-cohort panel includes the named ICBs, other or unknown providers, and pregnancies with no recorded booking. No recorded delivery does not establish that there was no birth. Home births and unknown home-birth status follow the existing delivery-outcome rules.
 
 :::: panel-tabset
-### ICBs and combined cluster
+### ICBs and whole cohort
 
 ::: panel-tabset
-#### 2025/26 overall
+#### 2023/24–2025/26 overall
 
 ```{r}
 #| label: demo-booking-icb-overall
@@ -2474,7 +2625,7 @@ htmltools::browsable(demo_sankey_charts$booking_icb$ethnicity)
 #### Ethnicity description
 
 ```{r}
-#| label: demo-booking-icb-ethnicity-description
+#| label: demo-booking-icb-ethnicity_description
 htmltools::browsable(demo_sankey_charts$booking_icb$ethnicity_description)
 ```
 
@@ -2491,12 +2642,13 @@ htmltools::browsable(demo_sankey_charts$booking_icb$imd)
 #| label: demo-booking-icb-age
 htmltools::browsable(demo_sankey_charts$booking_icb$age)
 ```
+
 :::
 
 ### Trusts
 
 ::: panel-tabset
-#### 2025/26 overall
+#### 2023/24–2025/26 overall
 
 ```{r}
 #| label: demo-booking-trust-overall
@@ -2513,7 +2665,7 @@ htmltools::browsable(demo_sankey_charts$booking_trust$ethnicity)
 #### Ethnicity description
 
 ```{r}
-#| label: demo-booking-trust-ethnicity-description
+#| label: demo-booking-trust-ethnicity_description
 htmltools::browsable(demo_sankey_charts$booking_trust$ethnicity_description)
 ```
 
@@ -2530,7 +2682,9 @@ htmltools::browsable(demo_sankey_charts$booking_trust$imd)
 #| label: demo-booking-trust-age
 htmltools::browsable(demo_sankey_charts$booking_trust$age)
 ```
+
 :::
+
 ::::
 
 # References {#method-1-references}

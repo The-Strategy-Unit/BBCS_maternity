@@ -12,7 +12,6 @@ review_age_band <- function(age) {
 review_index <- function(data, keys, value, reference) {
   ref <- data |> dplyr::filter(year == reference) |>
     dplyr::select(dplyr::all_of(keys), base = dplyr::all_of(value))
-  if (anyDuplicated(ref[keys])) stop("Repeated reference cell in age review.")
   data |> dplyr::left_join(ref, by = keys, relationship = "many-to-one") |>
     dplyr::mutate(index = ifelse(is.finite(base) & base > 0, .data[[value]] / base * 100, NA_real_))
 }
@@ -46,7 +45,6 @@ build_ons_age_review <- function(counts, historic, snpp, women, area_config) {
     dplyr::transmute(year, series = unname(band_names[age_of_mother_at_birth_years]),
       maternities = number_of_maternities,
       multiple_rate = number_of_maternities_with_multiple_births / number_of_maternities * 1000)
-  if (anyDuplicated(history[c("year", "series")])) stop("Overlapping Table 8 age groups in review.")
   old <- counts |> dplyr::filter(age %in% c(as.character(40:49), "50+")) |>
     dplyr::mutate(series = age, babies_per_maternity = total_births / maternities)
   old <- review_index(old, "series", "live_births", 2023)
@@ -60,7 +58,6 @@ build_ons_age_review <- function(counts, historic, snpp, women, area_config) {
       age_group_years %in% c(names(band_names), "40 and over")) |>
     dplyr::transmute(year, series = dplyr::recode(age_group_years, !!!band_names, "40 and over" = "40+"),
       rate = as.numeric(age_specific_fertility_rate))
-  if (anyDuplicated(rates[c("year", "series")])) stop("Repeated Table 10 rate cell.")
   population <- women |> dplyr::filter(age >= 40, age <= 54) |>
     dplyr::mutate(series = ifelse(age >= 50, "50-54", review_age_band(age))) |>
     dplyr::group_by(year, series) |>

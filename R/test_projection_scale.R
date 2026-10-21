@@ -38,8 +38,20 @@ local({
     birth_provider = trust, home_birth = 0L, resident_icb = unname(provider_icb[trust]),
     booking_provider = trust,
     antenatal_app_date = as.Date(paste0(substr(cells$FY, 1, 4), "-06-01")))
-  total_births_by_LA_2326 <- unique(cells[c("LA", "Age", "FY")]) |>
-    dplyr::transmute(la_of_mother = LA, age_at_birth_mother = Age, birth_yr = FY, count = 10)
+  test_la_extract <- function(cohort) {
+    dplyr::bind_rows(
+      cohort |> dplyr::filter(birth_flag == 1) |>
+        dplyr::transmute(la_of_mother, age_at_birth_mother, age_at_booking_mother,
+          birth_yr, estimated_yr = NA_character_),
+      cohort |> dplyr::filter(birth_flag == 0) |>
+        dplyr::transmute(la_of_mother,
+          age_at_booking_mother = dplyr::coalesce(age_at_booking_mother, age_at_birth_mother),
+          age_at_birth_mother = NA_real_,
+          estimated_yr = birth_yr, birth_yr = NA_character_)) |>
+      dplyr::count(la_of_mother, birth_yr, estimated_yr,
+        age_at_birth_mother, age_at_booking_mother, name = "count")
+  }
+  total_births_by_LA_2326 <- test_la_extract(final_cohort_2326)
   ons <- tidyr::expand_grid(area_code = unique(cells$LA), age_group = as.character(15:44),
     year = 2023:2047) |>
     dplyr::mutate(area_name = area_code, projected_births = 10 * (1 + (year - 2025) / 100))
@@ -52,18 +64,18 @@ local({
   # outside that range must not change boundary weights or suppress providers.
   stopifnot(identical(sort(unique(m$Age)), as.numeric(13:54)))
   zero_ages <- attr(m, "allocation_tables")$residents |>
-    dplyr::filter(Age %in% c(13, 14, 45:54))
+    dplyr::filter(LA %in% unique(cells$LA), Age %in% c(13, 14, 45:54))
   stopifnot(nrow(zero_ages) == 24L, all(zero_ages$MSDS_resident_count == 0))
   original_cohort <- final_cohort_2326
-  # Local delivery totals and age weights come from the cohort, regardless
-  # of the counts supplied for those same LAs in the wider file.
+  # Every LA now uses its independent LA extract, including cluster LAs.
+  # Scaling both components preserves the factor but reduces cohort shares.
   inflated_local_totals <- total_births_by_LA_2326
   inflated_local_totals$count <- inflated_local_totals$count * 10
   local_source <- build_projection_master(original_cohort, inflated_local_totals, ons, counts)
   near(local_source$Age_weight, m$Age_weight)
   near(local_source$Adjusted_maternities, m$Adjusted_maternities)
-  near(local_source$Booking_count_RQ3, m$Booking_count_RQ3)
-  near(local_source$Delivery_count_RQ3, m$Delivery_count_RQ3)
+  near(local_source$Booking_count_RQ3, m$Booking_count_RQ3 / 10)
+  near(local_source$Delivery_count_RQ3, m$Delivery_count_RQ3 / 10)
   # The national resident file must not expand the BBCS catchment or its QA.
   unrelated_residents <- dplyr::bind_rows(total_births_by_LA_2326,
     data.frame(la_of_mother = c("W06000002", "E07000028", "E07000001"),
@@ -81,6 +93,9 @@ local({
   near(scoped$Adjusted_maternities, m$Adjusted_maternities)
   unrelated_cohort$birth_flag <- 0L
   unrelated_cohort$booking_provider <- "RQ3"
+  unrelated_residents <- dplyr::bind_rows(unrelated_residents,
+    data.frame(la_of_mother = "E07000001", age_at_birth_mother = NA_real_,
+      age_at_booking_mother = 36, birth_yr = NA_character_, estimated_yr = "2025/26", count = 1))
   booking_feeder <- build_projection_master(dplyr::bind_rows(original_cohort, unrelated_cohort),
     unrelated_residents, unrelated_ons, counts)
   stopifnot("E07000001" %in% booking_feeder$LA,
@@ -108,8 +123,7 @@ local({
   endpoints <- original_cohort[rep(1, 5), ]
   endpoints$age_at_birth_mother <- c(13, 13, 54, 54, 54)
   endpoint_cohort <- dplyr::bind_rows(original_cohort, endpoints)
-  endpoint_residents <- endpoint_cohort |> dplyr::filter(birth_flag == 1) |>
-    dplyr::count(la_of_mother, age_at_birth_mother, birth_yr, name = "count")
+  endpoint_residents <- test_la_extract(endpoint_cohort)
   endpoint_master <- build_projection_master(endpoint_cohort, endpoint_residents, ons, counts)
   endpoint_cells <- endpoint_master |>
     dplyr::filter(LA == "E08000025", Year == 2025, Age %in% c(13, 15, 44, 54)) |>
@@ -223,7 +237,7 @@ local({
   no_booking$antenatal_app_date <- as.Date(NA)
   enlarged <- dplyr::bind_rows(final_cohort_2326, no_booking[rep(seq_len(nrow(no_booking)), 54), ])
   enlarged$person_id_mother <- enlarged$uniq_preg_id <- seq_len(nrow(enlarged))
-  high_uplift <- build_projection_master(enlarged, total_births_by_LA_2326, ons, counts)
+  high_uplift <- build_projection_master(enlarged, test_la_extract(enlarged), ons, counts)
   near(high_uplift$Bookings_uplift_modifier[high_uplift$Age == 25],
     rep(12, sum(high_uplift$Age == 25)))
   for (column in c("Booking_count_RQ3", "Booking_count_RL4", "Delivery_count_RQ3", "Delivery_count_RL4"))
@@ -246,7 +260,8 @@ local({
   check <- feeder_master |> dplyr::filter(LA == "E09999999", Age == 25, Year == 2025)
   near(check$Booking_count_RQ3, 10)
   near(check$Delivery_count_RQ3, 10)
-  near(check$Booking_denominator, 360)
+  near(check$Booking_denominator, 300)
+  near(check$Bookings_uplift_modifier, 1) # its own LA has no antenatal-only rows
   # The old method's 30 / 30 booking share would incorrectly allocate 100.
   near(check$Exact_age_live_births * (30 / 30), 100)
   # Unknown age and unmatched LA must not erase other valid provider allocations.
@@ -286,17 +301,23 @@ local({
   near(sum_available_projection(c(NA, 12, 0)), 12)
   stopifnot(is.na(sum_available_projection(c(NA_real_, NA_real_))), sum_available_projection(numeric()) == 0)
   final_cohort_2326 <- original_cohort
-  # Sparse destinations are zero, but absent calibration cannot create a rate.
+  # Sparse destinations are zero. Independent resident counts retain a residual
+  # when there are no linked cohort rows, without borrowing another LA's rate.
   near(m$Delivery_count_RL4[m$LA == "E08000025"], rep(0, sum(m$LA == "E08000025")))
   empty_cell <- original_cohort[!(original_cohort$la_of_mother == "E08000025" &
     original_cohort$age_at_birth_mother == 25), ]
   empty_master <- build_projection_master(empty_cell, total_births_by_LA_2326, ons, counts)
   empty <- empty_master |> dplyr::filter(LA == "E08000025", Age == 25, Year == 2025)
-  stopifnot(!empty$Allocation_available, is.na(empty$Delivery_denominator))
-  near(empty$Delivery_count_Unallocated, empty$Adjusted_maternities)
+  stopifnot(empty$Allocation_available)
+  near(empty$Booking_count_Booking_Denominator_Factor, empty$Adjusted_maternities)
   invalid_residents <- feeder_residents
   invalid_residents$count[invalid_residents$la_of_mother == "E09999999"] <- NA_real_
-  stopifnot(inherits(try(build_allocation_tables(feeder_cohort, invalid_residents), silent = TRUE), "try-error"))
+  # Agreed model convention: missing counts/denominators become zero, no proxy.
+  invalid_calibration <- build_allocation_tables(feeder_cohort, invalid_residents)$calibration |>
+    dplyr::filter(LA == "E09999999")
+  stopifnot(all(invalid_calibration$MSDS_resident_count == 0),
+    all(invalid_calibration$Bookings_uplift_modifier == 0),
+    all(is.na(invalid_residents$count[invalid_residents$la_of_mother == "E09999999"])))
   stopifnot(all(c("Trust", "ICB_Cluster") %in% names(result$delivery_total_grids)),
     all(c("Trust", "ICB_Cluster") %in% names(result$delivery_change_grids)),
     all(c("Trust", "ICB_Cluster") %in% names(result$booking_total_charts)),

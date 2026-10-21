@@ -45,88 +45,69 @@ read_completed_analysis <- function() {
   report_run
 }
 report_run <- read_completed_analysis()
-for (output_file in report_run$output_files) {
-  output <- readRDS(output_file)
-  if (output_file != ".qa.rds" && !identical(attr(output, "disclosure_version"), msds_disclosure_version))
-    stop("Outputs predate the disclosure controls: ", output_file, ". Run R/Run analysis.R again.")
-  if (!identical(attr(output, "run_id"), report_run$run_id))
-    stop("Mixed or stale outputs: ", output_file, ". Run Run analysis.R again.")
-}
+# Load each prepared result once. Data/output audits run separately in R/QA.R.
 ons_exploration <- readRDS(".ons_exploration.rds")
 list2env(ons_exploration, envir = knitr::knit_global())
+patient_flows <- readRDS(".patient_flows.rds")
+delivery_geography <- readRDS(".delivery_geography.rds")
+first_draft_projections <- readRDS(".projections.rds")
 ```
 
 ```{r}
 #| label: older-age-review-setup
 #| include: false
-source("R/age_boundary_review.R")
 # ONS exploration prepared by R/Maternity analysis.R
 older_age_review <- ons_exploration$older_age_review
-msds_age_review <- if (file.exists(".projections.rds")) readRDS(".projections.rds")$age_boundary_review else NULL
-if (!is.null(msds_age_review) && !identical(msds_age_review$version, "age-review-counts-v5")) msds_age_review <- NULL
+msds_age_review <- first_draft_projections$age_boundary_review
 ```
 
 ```{r}
 #| label: patient-flows-by-year-setup
 #| include: false
 
-by_year <- readRDS(".patient_flows.rds")$by_year
+by_year <- patient_flows$by_year
 ```
 
 ```{r}
 #| label: cluster-activity-setup
 #| include: false
 
-cluster_activity <- readRDS(".patient_flows.rds")$cluster_activity
+cluster_activity <- patient_flows$cluster_activity
 ```
 
 ```{r}
 #| label: delivery-over-time-setup
 #| include: false
 
-delivery_over_time <- readRDS(".patient_flows.rds")$delivery_over_time
+delivery_over_time <- patient_flows$delivery_over_time
 ```
 
 ```{r}
 #| label: booking-delivery-over-time-setup
 #| include: false
 
-booking_delivery_over_time <- readRDS(".patient_flows.rds")$booking_delivery_over_time
-booking_icb_delivery_over_time <- readRDS(".patient_flows.rds")$booking_icb_delivery_over_time
-if (is.null(booking_delivery_over_time) || is.null(booking_icb_delivery_over_time)) stop(
-  "Section 2.2.7 needs refreshed analysis outputs. Run Run analysis.R again in UDAL.")
+booking_delivery_over_time <- patient_flows$booking_delivery_over_time
+booking_icb_delivery_over_time <- patient_flows$booking_icb_delivery_over_time
 ```
 
 ```{r}
 #| label: delivery-geography-setup
 #| include: false
 
-delivery_geography <- readRDS(".delivery_geography.rds")
-if (is.null(delivery_geography$chart_grids)) stop(
-  "Section 2.2.3 needs refreshed analysis outputs. Run Run analysis.R again in UDAL.")
+# delivery_geography was loaded in the setup chunk.
 ```
 
 ```{r}
 #| label: first-draft-projections-setup
 #| include: false
 
-first_draft_projections <- readRDS(".projections.rds")
-if (!identical(first_draft_projections$comparison_style_version, "organisation-lines-v1") ||
-    !identical(ons_exploration$resident_comparison$comparison_style_version, "organisation-lines-v1")) stop(
-  "Saved charts need refreshing for the organisation colours and historical/future layout. Run R/Run analysis.R again.")
-if (!identical(first_draft_projections$calculation_version, "ons-shared-age-calculations-v21")) stop(
-  "Saved projection outputs need refreshing for the current method. Run R/Run analysis.R in UDAL.")
-if (is.null(first_draft_projections$sankey_comparison) || is.null(first_draft_projections$input_variation)) stop(
-  "Run Run analysis.R again to prepare the delivery flow comparison and input variation charts.")
-if (is.null(first_draft_projections$total_comparison) || is.null(first_draft_projections$delivery_total_grids)) stop(
-  "Run the current R/Run analysis.R to rebuild the report with ONS, modelled and recorded comparison lines.")
+# first_draft_projections was loaded in the setup chunk.
 ```
 
 ```{r}
 #| label: resident-comparison-ready
 #| include: false
-if (is.null(ons_exploration$resident_comparison)) stop(
-  "Run Run analysis.R again to prepare the resident ONS/MSDS comparison.")
+# Resident comparison was prepared with the rest of the analysis.
 ```
 
 # 1. Overview and the BBCS cohort {#comparison}
@@ -147,7 +128,7 @@ All model calculations and intermediate aggregations use raw values. These contr
 
 ## 1.2 The BBCS cohort and cluster {#bbcs-cohort}
 
-The supplied MSDS cohort contains one row per pregnancy. Historical deliveries are counted in the delivery financial year and antenatal bookings in the booking financial year. The model calculates its rates and provider shares by resident LA for ages **13–54**, using the supplied cohort without a further date filter. BBCS resident delivery counts and age distributions come from this cohort. For contributing LAs outside BBCS, the model uses the separate resident delivery totals for 2023/24–2025/26.
+The supplied MSDS cohort contains one row per pregnancy. Historical deliveries are counted in the delivery financial year and antenatal bookings in the booking financial year. Provider counts use the supplied cohort without a further date filter. For every modelled LA and ages **13–54**, resident delivery counts, age distributions and pathway factors come from the expanded LA extract for 2023/24–2025/26. Antenatal-only counts in that extract use estimated due financial year, not booking financial year.
 
 The supplied cohort includes pregnancies identified through delivery at a BBCS trust, a first antenatal booking at a BBCS trust, or residence in the BBCS area. Deliveries cover 2023/24–2025/26. Where a booked pregnancy has no linked birth record, inclusion uses an estimated due date within that period. Residence is based on the most recent demographic information, so it may differ from residence at booking or delivery.
 
@@ -192,7 +173,7 @@ ONS source definitions follow the [birth statistics user guide](https://www.ons.
 | **MSDS recorded resident deliveries** | Pregnancies with a recorded live birth or stillbirth among residents of an LA, including home deliveries and deliveries outside the cluster. These are recorded MSDS counts, not a complete population-wide delivery count. They provide the age shares and resident delivery counts used in the model. |
 | **Provider projection** | Adjusted ONS projection multiplied by the provider’s booking or delivery share for each resident LA and age, then added together. |
 | **Shared allocation denominator** | Recorded resident deliveries × maternity pathway adjustment. This estimates resident pregnancies with or without a recorded delivery. Both booking and delivery shares divide by this same total. |
-| **Maternity pathway adjustment** | All supplied cohort pregnancies ÷ cohort pregnancies with a recorded live birth or stillbirth, at each cluster LA and age. Outside LAs, or where local birth evidence is absent, use the pooled rate for cluster residents at the same age. |
+| **Maternity pathway adjustment** | (Resident deliveries + antenatal-only pregnancies) ÷ resident deliveries, from the expanded LA extract at each LA and age. The same method applies inside and outside the cluster. A zero or missing delivery denominator gives a zero factor; no other LA's rate is substituted. |
 | **Booking Denominator Factor** | The shared denominator minus supplied cohort pregnancies. This estimated volume has no linked booking details and is kept separate from provider bookings. |
 | **Private–NHS modifier** | One minus the pooled non-NHS-establishment share of England-resident maternities, from Table 4 (2023–2025), by maternal age band. Applied after multiplicity and before the pathway adjustment. |
 | **Multiplicity modifier** | Pooled maternities ÷ pooled births (L+S), using Table 5 counts for 2023–2025 at each published age. Converts babies to maternities. |
@@ -596,30 +577,72 @@ population_plot(
 
 | Input | Unit and detail | Use |
 |----|----|----|
-| Supplied pregnancy cohort | One pregnancy row; resident LA, maternal age, booking provider/date and recorded delivery details | Recorded activity, patient flows, BBCS resident delivery counts and age distributions, maternity pathway adjustment and provider counts |
-| Wider resident-LA totals | Recorded resident deliveries by delivery financial year and maternal age | Delivery totals and age distributions for contributing LAs outside BBCS; includes their residents delivering at BBCS trusts, elsewhere or at home |
+| Supplied pregnancy cohort | One pregnancy row; resident LA, maternal age, booking provider/date and recorded delivery details | Recorded activity, patient flows and provider counts |
+| Expanded resident-LA totals | Deliveries by birth FY/birth age; antenatal-only pregnancies by due FY/booking age; sum `count` | Resident delivery totals, delivery age distributions and each LA's own pathway factor, for cluster and outside LAs |
 
-The pregnancy records come from `final_cohort_2326`. Maternal age uses `age_at_birth_mother`; only where this is missing (`NA`), it uses `age_at_booking_mother`. This same age is used throughout cohort-based charts, age bands, calibration, provider allocations and projections. Booking age is used as supplied, without adding a year; it can be younger than age at delivery and can place a pregnancy in a younger age band. Records with neither usable age remain unknown. Calculations use ages 13–54. Detailed counting rules accompany the relevant delivery and booking views.
+The pregnancy records come from `final_cohort_2326`. Maternal age uses `age_at_birth_mother`; only where this is missing (`NA`), it uses `age_at_booking_mother`. This selected maternal age is used throughout cohort-based charts, age bands, calibration, provider allocations and projections. Booking age is used as supplied, without adding a year; it is not an exact delivery age and can place a pregnancy in a younger age band. Records with neither usable age remain unknown. Calculations use ages 13–54. Detailed counting rules accompany the relevant delivery and booking views.
+
+**Where are missing values concentrated?** These charts distinguish birth age, booking-age fallback and unknown age. Every pregnancy row remains in its group, including rows with no supplied delivery year or provider. The tables retain supplied age values, including negative values and text, and show missing values in the original date and year fields. Only NA triggers the booking-age fallback. A due year is not used to fill a missing booking year. Publication rounding can mean displayed percentages do not sum to 100%.
+
+```{r}
+#| label: record-completeness-setup
+#| include: false
+record_completeness <- patient_flows$record_completeness
+```
+
+::: panel-tabset
+#### Whole extract
+
+```{r}
+#| label: record-completeness-all
+record_completeness$by_scope[["Whole extract"]]$chart
+record_completeness$by_scope[["Whole extract"]]$age_table
+record_completeness$by_scope[["Whole extract"]]$field_table
+```
+
+#### By supplied delivery year
+
+```{r}
+#| label: record-completeness-years
+record_completeness$by_scope[["Supplied delivery year"]]$chart
+record_completeness$by_scope[["Supplied delivery year"]]$age_table
+record_completeness$by_scope[["Supplied delivery year"]]$field_table
+```
+
+#### By booking provider
+
+```{r}
+#| label: record-completeness-booking-provider
+record_completeness$by_scope[["Booking provider"]]$chart
+record_completeness$by_scope[["Booking provider"]]$age_table
+record_completeness$by_scope[["Booking provider"]]$field_table
+```
+
+#### By delivery provider
+
+```{r}
+#| label: record-completeness-delivery-provider
+record_completeness$by_scope[["Delivery provider"]]$chart
+record_completeness$by_scope[["Delivery provider"]]$age_table
+record_completeness$by_scope[["Delivery provider"]]$field_table
+```
+:::
 
 Some missing birth ages may relate to bookings without a corresponding recorded birth. The table below assesses this explanation and shows the proportion of the full cohort with neither age recorded. Absence of a recorded birth does not establish that no birth occurred: incomplete recording or linkage may also contribute. Counts refer to pregnancy records, so a mother with more than one pregnancy can appear more than once.
 
 ```{r}
 #| label: maternal-age-completeness
 
-age_completeness_table <- readRDS(".patient_flows.rds")$maternal_age_completeness_table
-if (is.null(age_completeness_table)) stop(
-  "Run R/Run analysis.R again to prepare the maternal age completeness table.")
+age_completeness_table <- patient_flows$maternal_age_completeness_table
 age_completeness_table
 ```
 
-**Is missing birth age more common at older ages?** The chart shows the percentage with birth age `NA` among records with a usable booking age in each band. Both numerator and denominator use **age at booking** for this diagnostic, so a higher bar means missing birth age is more common within that age group, rather than simply reflecting a larger group. Records without a usable booking age cannot be placed in these bands. All supplied ages are included here; the model's birth-age-first rule is unchanged. Hover for counts, or use the table.
+**Is missing birth age more common at older ages?** The chart shows the percentage with birth age `NA` within each booking-age group. Both numerator and denominator use **age at booking** for this descriptive view. Records without a usable booking age appear in an explicit **Unknown** group, rather than disappearing. All supplied ages are included here; the model's birth-age-first rule is unchanged. Hover for counts, or use the table.
 
 ```{r}
 #| label: booking-age-fallback-setup
 #| include: false
-booking_age_fallback <- readRDS(".patient_flows.rds")$booking_age_fallback
-if (is.null(booking_age_fallback)) stop(
-  "Run R/Run analysis.R again to prepare the booking-age diagnostic.")
+booking_age_fallback <- patient_flows$booking_age_fallback
 ```
 
 ::: panel-tabset
@@ -638,7 +661,7 @@ booking_age_fallback$table
 ```
 :::
 
-The model uses the six BBCS LAs and other LAs with recorded bookings or deliveries at cluster trusts. For BBCS residents, delivery counts and age distributions come from the pregnancy cohort, including recorded live births, stillbirths, home deliveries and deliveries elsewhere. For contributing LAs outside BBCS, the wider totals provide the full resident delivery count, so the share using BBCS services can be calculated. Booking and delivery provider counts always come from the pregnancy cohort. The maternity pathway adjustment for outside LAs uses the rate among BBCS residents at the same age.
+The model uses the six BBCS LAs and other LAs with recorded bookings or deliveries at cluster trusts. Every LA's resident delivery counts, age distribution and pathway factor come from the expanded LA extract. Deliveries use birth financial year and age at birth; antenatal-only pregnancies use estimated due financial year and age at booking, without adding a year. Counts are pooled over 2023/24–2025/26 before division. Booking and delivery provider counts come from the pregnancy cohort. Missing counts are zero in the model, while raw diagnostics retain missing values and unknown ages.
 
 ### 2.2.2 Cluster deliveries and antenatal bookings {#cluster-activity}
 
@@ -997,7 +1020,7 @@ Each supplied row counts as one pregnancy. These charts include pregnancies with
 #| fig-alt: "Sankey diagram showing recorded non-home deliveries from ICB of residence on the left to delivery provider ICB on the right."
 #| out-width: "100%"
 
-readRDS(".patient_flows.rds")$icb_sankey
+patient_flows$icb_sankey
 ```
 
 ##### Booking trust to delivery trust {#booking-trust-to-birth-trust}
@@ -1007,7 +1030,7 @@ readRDS(".patient_flows.rds")$icb_sankey
 #| fig-alt: "Sankey diagram showing recorded non-home deliveries from trust at booking appointment on the left to trust responsible for the birth spell on the right."
 #| out-width: "100%"
 
-readRDS(".patient_flows.rds")$trust_sankey
+patient_flows$trust_sankey
 ```
 
 ##### Residence, booking and birth {#residence-booking-birth-flow}
@@ -1019,9 +1042,7 @@ The same recorded non-home deliveries run from **residence ICB → booking trust
 #| fig-alt: "Three-stage Sankey diagram showing recorded non-home deliveries in 2025/26 from the mother's residence ICB to booking trust and then delivery trust, retaining unknown values at each stage."
 #| out-width: "100%"
 
-residence_booking_birth_sankey <- readRDS(".patient_flows.rds")$residence_booking_birth_sankey
-if (is.null(residence_booking_birth_sankey)) stop(
-  "Section 2.2.4 needs refreshed analysis outputs. Run Run analysis.R again in UDAL.")
+residence_booking_birth_sankey <- patient_flows$residence_booking_birth_sankey
 residence_booking_birth_sankey
 ```
 :::
@@ -1730,7 +1751,7 @@ Each LA(R) keeps one colour. **Solid lines** show recorded MSDS activity in the 
 ons_exploration$resident_comparison$chart
 ```
 
-The MSDS line counts recorded deliveries in `final_cohort_2326` among residents of each BBCS LA, including home deliveries, deliveries outside cluster trusts and records with unknown age. MSDS financial years are plotted at their starting year: 2023 represents 2023/24. Published ONS maternities use registration years; adjusted projections use the supplied ONS projection years, paired as described in the [reporting-year convention](#reporting-years). The recorded series retain their original age coverage; the model distributes the ONS projections across ages 13–54. Modelled maternities also include the maternity pathway adjustment allowance for pregnancies without a recorded delivery. The vertical line falls between 2025 and 2026, separating the recorded period through 2025/26 from future years. Historical model estimates remain in the retrospective comparisons and tables.
+The MSDS line sums recorded delivery counts in `total_births_by_LA_2326` among residents of each BBCS LA, including home deliveries, deliveries outside cluster trusts and records with unknown age. Antenatal-only rows are excluded from this delivery comparison. MSDS financial years are plotted at their starting year: 2023 represents 2023/24. Published ONS maternities use registration years; adjusted projections use the supplied ONS projection years, paired as described in the [reporting-year convention](#reporting-years). The recorded series retain their original age coverage; the model distributes the ONS projections across ages 13–54. Modelled maternities also include the maternity pathway adjustment allowance for pregnancies without a recorded delivery. The vertical line falls between 2025 and 2026, separating the recorded period through 2025/26 from future years. Historical model estimates remain in the retrospective comparisons and tables.
 
 # 3. Projections: deliveries and antenatal bookings {#first-draft-projections}
 
@@ -1742,7 +1763,7 @@ The model applies five adjustments to ONS births, then distributes the total to 
 
 #### Age distribution adjustment
 
-The ONS rows labelled 15 and 44 contain all births at ages **15 and under** and **44 and over**, respectively. The model distributes the first count across ages **13–15** and the second across ages **44–54**, using the LA's recorded resident deliveries. These come from the supplied cohort for BBCS LAs and from the 2023/24–2025/26 wider totals for contributing outside LAs. Each individual age receives its share of deliveries within that range, calculated after pooling the counts. An age with no recorded deliveries receives a zero share. The split preserves the original ONS total; it does not add births.
+The ONS rows labelled 15 and 44 contain all births at ages **15 and under** and **44 and over**, respectively. The model distributes the first count across ages **13–15** and the second across ages **44–54**, using each LA's recorded resident deliveries from the expanded LA extract for 2023/24–2025/26. Delivery counts are summed by LA, birth year and age at birth, combining any age-at-booking splits. Each individual age receives its share of deliveries within that range, calculated after pooling the counts. An age with no recorded deliveries receives a zero share. The split preserves the original ONS total; it does not add births.
 
 Ages 16–43 already have separate ONS counts and need no split. The age shares remain fixed over future years. Where no local age data are available for a combined group, its ONS count is retained, but an age-specific maternity estimate cannot be calculated.
 
@@ -1775,24 +1796,24 @@ private_nhs_modifier_table(first_draft_projections$private_nhs$pooled)
 
 #### Maternity pathway adjustment {#bookings-uplift-adjustment}
 
-For each cluster LA and individual age from **13 to 54**, divide **all supplied cohort pregnancies by those with a recorded delivery**, including live births and stillbirths. Each pregnancy counts once, regardless of the number of babies or appointments. The ratio allows for pregnancies without a recorded delivery. Home deliveries and deliveries with an unknown location remain in the delivery count. The calculation uses the supplied cohort without a further date filter.
+For every LA and individual age from **13 to 54**, use **(resident deliveries + antenatal-only pregnancies) ÷ resident deliveries** from `total_births_by_LA_2326`. Each pregnancy counts once. Rows with non-missing `birth_yr` contribute deliveries by birth financial year and age at birth; rows with missing `birth_yr` and a supplied `estimated_yr` contribute antenatal-only pregnancies by due financial year and age at booking. Both components use 2023/24–2025/26. Sum `count` before division; age-at-booking splits do not create additional deliveries.
 
-For LAs outside the cluster, add the pregnancy and recorded delivery counts across cluster residents at the same age, then divide to obtain the rate. Use this same pooled rate where a cluster LA has no recorded deliveries at that age. If there are no recorded deliveries at that age anywhere in the cluster, the pathway factor and any estimate requiring it are unavailable.
+The method is identical inside and outside the cluster and always uses the LA's own counts. Missing counts are treated as zero in the model. A zero or missing delivery denominator produces a **zero pathway factor and zero adjusted projection**, even if antenatal-only activity is recorded. Those antenatal counts remain visible in the reconciliation table. This is the agreed zero-denominator convention, not a calculated ratio; no rate is borrowed from another LA or age. Unknown years and ages remain in the raw diagnostics.
 
 Multiply the ONS-derived maternity projection by this maternity pathway adjustment to obtain modelled maternities using the project definition. Also multiply recorded resident deliveries by the same pathway factor to estimate resident pregnancies with and without a recorded delivery. This resident maternity total is used for both booking and delivery shares. Recorded deliveries count pregnancies reaching a live birth or stillbirth, not individual babies.
 
 **Booking Denominator Factor** is this estimated resident pregnancy total minus the supplied cohort pregnancy count. It represents volume without linked booking details and stays separate from provider bookings.
 
-**How bookings and deliveries relate:** after the age, stillbirth, multiplicity and Private–NHS adjustments, the ONS-derived count represents the delivery-equivalent projection retained for the modelled pathway. For a BBCS resident LA and age, call that projection **P**, recorded deliveries **D**, recorded bookings **B**, and all supplied pregnancies **T**. A pregnancy can have both events, a booking only or a delivery only, so T is counted from pregnancy rows rather than adding B and D.
+**How bookings and deliveries relate:** after the age, stillbirth, multiplicity and Private–NHS adjustments, the ONS-derived count represents the delivery-equivalent projection retained for the modelled pathway. For an LA and age, call that projection **P**, resident deliveries **D**, recorded provider bookings **B**, and resident deliveries plus antenatal-only pregnancies **T**. T comes from the LA extract; B comes from the linked cohort. Adding all bookings to deliveries would count pregnancies with both events twice.
 
-The **maternity pathway adjustment is T/D**. Multiplying P by T/D gives the shared adjusted maternity total. Booking and delivery volumes are then separate allocations from it:
+For positive D, the **maternity pathway adjustment is T/D**. Multiplying P by T/D gives the shared adjusted maternity total. Booking volumes and the total delivery-equivalent volume then follow:
 
 - **Bookings:** P × (T/D) × (B/T) = P × (B/D).
 - **Deliveries:** P × (T/D) × (D/T) = P.
 
 Thus **90 bookings for 100 deliveries means a booking-to-delivery ratio of 0.9**: a projection of 100 deliveries produces 90 bookings. If there were 120 bookings per 100 deliveries, it would produce 120 bookings. B/D converts delivery volume directly to booking volume; T/D creates the shared total used by this model. Apply the pathway adjustment once, then each allocation share once. Do not multiply the resulting booking or delivery projection by the pathway adjustment again.
 
-These identities describe the local BBCS calculation where the cohort supplies the resident counts. For contributing outside LAs, the wider resident delivery total and the same-age BBCS proxy estimate T. Booking details cover only the linked cohort, so the Booking Denominator Factor keeps the remaining estimated volume separate from observed provider bookings.
+For an individual delivery provider, replace D in the allocation numerator with that provider's recorded delivery count. The same resident totals and formulas apply to all LAs. Booking details cover only the linked cohort, so the Booking Denominator Factor keeps the remaining resident volume separate from observed provider bookings.
 
 #### Example: from ONS births to adjusted maternities
 

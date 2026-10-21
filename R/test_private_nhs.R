@@ -30,10 +30,15 @@ local({
     varied$Home_maternities[rows] <- varied$Elsewhere_maternities[rows] <- varied$Unallocated_place[rows] <- 0
   }
   near(prepare_private_nhs_factors(varied)$pooled$Private_NHS_factor, rep(1-50/1200,9))
+  # Source validity checks now belong to manual QA, not every factor calculation.
+  for (statement in parse("R/QA.R")) if (is.call(statement) &&
+      identical(statement[[1]], as.name("<-")) &&
+      identical(statement[[2]], as.name("qa_private_nhs_source_valid"))) eval(statement)
+  stopifnot(qa_private_nhs_source_valid(actual))
   bad <- actual[-1, ]
-  stopifnot(inherits(try(prepare_private_nhs_factors(bad), silent=TRUE), "try-error"))
+  stopifnot(!qa_private_nhs_source_valid(bad))
   bad <- actual; bad$Non_NHS_maternities[1] <- NA_real_
-  stopifnot(inherits(try(prepare_private_nhs_factors(bad), silent=TRUE), "try-error"))
+  stopifnot(!qa_private_nhs_source_valid(bad))
   # Empty descriptive unknown-age rows must not fail QA for valid model factors.
   no_unknown <- actual
   count_columns <- setdiff(names(actual), c("Year", "Private_NHS_age_band"))
@@ -67,9 +72,9 @@ local({
   stopifnot(eval(private_check))
   private$Private_NHS_factor[1] <- NA_real_
   stopifnot(!eval(private_check))
-  # A missing denominator in a band actually used by the model must still stop.
+  # Manual QA flags a missing denominator in a band used by the model.
   bad <- actual; bad[bad$Private_NHS_age_band == "Under 20", count_columns] <- 0
-  stopifnot(inherits(try(prepare_private_nhs_factors(bad), silent=TRUE), "try-error"))
+  stopifnot(!qa_private_nhs_source_valid(bad))
   # The old scale/allocation tests can set this factor to one explicitly.
   neutral <- actual
   neutral$NHS_maternities <- neutral$NHS_maternities + neutral$Non_NHS_maternities
@@ -82,7 +87,13 @@ local({
     home_birth=0L, resident_icb="QHL", booking_provider="RQ3",
     antenatal_app_date=as.Date(paste0(substr(cells$FY,1,4),"-06-01")))
   resident <- cohort |> dplyr::filter(birth_flag == 1) |>
-    dplyr::count(la_of_mother,age_at_birth_mother,birth_yr,name="count")
+    dplyr::count(la_of_mother,age_at_birth_mother,birth_yr,name="count") |>
+    dplyr::mutate(age_at_booking_mother = NA_real_, estimated_yr = NA_character_)
+  resident <- dplyr::bind_rows(resident,
+    cohort |> dplyr::filter(birth_flag == 0) |>
+      dplyr::count(la_of_mother, age_at_booking_mother = age_at_birth_mother,
+        estimated_yr = birth_yr, name = "count") |>
+      dplyr::mutate(age_at_birth_mother = NA_real_, birth_yr = NA_character_))
   ons <- tidyr::expand_grid(area_code="E08000025",age_group=as.character(15:44),year=2023:2027) |>
     dplyr::mutate(area_name=area_code,projected_births=100)
   counts <- read_national_age_counts()
@@ -96,12 +107,14 @@ local({
   stopifnot(all(zero$Adjusted_maternities == 0), all(zero$Projection_available))
   # No evidence to split either ONS boundary must not borrow a private rate.
   sparse_cohort <- cohort[cohort$age_at_birth_mother %in% 16:43, ]
-  sparse <- build_projection_master(sparse_cohort,resident,ons,counts,start_year=2023,private_nhs_counts=actual)
+  sparse_resident <- resident |>
+    dplyr::filter(dplyr::coalesce(age_at_birth_mother, age_at_booking_mother) %in% 16:43)
+  sparse <- build_projection_master(sparse_cohort,sparse_resident,ons,counts,start_year=2023,private_nhs_counts=actual)
   unsplit <- sparse[is.na(sparse$Age), ]
   stopifnot(nrow(unsplit)==10L, all(is.na(unsplit$Private_NHS_factor)),
-    all(is.na(unsplit$Adjusted_maternities)), all(unsplit$Exact_age_live_births==100))
+    all(unsplit$Adjusted_maternities == 0), all(unsplit$Exact_age_live_births==100))
   zero_ons <- ons; zero_ons$projected_births[zero_ons$age_group %in% c("15","44")] <- 0
-  sparse_zero <- build_projection_master(sparse_cohort,resident,zero_ons,counts,start_year=2023,private_nhs_counts=actual)
+  sparse_zero <- build_projection_master(sparse_cohort,sparse_resident,zero_ons,counts,start_year=2023,private_nhs_counts=actual)
   stopifnot(all(sparse_zero$Adjusted_maternities[is.na(sparse_zero$Age)]==0))
   stopifnot(identical(attr(before,"allocation_tables"),attr(after,"allocation_tables")), identical(actual,saved_actual))
   near(after$Adjusted_maternities,before$Adjusted_maternities * after$Private_NHS_factor)

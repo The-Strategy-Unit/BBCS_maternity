@@ -7,6 +7,11 @@ near(dc_count(c(0, 1:13, 17, 18, 22, 23, NA)),
 near(dc_count(c(0, 0.01, 7.5, 8, 12.49, 12.5)), c(0, 5, 5, 10, 10, 15))
 stopifnot(is.na(dc_ratio(0, 0)), is.na(dc_ratio(1, NA)), identical(dc_ratio(0, 10), 0))
 near(dc_ratio(c(1, 7, 8), c(13, 13, 13)), c(5/15, 5/15, 10/15))
+near(dc_ratio(c(100, 60, 30, 10), 100), c(1, .6, .3, .1))
+near(dc_divide(c(0, 10, NA, 30), 100), c(0, .1, NA, .3))
+near(dc_divide(10, c(100, 0, NA, -1, Inf)), c(.1, NA, NA, NA, NA))
+near(dc_divide(c(10, 20), 0), c(NA, NA))
+stopifnot(identical(dc_divide(numeric(), 100), numeric()))
 
 # Sum raw cells first. A total is not the sum of protected component counts.
 raw <- data.frame(group = c("a", "a"), n = c(1, 1))

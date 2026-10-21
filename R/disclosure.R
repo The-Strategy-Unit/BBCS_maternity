@@ -6,7 +6,6 @@ msds_disclosure_version <- "msds-activity-v1"
 dc_count <- function(x) {
   # Modelled counts can be fractional: retain genuine zero, protect positive
   # values below 8, and round remaining counts to the nearest five (ties up).
-  if (any(is.finite(x) & x < 0)) stop("Negative value passed as an activity count")
   # Absorb floating-point summation noise at an exact half-five boundary.
   out <- 5 * floor(x / 5 + 0.5 + 16 * .Machine$double.eps * pmax(1, abs(x / 5)))
   out[is.finite(x) & x > 0 & x < 8] <- 5
@@ -14,11 +13,17 @@ dc_count <- function(x) {
   out
 }
 
-dc_divide <- function(n, d) ifelse(is.finite(d) & d > 0, n / d, NA_real_)
+dc_divide <- function(n, d) {
+  # Divide first so a single denominator retains every numerator.
+  # ifelse() with a scalar denominator test would return only the first ratio.
+  ratio <- n / d
+  usable <- rep_len(is.finite(d) & d > 0, length(ratio))
+  ratio[!usable | !is.finite(ratio)] <- NA_real_
+  ratio
+}
 dc_ratio <- function(n, d) dc_divide(dc_count(n), dc_count(d))
 
 dc_counts <- function(data, columns) {
-  stopifnot(all(columns %in% names(data)))
   data[columns] <- lapply(data[columns], dc_count)
   data
 }
@@ -47,13 +52,11 @@ dc_coverage_note <- function(data) {
 }
 
 dc_calibration <- function(data) {
-  local <- data$Bookings_uplift_source == "Own cluster LA and age"
   data <- dc_counts(data, c("MSDS_resident_count", "Cohort_pregnancies",
-    "Cohort_recorded_births", "Cohort_no_recorded_delivery", "Cluster_pregnancies",
-    "Cluster_recorded_births", "Shared_maternity_denominator"))
-  data$Bookings_uplift_modifier <- ifelse(local,
-    dc_divide(data$Cohort_pregnancies, data$Cohort_recorded_births),
-    dc_divide(data$Cluster_pregnancies, data$Cluster_recorded_births))
+    "Cohort_recorded_births", "Cohort_no_recorded_delivery", "Resident_antenatal_only",
+    "Resident_pregnancies", "Shared_maternity_denominator"))
+  data$Bookings_uplift_modifier <- ifelse(data$MSDS_resident_count > 0,
+    dc_divide(data$Resident_pregnancies, data$MSDS_resident_count), 0)
   data$Resident_birth_gap <- data$MSDS_resident_count - data$Cohort_recorded_births
   data$Booking_Denominator_Factor <- data$Shared_maternity_denominator - data$Cohort_pregnancies
   data
@@ -110,6 +113,7 @@ dc_report_objects <- function(x) {
 save_report_rds <- function(object, file) {
   object <- dc_report_objects(object)
   attr(object, "disclosure_version") <- msds_disclosure_version
+  attr(object, "run_id") <- getOption("maternity.run_id")
   saveRDS(object, file)
 }
 

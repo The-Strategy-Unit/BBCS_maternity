@@ -1,8 +1,11 @@
-# Run the counting checks when you want to QA a new dataset or changed analysis.
-# Run automatically by Run analysis.R after preparation.
-# This script does not make charts, change inputs or overwrite report outputs.
+# MANUAL QA AND INVESTIGATIONS ==========================================
+# Run only when wanted: source("R/QA.R")
+# Uses the loaded parquet objects and any existing saved report outputs.
+# Does not read Azure, run the analysis, rebuild charts or change the scratch file.
+# Sections print tables in the R console. Saved-output checks use the last run;
+# after changing data, rerun the analysis first if you want to compare its outputs.
 
-# 1. Get the inputs and start a readable list of results.
+# SETUP: loaded inputs, organisation settings and console helpers.
 required_inputs <- c("final_cohort_2326", "total_births_by_LA_2326")
 missing_inputs <- required_inputs[!vapply(required_inputs,
   function(name) exists(name, inherits = TRUE), logical(1))]
@@ -10,9 +13,29 @@ if (length(missing_inputs)) stop("Load the Azure data first. Missing: ",
                                paste(missing_inputs, collapse = ", "), call. = FALSE)
 source("R/ons_data.R")
 source("R/report_cohort.R")
+source("R/disclosure.R")
+# Read only the organisation settings, without executing the analysis.
+for (statement in parse("R/Maternity analysis.R")) {
+  if (is.call(statement) && identical(statement[[1]], as.name("<-")) &&
+      as.character(statement[[2]])[1] %in% c("cluster_icbs", "outcome_columns",
+        "trust_labels", "icb_provider_codes", "provider_icb", "cluster_trusts"))
+    eval(statement)
+}
 qa_years <- c("2023/24", "2024/25", "2025/26")
 qa_results <- data.frame(Check = character(), Result = character(), Details = character())
 qa_details <- list()
+qa_section_start <- 0L
+qa_show_section <- function() {
+  rows <- seq_len(nrow(qa_results))
+  rows <- rows[rows > qa_section_start]
+  if (length(rows)) print(tibble::as_tibble(qa_results[rows, , drop = FALSE]),
+    n = Inf, width = Inf)
+}
+qa_section <- function(label) {
+  qa_show_section()
+  qa_section_start <<- nrow(qa_results)
+  cat("\n", label, "\n", strrep("-", nchar(label)), "\n", sep = "")
+}
 
 # Add one line to the results; problems do not hide the remaining checks.
 qa_check <- function(description, passed, details = "") {
@@ -31,7 +54,37 @@ projection_numbers_match <- function(actual, expected, tolerance = 1e-8) {
     numbers_match(actual[!is.na(actual)], expected[!is.na(expected)], tolerance)
 }
 
-# 2. Check the source pregnancy records and LA totals.
+qa_private_nhs_source_valid <- function(counts) {
+  bands <- c("Under 20", "20-24", "25-29", "30-34", "35-39", "40-44", "45+")
+  expected <- tidyr::expand_grid(Year = 2023:2025,
+    Private_NHS_age_band = c(bands, "Unknown (derived)", "All ages"))
+  values <- as.matrix(counts[c("Total_maternities", "NHS_maternities", "Non_NHS_maternities",
+    "Home_maternities", "Elsewhere_maternities", "Unallocated_place")])
+  pooled <- tapply(counts$Total_maternities, counts$Private_NHS_age_band, sum)
+  !anyDuplicated(counts[c("Year", "Private_NHS_age_band")]) &&
+    !nrow(dplyr::anti_join(expected, counts, by = c("Year", "Private_NHS_age_band"))) &&
+    !nrow(dplyr::anti_join(counts, expected, by = c("Year", "Private_NHS_age_band"))) &&
+    all(is.finite(values) & values >= 0) &&
+    all(values[, 1] == rowSums(values[, -1, drop = FALSE])) &&
+    all(is.finite(pooled[bands]) & pooled[bands] > 0)
+}
+
+# 1. SOURCE RECORDS, YEARS AND MATERNAL AGES -----------------------------
+qa_section("1. Source records, years and maternal ages")
+final_cohort_2326 |>
+  dplyr::count(birth_yr, birth_flag, name = "Source_rows", .drop = FALSE) |>
+  tibble::as_tibble() |>
+  print(n = Inf, width = Inf)
+total_births_by_LA_2326 |>
+  dplyr::group_by(dplyr::across(dplyr::any_of(c("birth_yr", "estimated_yr"))),
+    .drop = FALSE) |>
+  dplyr::summarise(Source_rows = dplyr::n(), Total_count = sum(count),
+    Missing_counts = sum(is.na(count)), .groups = "drop") |>
+  print(n = Inf, width = Inf)
+qa_check("LA geography lookup has unique sources and complete final targets",
+  !anyDuplicated(report_la_crosswalk$Source_code) &&
+    !anyNA(report_la_crosswalk$Target_code) &&
+    !any(report_la_crosswalk$Target_code %in% report_la_crosswalk$Source_code))
 cohort_records <- final_cohort_2326
 prepared_records <- prepare_report_cohort(cohort_records)
 expected_age <- report_age(cohort_records$age_at_birth_mother)
@@ -39,11 +92,18 @@ fallback_rows <- is.na(cohort_records$age_at_birth_mother)
 expected_age[fallback_rows] <- report_age(cohort_records$age_at_booking_mother[fallback_rows])
 qa_check("Maternal age uses birth age, with booking age only for missing birth age",
   projection_numbers_match(prepared_records$Age, expected_age) &&
-    identical(prepared_records$Age_band, report_age_band(expected_age)),
+    identical(prepared_records$Age_band, report_age_band(prepared_records$Age_value)),
   paste(sum(prepared_records$Age_source == "Booking fallback"), "rows use booking age;",
-    sum(is.na(prepared_records$Age)), "remain unknown/invalid"))
+    sum(is.na(prepared_records$Age_value)), "have neither age supplied"))
 qa_details$maternal_age_source <- prepared_records |>
   dplyr::count(Year, Birth_recorded, Age_source, name = "Pregnancies")
+qa_completeness <- summarise_record_completeness(cohort_records)
+qa_completeness_totals <- qa_completeness$fields |>
+  dplyr::group_by(Scope, Field) |>
+  dplyr::summarise(Rows = sum(N), .groups = "drop")
+qa_check("Completeness tables retain every row, including missing years/providers",
+  all(qa_completeness_totals$Rows == nrow(cohort_records)))
+qa_details$record_completeness <- qa_completeness$fields
 missing_ids <- is.na(cohort_records$person_id_mother) |
   trimws(as.character(cohort_records$person_id_mother)) == "" |
   is.na(cohort_records$uniq_preg_id) | trimws(as.character(cohort_records$uniq_preg_id)) == ""
@@ -66,30 +126,104 @@ qa_check("Recorded deliveries cover all three financial years", !length(missing_
 home_flags <- report_number(recorded_deliveries$home_birth)
 qa_check("Recorded deliveries have home flags of 0 or 1", all(home_flags %in% c(0, 1)),
          paste(sum(!home_flags %in% c(0, 1)), "records have missing or invalid home flags"))
-resident_records <- total_births_by_LA_2326 |>
-  dplyr::mutate(LA = report_la_code(la_of_mother), Age = report_age(age_at_birth_mother)) |>
-  dplyr::filter(LA %in% prepared_records$LA, !LA %in% read_area_config()$area_code,
-    as.character(birth_yr) %in% qa_years)
-if (file.exists(".projections.rds")) {
-  used_residents <- readRDS(".projections.rds")$allocation_tables$residents
-  resident_records <- dplyr::semi_join(resident_records, used_residents, by = c("LA", "Age"))
-}
+# Inspect the WHOLE expanded LA extract, including antenatal-only/unknown years.
+resident_records <- total_births_by_LA_2326
 resident_counts <- report_number(resident_records$count)
 valid_resident_counts <- is.finite(resident_counts) & resident_counts >= 0 &
   resident_counts == floor(resident_counts)
 qa_check("Resident LA counts are nonnegative whole numbers", all(valid_resident_counts),
          paste(sum(!valid_resident_counts), "invalid counts"))
-repeated_resident_cells <- duplicated(resident_records[
-  c("birth_yr", "la_of_mother", "age_at_birth_mother")])
-qa_check("Resident totals have one row per LA, age and year", !any(repeated_resident_cells),
-         paste(sum(repeated_resident_cells), "repeated LA/age/year rows"))
+resident_cell_columns <- intersect(c("birth_yr", "estimated_yr", "la_of_mother",
+  "age_at_birth_mother", "age_at_booking_mother"), names(resident_records))
+repeated_resident_cells <- duplicated(resident_records[resident_cell_columns])
+qa_check("Resident totals have one row per supplied LA/year/birth-age/booking-age combination",
+  !any(repeated_resident_cells),
+  paste(sum(repeated_resident_cells), "repeated complete source cells"))
+qa_la_deliveries <- prepare_la_deliveries(resident_records)
+qa_la_antenatal <- prepare_la_antenatal_only(resident_records)
+cat("\nLA deliveries after combining booking-age splits (all birth ages retained)\n")
+qa_la_deliveries |>
+  dplyr::group_by(birth_yr, .drop = FALSE) |>
+  dplyr::summarise(Deliveries = sum(count),
+    Unknown_age_count = sum(count[is.na(age_at_birth_mother)]),
+    Missing_count_cells = sum(is.na(count)), .groups = "drop") |>
+  print(n = Inf, width = Inf)
+cat("\nLA antenatal-only pregnancies by DUE FY (not booking FY)\n")
+qa_la_antenatal |>
+  dplyr::group_by(estimated_yr, .drop = FALSE) |>
+  dplyr::summarise(Antenatal_only_count = sum(count),
+    Unknown_age_count = sum(count[is.na(age_at_booking_mother)]),
+    Missing_count_cells = sum(is.na(count)), .groups = "drop") |>
+  print(n = Inf, width = Inf)
+cat("\nLA records without either year\n")
+resident_records |>
+  dplyr::filter(is.na(birth_yr), is.na(estimated_yr)) |>
+  dplyr::summarise(Source_rows = dplyr::n(), Total_count = sum(count),
+    Missing_count_rows = sum(is.na(count))) |>
+  print(width = Inf)
+qa_check("Combining booking-age splits preserves the LA delivery total",
+  isTRUE(all.equal(sum(qa_la_deliveries$count),
+    sum(resident_records$count[!is.na(resident_records$birth_yr)]))))
+qa_check("Prepared antenatal-only totals preserve source counts",
+  isTRUE(all.equal(sum(qa_la_antenatal$count),
+    sum(resident_records$count[is.na(resident_records$birth_yr) &
+      !is.na(resident_records$estimated_yr)]))))
+qa_check("One denominator returns a separate percentage for every numerator",
+  numbers_match(dc_ratio(c(100, 60, 30, 10), 100), c(1, .6, .3, .1)))
 
-# 3. Check the public ONS data covers the selected areas and years.
+# 2. ONS SOURCES AND COVERAGE -------------------------------------------
+qa_section("2. ONS sources and coverage")
 area_settings <- read_area_config()
 age_settings <- read_analysis_parameters()
 ons_births <- read_snpp_births()
 female_population <- read_female_population_single_age()
 historic_births <- read_historic_live_births()
+qa_check("Historic births have mapped age categories", !anyNA(historic_births$age_band))
+qa_registration <- read_national_age_counts()
+qa_expected_registration <- tidyr::expand_grid(year = 2023:2025,
+  age = c("<14", as.character(14:49), "50+", "Unknown"))
+qa_check("Table 5 has each expected year and age once",
+  !anyDuplicated(qa_registration[c("year", "age")]) &&
+    !nrow(dplyr::anti_join(qa_expected_registration, qa_registration, by = c("year", "age"))) &&
+    !nrow(dplyr::anti_join(qa_registration, qa_expected_registration, by = c("year", "age"))))
+qa_registration_values <- as.matrix(qa_registration[c("maternities", "live_births", "stillbirths")])
+qa_check("Table 5 counts are complete, finite and nonnegative",
+  all(is.finite(qa_registration_values) & qa_registration_values >= 0))
+qa_private <- read_private_nhs_counts()
+qa_check("Table 4 source cells and denominators reconcile", qa_private_nhs_source_valid(qa_private))
+# Inspect source Table 4 cells before the reader combines its oldest age groups.
+for (qa_year in 2023:2025) {
+  qa_table4 <- read_registration_table(file.path("data",
+    paste0(qa_year, "birthregistrations.xlsx")), "Table_4") |>
+    dplyr::filter(country == "England", number_of_previous_live_born_children %in%
+      c("Any number", "Any number of previous live-born children"))
+  qa_age_groups <- if (qa_year == 2025L) c("All ages", "Under 20", "20 to 24", "25 to 29",
+    "30 to 34", "35 to 39", "40 to 44", "45 to 49", "50 and over") else
+    c("All ages", "Under 20", "20 to 24", "25 to 29", "30 to 34", "35 to 39", "40 to 44", "45 and over")
+  qa_expected4 <- tidyr::expand_grid(age_of_mother_at_birth_years = qa_age_groups,
+    place_of_birth = c("Any place of birth", "NHS establishments", "Non-NHS establishments", "At home", "Elsewhere"))
+  qa_keys4 <- c("age_of_mother_at_birth_years", "place_of_birth")
+  qa_values4 <- as.numeric(qa_table4[[intersect(c("maternities", "number_of_maternities"), names(qa_table4))]])
+  qa_check(paste("Table 4 raw cells are complete and unique:", qa_year),
+    !anyDuplicated(qa_table4[qa_keys4]) &&
+      !nrow(dplyr::anti_join(qa_expected4, qa_table4, by = qa_keys4)) &&
+      !nrow(dplyr::anti_join(qa_table4, qa_expected4, by = qa_keys4)) &&
+      all(is.finite(qa_values4) & qa_values4 >= 0 & qa_values4 == floor(qa_values4)))
+}
+for (qa_sheet in c("Table_8", "Table_10")) {
+  qa_history <- read_registration_table("data/2025birthregistrations.xlsx", qa_sheet)
+  if (qa_sheet == "Table_8") {
+    qa_history <- qa_history |> dplyr::filter(year >= 2018,
+      age_of_mother_at_birth_years %in% c("40 to 44", "45 and over"))
+    qa_keys <- c("year", "age_of_mother_at_birth_years")
+  } else {
+    qa_history <- qa_history |> dplyr::filter(parent == "Mother",
+      country == "England, Wales and Elsewhere", year >= 2013,
+      age_group_years %in% c("40 to 44", "45 and over", "40 and over"))
+    qa_keys <- c("year", "age_group_years")
+  }
+  qa_check(paste(qa_sheet, "age-review source cells are unique"), !anyDuplicated(qa_history[qa_keys]))
+}
 qa_check("Configured LA codes and names are unique",
   !anyDuplicated(area_settings$area_code) && !anyDuplicated(area_settings$area_name))
 qa_check("ONS birth cells are unique and have valid counts",
@@ -131,7 +265,8 @@ qa_check("Historic age-band births add up to published totals",
   nrow(historic_age_totals) > 0 && !anyNA(historic_age_totals$Published) &&
     numbers_match(historic_age_totals$Age_total, historic_age_totals$Published))
 
-# 4. Check MSDS exploration views, using the saved calculations rather than remaking charts.
+# 3. BOOKINGS, DELIVERIES AND PATHWAY TOTALS ----------------------------
+qa_section("3. Bookings, deliveries and pathway totals")
 if (file.exists(".patient_flows.rds")) {
   patient_flows <- readRDS(".patient_flows.rds")
   counted_episodes <- patient_flows$activity_episodes
@@ -328,7 +463,8 @@ if (file.exists(".patient_flows.rds")) {
   qa_check("MSDS exploration views have saved outputs available", FALSE, "Run R/Run analysis.R first")
 }
 
-# 5. Check section 2.2.3's destination flows and hospital counts.
+# 4. DELIVERY GEOGRAPHY AND SANKEY TOTALS -------------------------------
+qa_section("4. Delivery geography and Sankey totals")
 if (file.exists(".delivery_geography.rds")) {
   delivery_mapping <- readRDS(".delivery_geography.rds")
   delivery_records <- delivery_mapping$episodes
@@ -418,11 +554,12 @@ if (file.exists(".delivery_geography.rds")) {
   qa_check("Section 2.2.3 has saved outputs available", FALSE, "Run R/Run analysis.R first")
 }
 
-# 6. Check the master and both independent destination allocations.
+# 5. PROJECTION FACTORS AND ALLOCATIONS ---------------------------------
+qa_section("5. Projection factors and allocations")
 if (file.exists(".projections.rds")) {
   projections <- readRDS(".projections.rds")
   qa_check("Projection outputs use the current five-modifier method",
-    identical(projections$calculation_version, "ons-shared-age-calculations-v21"))
+    identical(projections$calculation_version, "ons-shared-age-calculations-v22"))
   flows <- projections$sankey_comparison
   qa_check("Delivery Sankey recorded flows match the observed cluster total",
     !is.null(flows) && numbers_match(sum(flows$flows$Observed),
@@ -434,6 +571,24 @@ if (file.exists(".projections.rds")) {
   for (base in list(projections, projections$backtest$baseline)) {
     m <- base$master
     label <- paste("Reference", base$baseline_fy)
+    qa_ons_cells <- unique(m[c("LA", "ONS_age", "Year", "ONS_live_births")])
+    qa_ons_expected <- tidyr::expand_grid(LA = unique(m$LA), ONS_age = 15:44,
+      Year = seq(min(m$Year), max(m$Year)))
+    qa_check(paste(label, "ONS projection cells are complete, unique and nonnegative"),
+      !anyDuplicated(qa_ons_cells[c("LA", "ONS_age", "Year")]) &&
+        !nrow(dplyr::anti_join(qa_ons_expected, qa_ons_cells, by = c("LA", "ONS_age", "Year"))) &&
+        all(is.finite(qa_ons_cells$ONS_live_births) & qa_ons_cells$ONS_live_births >= 0))
+    qa_check(paste(label, "master uses the expected version and reference period"),
+      identical(attr(m, "calculation_version"), "ons-shared-age-calculations-v22") &&
+        all(m$Baseline_FY == base$baseline_fy) &&
+        all(m$ONS_reference_year == as.integer(substr(base$baseline_fy, 1, 4))))
+    for (rates in list(base$allocation_tables$delivery, base$allocation_tables$booking)) {
+      qa_check(paste(label, "allocation shares use the shared resident denominator"),
+        isTRUE(all.equal(rates$Proportion, rates$Count / rates$Shared_maternity_denominator,
+          tolerance = 1e-10)))
+      qa_check(paste(label, "destination column labels are unique"),
+        !anyDuplicated(make.names(unique(as.character(rates$Destination)))))
+    }
     la_matching <- base$la_source_matching
     la_mismatches <- la_matching[la_matching$Issue != "", ]
     qa_details[[paste(label, "LA source matching")]] <- la_matching
@@ -477,6 +632,7 @@ if (file.exists(".projections.rds")) {
       projection_numbers_match(m$Maternities_after_private, m$Maternities_before_private * m$Private_NHS_factor))
     expected_adjusted <- m$Maternities_after_private * m$Bookings_uplift_modifier
     expected_adjusted[m$Exact_age_live_births == 0] <- 0
+    expected_adjusted[m$Bookings_uplift_modifier == 0] <- 0
     qa_check(paste(label, "all five modifiers feed the adjusted maternity total"),
       projection_numbers_match(m$Adjusted_maternities, expected_adjusted))
     missing_uplift <- unique(m[!m$Projection_available, c("LA", "Age", "ONS_age")])
@@ -500,9 +656,11 @@ if (file.exists(".projections.rds")) {
     qa_check(paste(label, "recorded births plus no-delivery allowance equals shared denominator"),
       numbers_match(valid_calibration$MSDS_resident_count + valid_calibration$Estimated_no_recorded_delivery,
         valid_calibration$Shared_maternity_denominator))
-    outside <- calibration[!calibration$LA %in% base$allocation_tables$cluster_resident_las, ]
-    qa_check(paste(label, "outside LAs use the same-age cluster uplift"),
-      projection_numbers_match(outside$Bookings_uplift_modifier, outside$Cluster_bookings_uplift))
+    qa_check(paste(label, "every LA uses its own deliveries and antenatal-only counts"),
+      projection_numbers_match(calibration$Bookings_uplift_modifier,
+        ifelse(calibration$MSDS_resident_count > 0,
+          (calibration$MSDS_resident_count + calibration$Resident_antenatal_only) /
+            calibration$MSDS_resident_count, 0)))
     split_check <- m |> dplyr::group_by(Source_cell_id) |>
       dplyr::summarise(Source = dplyr::first(ONS_live_births), Split = sum(Exact_age_live_births), .groups = "drop")
     qa_check(paste(label, "age split preserves each ONS births (L) total"),
@@ -667,8 +825,9 @@ if (file.exists(".projections.rds")) {
   qa_check("Section 3 has saved outputs available", FALSE, "Run Run analysis.R first")
 }
 
-# Reconcile sections that claim to describe the same delivery activity.
+# 6. TOTALS ACROSS REPORT SECTIONS --------------------------------------
 # Booking-year pathway starts deliberately use a different denominator.
+qa_section("6. Totals across report sections")
 if (all(file.exists(c(".patient_flows.rds", ".delivery_geography.rds", ".projections.rds")))) {
   section9_totals <- delivery_mapping$hospital_mapping |>
     dplyr::group_by(Key, Year) |>
@@ -703,7 +862,30 @@ if (all(file.exists(c(".patient_flows.rds", ".delivery_geography.rds", ".project
 
 }
 
-# 7. Show only items needing attention; keep the complete results for inspection.
+# 7. Saved-output metadata and the optional rendered-HTML audit.
+qa_section("7. Saved report and HTML checks")
+if (file.exists(".analysis_run.rds")) {
+  qa_run <- readRDS(".analysis_run.rds")
+  for (path in intersect(qa_run$output_files,
+      c(".ons_exploration.rds", ".patient_flows.rds", ".delivery_geography.rds", ".projections.rds"))) {
+    qa_check(paste("Saved output exists:", path), file.exists(path))
+    if (!file.exists(path)) next
+    output <- readRDS(path)
+    qa_check(paste("Saved output belongs to the last run:", path),
+      identical(attr(output, "run_id"), qa_run$run_id))
+    qa_check(paste("Saved output uses current disclosure controls:", path),
+      identical(attr(output, "disclosure_version"), msds_disclosure_version))
+  }
+} else cat("No saved run metadata; run the analysis to enable saved-report checks.\n")
+if (file.exists("_site/index.html")) {
+  html_audit <- tryCatch(audit_disclosure_html("_site/index.html"), error = function(e) e)
+  qa_check("Rendered HTML passes the disclosure audit", !inherits(html_audit, "error"),
+    if (inherits(html_audit, "error")) conditionMessage(html_audit) else "")
+} else cat("No rendered report; HTML checks skipped.\n")
+qa_show_section()
+
+# 8. Console summary and a short index of investigation tables.
+cat("\n8. Summary and investigation tables\n")
 qa_issues <- qa_results[qa_results$Result == "Check", , drop = FALSE]
 qa_issues$Check <- sub("^Reference [0-9]{4}/[0-9]{2} ", "", qa_issues$Check)
 qa_issues <- unique(qa_issues)
@@ -713,4 +895,12 @@ for (i in seq_len(nrow(qa_issues))) {
   message("- ", qa_issues$Check[i],
     if (nzchar(qa_issues$Details[i])) paste0(": ", qa_issues$Details[i]) else "")
 }
-if (nrow(qa_issues)) message("Full details are saved in qa_details; repeated projection years are not listed here.")
+if (length(qa_details)) print(data.frame(
+  Table = names(qa_details),
+  Rows = vapply(qa_details, function(x) if (is.data.frame(x)) nrow(x) else NA_integer_, integer(1))),
+  row.names = FALSE)
+message('Inspect a table with qa_details[["table name"]]. No QA files or report outputs were written.')
+# Optional code regression tests remain separate from both this script and the runner.
+# Run one explicitly when changing that calculation, e.g.:
+# source("R/test_projection_scale.R")
+# source("R/test_disclosure.R")

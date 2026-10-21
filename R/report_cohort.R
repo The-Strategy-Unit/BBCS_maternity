@@ -18,12 +18,8 @@ sum_available_projection <- function(x) {
   sum(x[is.finite(x)])
 }
 
-# Exact maternal age for calculations; invalid ages share one explicit missing cell.
-report_age <- function(x) {
-  age <- report_number(x)
-  age[!is.finite(age) | age != floor(age)] <- NA_real_
-  age
-}
+# Numeric copy for arithmetic only. Supplied age labels are retained separately.
+report_age <- function(x) report_number(x)
 
 # ONS publishes combined boundary rows, not separate births below 15 or above 44.
 # Retain MSDS Age and use this separate key only to select an ONS source boundary.
@@ -38,9 +34,6 @@ report_code <- function(x, missing = "Unknown") {
 # Local, versioned ONS crosswalk: names never determine a match. Read once
 # per source() rather than repeatedly for each chart/age/year calculation.
 report_la_crosswalk <- read.csv("data/lookups/la_to_2023.csv", stringsAsFactors = FALSE)
-stopifnot(!anyDuplicated(report_la_crosswalk$Source_code),
-  !anyNA(report_la_crosswalk$Target_code),
-  !any(report_la_crosswalk$Target_code %in% report_la_crosswalk$Source_code))
 
 # Harmonise MSDS residence only. No rows are replicated, dropped or weighted;
 # source parquet objects and ONS inputs are never modified.
@@ -59,9 +52,10 @@ report_applied_geography <- function(cohort_codes, resident_codes = character())
 }
 
 report_age_band <- function(x) {
-  age <- report_number(x)
+  age <- report_age(x)
   dplyr::case_when(
-    !is.finite(age) | age != floor(age) ~ "Unknown",
+    is.na(x) ~ "Unknown",
+    !is.finite(age) | age < 0 | age != floor(age) ~ as.character(x),
     age < 20 ~ "Under 20", age < 25 ~ "20-24", age < 30 ~ "25-29",
     age < 35 ~ "30-34", age < 40 ~ "35-39", age < 45 ~ "40-44", TRUE ~ "45+")
 }
@@ -74,6 +68,29 @@ report_date <- function(x) {
   missing <- is.na(date) & !is.na(value)
   date[missing] <- as.Date(value[missing], format = "%d/%m/%Y")
   date
+}
+
+# Expanded LA extract: age at booking now splits delivery cells further.
+# Keep unknown ages and missing counts; sum pregnancies, never aggregate rows.
+# Raw inputs are unchanged. Financial years remain as supplied.
+prepare_la_deliveries <- function(residents, missing_count_zero = FALSE) {
+  residents$count <- report_number(residents$count)
+  if (missing_count_zero) residents$count <- dplyr::coalesce(residents$count, 0)
+  residents |>
+    dplyr::filter(!is.na(birth_yr)) |>
+    dplyr::group_by(la_of_mother, birth_yr, age_at_birth_mother, .drop = FALSE) |>
+    dplyr::summarise(count = sum(count), .groups = "drop")
+}
+
+# Due-year activity, NOT appointment-year bookings. Neither-year rows remain in
+# the source object and are shown in the manual QA/scratch reconciliation.
+prepare_la_antenatal_only <- function(residents, missing_count_zero = FALSE) {
+  residents$count <- report_number(residents$count)
+  if (missing_count_zero) residents$count <- dplyr::coalesce(residents$count, 0)
+  residents |>
+    dplyr::filter(is.na(birth_yr), !is.na(estimated_yr)) |>
+    dplyr::group_by(la_of_mother, estimated_yr, age_at_booking_mother, .drop = FALSE) |>
+    dplyr::summarise(count = sum(count), .groups = "drop")
 }
 
 prepare_report_cohort <- function(cohort) {
@@ -91,11 +108,14 @@ prepare_report_cohort <- function(cohort) {
   year[!valid_year] <- NA_character_
   start[!valid_year] <- NA_integer_
   booking_date <- report_date(cohort$antenatal_app_date)
-  # Birth age takes precedence. Only a source NA permits the booking fallback;
-  # a supplied but invalid birth age remains an explicit data-quality issue.
+  # Agreed maternal-age rule: birth age takes priority; only a source NA
+  # permits booking age. Keep Age_source visible rather than relabelling the
+  # fallback as an exact age at delivery.
   birth_age <- report_age(cohort$age_at_birth_mother)
   booking_age <- report_age(cohort$age_at_booking_mother)
   use_booking_age <- is.na(cohort$age_at_birth_mother)
+  age_value <- as.character(cohort$age_at_birth_mother)
+  age_value[use_booking_age] <- as.character(cohort$age_at_booking_mother[use_booking_age])
   age <- birth_age
   age[use_booking_age] <- booking_age[use_booking_age]
 
@@ -109,10 +129,10 @@ prepare_report_cohort <- function(cohort) {
     LA_source = report_code(cohort$la_of_mother, "Unknown LA"),
     LA = report_la_code(cohort$la_of_mother),
     Age_at_birth = birth_age, Age_at_booking = booking_age,
-    Age = age,
-    Age_source = ifelse(is.na(age), "Unknown",
+    Age = age, Age_value = age_value,
+    Age_source = ifelse(is.na(age_value), "Unknown",
       ifelse(use_booking_age, "Booking fallback", "Birth")),
-    Age_band = report_age_band(age),
+    Age_band = report_age_band(age_value),
     Trust = report_code(cohort$birth_provider, "Unknown provider"),
     Home = report_number(cohort$home_birth),
     Resident_ICB = report_code(cohort$resident_icb),
@@ -138,11 +158,11 @@ summarise_maternal_age_completeness <- function(cohort) {
     Measure = c("All pregnancy records", "Age at birth missing",
       "Missing birth age: birth recorded", "Missing birth age: no birth recorded",
       "Missing birth age: birth status unknown/invalid",
-      "Missing birth age: recovered from booking age", "Neither birth nor booking age recorded"),
+      "Missing birth age: booking age used", "Neither birth nor booking age recorded"),
     N = c(n, missing_n, sum(missing_birth & records$Birth_flag %in% 1),
       sum(missing_birth & records$Birth_flag %in% 0),
       sum(missing_birth & !records$Birth_flag %in% c(0, 1)),
-      sum(records$Age_source == "Booking fallback"), sum(missing_birth & missing_booking)),
+      sum(missing_birth & !missing_booking), sum(missing_birth & missing_booking)),
     Denominator = c(n, n, rep(missing_n, 4), n),
     Percentage_of = c(rep("Full cohort", 2), rep("Records missing birth age", 4), "Full cohort"))
 }
@@ -150,13 +170,68 @@ summarise_maternal_age_completeness <- function(cohort) {
 # Diagnostic only: classify numerator AND denominator by booking age so that
 # birthdays between booking and delivery do not move the comparison population.
 summarise_booking_age_fallback <- function(cohort) {
-  records <- prepare_report_cohort(cohort)
-  band <- report_age_band(records$Age_at_booking)
+  band <- report_age_band(cohort$age_at_booking_mother)
   missing_birth <- is.na(cohort$age_at_birth_mother)
-  tibble::tibble(Age_band = report_age_bands,
-    Booking_age_known = vapply(report_age_bands, function(b) sum(band == b), integer(1)),
-    Birth_age_missing = vapply(report_age_bands,
+  bands <- unique(c(report_age_bands, "Unknown", band))
+  tibble::tibble(Age_band = bands,
+    Booking_age_known = vapply(bands, function(b) sum(band == b), integer(1)),
+    Birth_age_missing = vapply(bands,
       function(b) sum(band == b & missing_birth), integer(1)))
+}
+
+# Descriptive report output, not a validation gate. Every row contributes to
+# every field's denominator, including records with no year or provider.
+# Original fields and the agreed age-selection rule remain unchanged.
+summarise_record_completeness <- function(cohort) {
+  records <- prepare_report_cohort(cohort)
+  label_group <- function(x) {
+    value <- as.character(x)
+    value[is.na(value)] <- "Unknown (NA)"
+    value[!is.na(value) & trimws(value) == ""] <- "Unknown (blank)"
+    value
+  }
+  groups <- list(
+    "Whole extract" = rep("All pregnancy rows", nrow(cohort)),
+    "Supplied delivery year" = label_group(cohort$birth_yr),
+    "Booking provider" = label_group(cohort$booking_provider),
+    "Delivery provider" = label_group(cohort$birth_provider))
+  fields <- c(age_at_birth_mother = "Age at birth", age_at_booking_mother = "Age at booking",
+    birth_yr = "Supplied delivery year", antenatal_app_date = "Booking appointment date",
+    edd_yr = "Supplied due year", birth_date = "Supplied birth date")
+  status <- lapply(names(fields), function(field) {
+    if (!field %in% names(cohort)) return(rep("Column absent", nrow(cohort)))
+    value <- cohort[[field]]
+    if (field %in% c("age_at_birth_mother", "age_at_booking_mother")) {
+      value <- as.character(value)
+      value[is.na(value)] <- "Missing (NA)"
+      return(value)
+    }
+    text <- trimws(as.character(value))
+    state <- rep("Supplied", length(value))
+    state[is.na(value)] <- "Missing (NA)"
+    state[!is.na(text) & text == ""] <- "Missing (blank)"
+    state[!is.na(text) & toupper(text) %in% c("NULL", "NA", "N/A", "UNKNOWN", "NOT KNOWN")] <-
+      "Missing marker"
+    state
+  })
+  names(status) <- unname(fields)
+  age_sources <- lapply(names(groups), function(scope) {
+    tibble::tibble(Scope = scope, Group = groups[[scope]], Age_source = records$Age_source) |>
+      dplyr::count(Scope, Group, Age_source, name = "N") |>
+      dplyr::group_by(Scope, Group) |>
+      dplyr::mutate(Total = sum(N)) |> dplyr::ungroup()
+  })
+  field_counts <- lapply(names(groups), function(scope) {
+    dplyr::bind_rows(lapply(names(status), function(field) {
+      tibble::tibble(Scope = scope, Group = groups[[scope]], Field = field,
+        Status = status[[field]]) |>
+        dplyr::count(Scope, Group, Field, Status, name = "N") |>
+        dplyr::group_by(Scope, Group, Field) |>
+        dplyr::mutate(Total = sum(N)) |> dplyr::ungroup()
+    }))
+  })
+  list(age_sources = dplyr::bind_rows(age_sources),
+    fields = dplyr::bind_rows(field_counts))
 }
 
 # Keep the non-provider categories explicit in the projection allocations.

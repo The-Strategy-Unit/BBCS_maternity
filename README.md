@@ -14,23 +14,25 @@ Run this command in the secure environment:
 source("R/Run analysis.R")
 ```
 
-The command reads Sarah's prepared parquet inputs, prepares the analysis, runs
-QA, renders `_site/index.html` and opens the finished report in the configured
-browser. Reading and analysis run in the current
-RStudio session, keeping its existing Azure setup. The command replaces the
+The command prepares the analysis, renders `_site/index.html` and opens the
+finished report. It reuses Sarah's parquet objects already loaded in the current
+RStudio session. If an input is missing, it reads the parquets once using the
+existing Azure setup. It does not run QA, regression tests or the HTML audit.
+To reload changed extracts explicitly, run `run_maternity_project(refresh_data = TRUE)`
+after loading the run script, or run Sarah's parquet reader before your next analysis.
+There is no automatic source-change detection. The command replaces the
 previous outputs. If preparation fails, partial outputs are removed. If rendering
 fails, the prepared results are retained and the error is saved in `render.log`.
 After fixing the reported error, retry rendering without reading the data again:
 `system2(Sys.which("quarto"), c("render", "index.qmd"))`.
 Rendering uses a temporary folder to avoid clashes with an editor render.
 A preview opened during preparation waits for that run to finish.
-The console shows a short QA summary, counts of items requiring review, and
-the finished report path; no separate QA script is needed.
+The console reports data loading/reuse, analysis preparation and rendering progress.
 
 The completed `projection_master`, `projection_master_backtest`, `ons_modifications`,
 `delivery_proportions`, `booking_proportions`, `booking_modifications`, column dictionary,
-`qa_results` and `qa_details` are returned to the RStudio session for inspection.
-Check `subset(qa_results, Result == "Check")` before using real results.
+`private_nhs_modifications` are returned to the RStudio session for inspection.
+QA is a separate, explicit command: `source("R/QA.R")`.
 The runner requires the existing Azure access and packages in the secure
 environment. The project requires R and Quarto on the PATH. Main analysis packages:
 
@@ -44,7 +46,7 @@ install.packages(c("dplyr", "tidyr", "readr", "readxl", "janitor", "purrr",
 
 The final report follows the [MSDS activity reporting rules](https://digital.nhs.uk/data-and-information/publications/statistical/maternity-services-monthly-statistics/final-june-2026-provisional-july-2026#publication-data-files-and-suppression-methodology): zero stays zero, counts 1–7 become 5, and other counts round to the nearest 5. Percentages use the controlled numerator and denominator. Positive fractional model outputs below 8 also become 5; exact half-five ties round upwards. Missing estimates stay missing. ONS-only figures are unchanged.
 
-`R/disclosure.R` applies these rules to publication copies after each final aggregation. The master, calibration and internal reconciliation data retain raw precision. Independently controlled totals may differ from sums of displayed components. Plotly construction data is removed before embedding; the runner checks the finished HTML before copying it to `_site/index.html`. Old prepared outputs cannot render with the new template: rerun the analysis once after updating. The HTML is the report artifact; the intermediate RDS files and RStudio inspection objects retain raw data and are not part of it.
+`R/disclosure.R` applies these rules to publication copies after each final aggregation. The master, calibration and internal reconciliation data retain raw precision. Independently controlled totals may differ from sums of displayed components. Plotly construction data is removed before embedding; the manual `R/QA.R` workflow checks the finished HTML when requested. Rerun the analysis after changing chart preparation code. The HTML is the report artifact; the intermediate RDS files and RStudio inspection objects retain raw data and are not part of it.
 
 Regression checks: `Rscript R/test_disclosure.R` and `Rscript R/test_projection_scale.R`.
 
@@ -53,13 +55,14 @@ Regression checks: `Rscript R/test_disclosure.R` and `Rscript R/test_projection_
 | File | Purpose |
 |---|---|
 | `R/Maternity analysis.R` | Main editing file: general settings/labels, ONS exploration, MSDS exploration, projection model, charts and tables. |
-| `R/Run analysis.R` | Single run script: replace previous outputs, read secure data, analyse, check, render and return the completed objects to RStudio. |
-| `R/Read parquet files from azure.R` | Sarah's unchanged Azure reader, run first on every analysis run. |
+| `R/Run analysis.R` | Single run script: reuse loaded data (or explicitly refresh), analyse, render and return the completed objects to RStudio. |
+| `R/Read parquet files from azure.R` | Sarah's Azure reader; run on first use or when explicitly refreshing extracts. |
 | `R/matrix of booking appts and births.R` | Sarah's original standalone matrix tables. Retained for separate use; the report builds its tables in the main analysis. |
 | `R/ons_data.R` | Shared public-source readers and ONS chart/table functions. |
 | `R/report_cohort.R` | Shared pregnancy-counting and field definitions. |
 | `R/age_boundary_review.R` | Shared descriptive age-review functions. |
-| `R/QA.R` | Existing count/reconciliation checks, run automatically by the launcher. |
+| `R/QA.R` | Manual source checks, reconciliation and HTML audit; prints labelled console sections when sourced explicitly. |
+| `R/HH scratch area.R` | Latest direct-source diagnostic chunks at the top; older investigations retained underneath. Run selected chunks in the secure R console. |
 | `index.qmd` | Existing report text, tabs and display chunks. Reads prepared ONS/MSDS outputs. |
 
 The former activity, delivery-geography, projection-master and projection-chart
@@ -181,32 +184,55 @@ Calculation steps:
 3. Apply pooled M/(L+S) from the same national counts.
 4. Apply the Private–NHS modifier: 1 minus pooled 2023–2025 England Table 4
    non-NHS maternities / all maternities, within each available age band.
-5. Apply the maternity pathway adjustment: all supplied cohort pregnancies / recorded cohort deliveries for each cluster LA/age. Outside LAs use the pooled same-age rate among
-   cluster residents as a proxy; use that proxy for missing local evidence too.
+5. Apply the maternity pathway adjustment from the expanded LA file:
+   (deliveries + antenatal-only pregnancies) / deliveries at each LA and age.
+   Delivery uses birth financial year and age at birth; antenatal-only uses due
+   financial year and age at booking. Pool 2023/24–2025/26 for both components.
+   Missing counts are zero; zero/missing delivery denominators give a zero factor.
+   Every LA uses its own counts, with no borrowed cluster rate.
 6. Divide each delivery or booking category count by the shared denominator:
    resident-LA births × maternity pathway adjustment. Apply these independent proportions to
    the same adjusted projection. Sum finished counts to age bands and providers.
 
-Use supplied cohort rows aged 13–54 without an extra date filter. Only No recorded
-delivery drives the fifth modifier. Home birth and Delivery location unknown
-remain recorded births. Where no same-age cluster ratio exists, flag the
-projection as unestimated; do not substitute a ratio pooled across ages.
+Provider allocations use supplied cohort rows aged 13–54 without an extra date
+filter. Home birth and Delivery location unknown remain recorded births. Raw
+diagnostics retain missing counts, years and ages; the zero treatment applies
+only to model counts. With a zero pathway factor, the adjusted projection is zero.
 
-BBCS resident delivery counts and age distributions come from `final_cohort_2326`,
+Resident delivery counts and age distributions for every LA come from
+`total_births_by_LA_2326`, summed by LA, birth year and birth age to collapse the
+additional booking-age splits. Cohort provider counts come from `final_cohort_2326`,
 using `age_at_birth_mother`, with `age_at_booking_mother` used only where birth age is `NA`.
 Both age columns are required in the updated cohort. The same resolved age feeds all
 cohort-based charts, calibration and allocations. Booking age is used directly, without
-adding a year; it may be younger than delivery age. If neither age is usable, the row
-remains unknown. `prepare_report_cohort()` retains both ages and `Age_source` for QA. The wider `total_births_by_LA_2326` file supplies
-resident delivery totals and age distributions only for contributing outside LAs.
-Provider counts and the maternity pathway adjustment come from the pregnancy cohort.
+adding a year; it may be younger than delivery age. If both ages are NA, the row
+remains unknown. `prepare_report_cohort()` retains the selected label in `Age_value`
+and its `Age_source`, alongside a numeric copy for projection arithmetic.
+Section 2.2.1 shows birth age, booking-age fallback and unknown age by supplied
+delivery year and provider, including missing year/provider groups. Original
+field tables retain supplied age values as labels, including negative values
+and text. Only NA uses the missing-age category. Numeric ages use the usual
+bands; values outside those band definitions keep their supplied labels.
+All pregnancy rows in each group contribute to its denominator.
+Raw console counts are in `record_completeness_counts`; report copies use the
+usual disclosure rounding. These are descriptive outputs, not automatic QA gates.
+The pathway factor uses the LA extract's disjoint delivery and antenatal-only
+counts; provider counts come from the pregnancy cohort.
+Delivery financial year comes only from `birth_yr`, which Sarah derives from the
+delivery date. Appointment financial year comes only from `antenatal_app_date`,
+with an April boundary. Cohort `edd_yr` and LA `estimated_yr` mean estimated due
+financial year: neither establishes that a delivery occurred or supplies a
+missing appointment year. No missing day or month is invented. A month-only
+`birth_date` remains available in the raw extract; it is not needed to derive the
+delivery year. Cohort delivery status continues to use the supplied `birth_flag`.
 The MSDS inputs section includes an age-completeness table for the whole supplied
 cohort: missing birth ages by recorded-birth status, recovery from booking age,
 and both ages missing. Percentages explicitly identify their denominator. These
 are pregnancy rows, not distinct mothers; missing birth evidence is not proof
 that a delivery did not occur.
 An adjacent chart compares missing birth age within booking-age bands, using
-all records with usable booking age in each band as the denominator. Its table
+all records in each group as the denominator, including an explicit Unknown group
+for NA booking ages. Other supplied values retain their own labels. Its table
 and hover text include counts; this diagnostic does not alter the model age rule.
 
 The master retains `Exact_age_live_births`, `Bookings_uplift_modifier`, its
@@ -248,8 +274,8 @@ remain zero. The detailed ONS growth tables use the source birth counts once per
 LA/source age/year, independently of the availability of individual-age modifiers.
 
 Review `booking_modifications` for differences between resident and cohort
-births; check the Databricks processing when these differ. Cluster proxy rates
-are explicitly assumed for outside-LA flows. These are not national MSDS ratios.
+births; check the extraction processing when these differ. All LAs use their own
+resident totals and pathway factors, including outside-LA flows.
 If available locally, `R/check_projection_cohort.R` provides additional aggregate
 checks in the secure R session. This optional script is not distributed in Git.
 
@@ -291,8 +317,9 @@ use modelled 2025 on the same support. Retrospective differences likewise use
 matched recorded deliveries; the full recorded totals are retained separately.
 Coverage counts and percentages describe the supplied cohort, not an estimated
 percentage of future demand. Unknown ages are not redistributed. A missing
-destination within valid source coverage is zero; missing source geographies,
-explicit missing values and zero-denominator rates are not converted to zero.
+destination within valid source coverage is zero. Missing source geographies and
+undefined percentages remain unavailable. The pathway factor follows its separately
+agreed convention: a zero or missing resident-delivery denominator gives zero.
 `R/HH scratch area.R` holds optional snippets to select and run against Sarah's
 loaded parquet objects, including missing-age checks and raw/harmonised LA codes.
 It is not a report step and does not require a particular saved output.
@@ -300,9 +327,10 @@ Run `Rscript R/test_projection_scale.R` to check the three chart series with
 invented data and confirm that outside-LA bookings use the shared resident
 denominator rather than being scaled up to the whole LA population.
 Run `Rscript R/test_age_fallback.R` to check birth-age precedence, the booking-age
-fallback, remaining unknown ages, age-band boundaries and downstream allocations.
+fallback, remaining unknown ages, age-band boundaries and downstream allocations,
+plus separate event years and completeness charts that retain unknown groups.
 
-The report requires calculation version `ons-shared-age-calculations-v21`.
+The current calculation version is `ons-shared-age-calculations-v22`.
 The three ONS registration workbooks were checked against the public downloads
 on 6 October 2026 and matched exactly. Table 5 supplies the two national modifiers; Table 7
 remains descriptive evidence about multiplicity.
@@ -338,7 +366,6 @@ The preparation scripts save these files in the project root:
 | `.patient_flows.rds` | MSDS activity and patient-flow exploration |
 | `.delivery_geography.rds` | Deliveries by LA(R) and age |
 | `.projections.rds` | Projections, master and retrospective comparison |
-| `.qa.rds` | QA results and detailed checks |
 | `.analysis_run.rds` | Completion status and run identity for all current outputs |
 
 The QMD reads these files directly. If one is missing, R reports an error rather
@@ -355,16 +382,21 @@ add any new runtime dependency to the `.gitignore` allowlist before sharing it.
 
 ## Review the QA results
 
-The entry script runs the QA and returns the results. To inspect items needing review:
+QA never runs as part of the normal analysis or render. Run it separately when
+investigating changed data or calculations:
 
 ```r
-subset(qa_results, Result == "Check")
+source("R/QA.R")
 ```
 
-The QA script reports plain-language results and lists any records or totals that
-need attention. It runs automatically before rendering. QA results stay in the console and saved analysis objects; they are not report sections.
-Run `R/Run analysis.R` after changing inputs or calculations, and review QA before
-using a new version of the results.
+The script prints labelled sections for source records, ONS coverage, pathway
+totals, geography, projections, cross-section totals and saved-report/HTML checks.
+It uses loaded parquet objects and existing saved outputs. It does not read Azure,
+rebuild charts or write a `.qa.rds` file. `qa_results`, `qa_issues` and `qa_details`
+remain in the R session for inspection. Missing saved outputs are reported;
+source checks can run without a rendered report. Saved-output comparisons refer
+to the last analysis run, so rerun the analysis first when comparing new inputs.
+The scratch file remains separate and unchanged by either workflow.
 
 The checks reconcile annual cluster totals across activity and patient-flow views,
 recorded delivery comparators, master-table source conservation, pooled ONS

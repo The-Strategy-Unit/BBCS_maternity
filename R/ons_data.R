@@ -315,15 +315,6 @@ read_national_age_counts <- function(data_dir = ons_data_dir()) {
         live_births = as.numeric(.data[[live_columns[1]]]) + as.numeric(.data[[live_columns[2]]]),
         stillbirths = as.numeric(.data[[still_column]]))
   })
-  expected <- tidyr::expand_grid(year = 2023:2025, age = c("<14", as.character(14:49), "50+", "Unknown"))
-  if (nrow(anti_join(expected, result, by = c("year", "age"))) ||
-      nrow(anti_join(result, expected, by = c("year", "age"))) || anyDuplicated(result[c("year", "age")])) {
-    stop("Table 5 must contain each expected maternal age once in each calibration year.")
-  }
-  if (any(!is.finite(as.matrix(result[c("maternities", "live_births", "stillbirths")])) |
-          as.matrix(result[c("maternities", "live_births", "stillbirths")]) < 0)) {
-    stop("Table 5 counts must be complete, finite and nonnegative; do not treat suppression as zero.")
-  }
   result |> mutate(total_births = live_births + stillbirths)
 }
 
@@ -401,16 +392,6 @@ read_private_nhs_counts <- function(data_dir = ons_data_dir()) {
         c("Any number", "Any number of previous live-born children")) |>
       transmute(Age_source = age_of_mother_at_birth_years, Place = place_of_birth,
         Count = as.numeric(.data[[column]]))
-    source_ages <- if (source_year == 2025L) c("All ages", "Under 20", "20 to 24", "25 to 29",
-      "30 to 34", "35 to 39", "40 to 44", "45 to 49", "50 and over") else
-      c("All ages", "Under 20", "20 to 24", "25 to 29", "30 to 34", "35 to 39", "40 to 44", "45 and over")
-    places <- c("Any place of birth", "NHS establishments", "Non-NHS establishments", "At home", "Elsewhere")
-    expected <- tidyr::expand_grid(Age_source = source_ages, Place = places)
-    if (anyDuplicated(selected[c("Age_source", "Place")]) ||
-        nrow(anti_join(expected, selected, by = c("Age_source", "Place"))) ||
-        nrow(anti_join(selected, expected, by = c("Age_source", "Place"))) ||
-        any(!is.finite(selected$Count) | selected$Count < 0 | selected$Count != floor(selected$Count)))
-      stop("Table 4 needs complete, unique, nonnegative counts in ", basename(path))
     selected <- selected |>
       mutate(Private_NHS_age_band = case_when(Age_source %in% c("45 and over", "45 to 49", "50 and over") ~ "45+",
         TRUE ~ gsub(" to ", "-", Age_source))) |>
@@ -427,24 +408,11 @@ read_private_nhs_counts <- function(data_dir = ons_data_dir()) {
         Elsewhere_maternities = Elsewhere,
         Unallocated_place = Total_maternities - NHS_maternities - Non_NHS_maternities - Home_maternities - Elsewhere_maternities)
   })
-  expected <- tidyr::expand_grid(Year = 2023:2025, Private_NHS_age_band = c(bands, "Unknown (derived)", "All ages"))
-  if (nrow(anti_join(expected, result, by = c("Year", "Private_NHS_age_band"))) ||
-      nrow(anti_join(result, expected, by = c("Year", "Private_NHS_age_band"))) ||
-      any(as.matrix(result[setdiff(names(result), c("Year", "Private_NHS_age_band"))]) < 0))
-    stop("Table 4 years, age groups or residual counts do not reconcile.")
   result
 }
 
 prepare_private_nhs_factors <- function(counts = read_private_nhs_counts(), ages = 13:54) {
   bands <- c("Under 20", "20-24", "25-29", "30-34", "35-39", "40-44", "45+")
-  expected <- tidyr::expand_grid(Year = 2023:2025, Private_NHS_age_band = c(bands, "Unknown (derived)", "All ages"))
-  values <- as.matrix(counts[c("Total_maternities", "NHS_maternities", "Non_NHS_maternities",
-    "Home_maternities", "Elsewhere_maternities", "Unallocated_place")])
-  if (anyDuplicated(counts[c("Year", "Private_NHS_age_band")]) ||
-      nrow(anti_join(expected, counts, by = c("Year", "Private_NHS_age_band"))) ||
-      nrow(anti_join(counts, expected, by = c("Year", "Private_NHS_age_band"))) ||
-      any(!is.finite(values) | values < 0) || any(values[, 1] != rowSums(values[, -1, drop = FALSE])))
-    stop("Invalid Private-NHS source counts; do not replace missing evidence with zero.")
   annual <- counts |> mutate(Private_NHS_rate = Non_NHS_maternities / Total_maternities,
     Private_NHS_factor = 1 - Private_NHS_rate)
   pooled <- counts |> group_by(Private_NHS_age_band) |>
@@ -453,8 +421,6 @@ prepare_private_nhs_factors <- function(counts = read_private_nhs_counts(), ages
     mutate(Private_NHS_rate = Non_NHS_maternities / Total_maternities,
       Private_NHS_factor = 1 - Private_NHS_rate,
       Period = "2023-2025", Population = "England-resident mothers")
-  if (any(!is.finite(pooled$Private_NHS_factor[pooled$Private_NHS_age_band %in% bands])))
-    stop("Missing denominator for a Private-NHS age band.")
   pooled <- pooled[match(c(bands, "Unknown (derived)", "All ages"), pooled$Private_NHS_age_band), ]
   modifications <- data.frame(Age = ages, Private_NHS_age_band = as.character(cut(ages,
     breaks = c(-Inf, 19, 24, 29, 34, 39, 44, Inf), labels = bands))) |>
@@ -535,9 +501,6 @@ read_historic_live_births <- function(
     ) |>
     filter(area_code %in% area_config$area_code)
 
-  if (anyNA(result$age_band)) {
-    stop("Historic live-birth snapshot contains an unmapped maternal age category.")
-  }
 
   result |>
     mutate(

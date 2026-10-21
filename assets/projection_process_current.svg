@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1115" viewBox="0 0 1200 1115" role="img" aria-labelledby="title desc">
 <title id="title">Five modifiers and one shared maternity total</title>
-<desc id="desc">ONS live births are distributed across ages 13–54 and adjusted for stillbirths, multiplicity, the Private–NHS modifier and the maternity pathway adjustment. Outside LAs use the same-age cluster-resident pathway factor. One shared total feeds independent booking and delivery allocations, retaining all non-provider categories and the Booking Denominator Factor residual. Both allocations use recorded resident deliveries multiplied by the maternity pathway adjustment as their denominator. Live births and stillbirths count babies; deliveries and maternities count pregnancies.</desc>
+<desc id="desc">ONS live births are distributed across ages 13–54 and adjusted for stillbirths, multiplicity, the Private–NHS modifier and the maternity pathway adjustment. Every LA uses its own expanded resident extract: deliveries plus antenatal-only pregnancies divided by deliveries. A zero or missing delivery denominator gives a zero factor. One shared total feeds independent booking and delivery allocations, retaining all non-provider categories and the Booking Denominator Factor residual. Both allocations use recorded resident deliveries multiplied by the maternity pathway adjustment as their denominator. Live births and stillbirths count babies; deliveries and maternities count pregnancies.</desc>
 <defs><marker id="arrow" markerWidth="9" markerHeight="9" refX="8" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8" fill="none" stroke="#256681" stroke-width="1.4"/></marker></defs>
 <rect width="1200" height="1115" fill="white"/>
 <path d="M280 100 H314" fill="none" stroke="#256681" stroke-width="2" marker-end="url(#arrow)"/>
@@ -38,8 +38,8 @@
 <rect x="20" y="380" width="600" height="140" rx="3" fill="#19627d"/>
 <text x="320.0" y="410" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="19" font-weight="bold">MSDS cohort and resident totals</text>
 <text x="320.0" y="439" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="17">Supplied cohort, ages 13–54, by resident LA</text>
-<text x="320.0" y="462" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="17">Local LA/age pathway factor; same-age BBCS proxy outside</text>
-<text x="320.0" y="485" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="17">BBCS cohort; wider resident totals for incoming LAs</text>
+<text x="320.0" y="462" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="17">(LA deliveries + antenatal-only) / LA deliveries</text>
+<text x="320.0" y="485" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="17">Own LA/age counts; zero denominator gives zero factor</text>
 <rect x="710" y="380" width="470" height="140" rx="3" fill="#19627d"/>
 <text x="945.0" y="410" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="19" font-weight="bold">5. Maternity pathway adjustment</text>
 <text x="945.0" y="439" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="17">All cohort pregnancies / recorded cohort deliveries</text>

@@ -31,14 +31,19 @@ local({
     antenatal_app_date = as.Date(paste0(substr(cells$FY, 1, 4), "-06-01")))
   resident <- unique(cells[c("LA", "FY")]) |>
     dplyr::transmute(la_of_mother = LA, birth_yr = FY, age_at_birth_mother = 25, count = 10)
-  # A cluster reference cell supplies the outside-LA pathway rate, ensuring
-  # this tests positive projected allocations, not just matching missing values.
+  # Include a cluster LA alongside outside LAs. Each uses its own expanded
+  # extract, so positive allocations also exercise harmonised antenatal counts.
   local_rows <- cohort[cohort$la_of_mother == supplied[1], ]
   local_rows$la_of_mother <- "E08000025"
   local_rows$person_id_mother <- local_rows$uniq_preg_id <- nrow(cohort) + seq_len(nrow(local_rows))
   cohort <- rbind(cohort, local_rows)
   resident <- rbind(resident, data.frame(la_of_mother = "E08000025",
     birth_yr = c("2023/24", "2024/25", "2025/26"), age_at_birth_mother = 25, count = 10))
+  resident <- resident |> dplyr::mutate(
+    estimated_yr = NA_character_, age_at_booking_mother = age_at_birth_mother)
+  resident <- dplyr::bind_rows(resident, resident |>
+    dplyr::mutate(estimated_yr = birth_yr, birth_yr = NA_character_,
+      age_at_birth_mother = NA_real_, count = 2))
   original <- list(cohort = cohort, resident = resident)
   canonical_cohort <- cohort
   canonical_cohort$la_of_mother <- ifelse(cohort$la_of_mother %in% supplied,
@@ -46,7 +51,7 @@ local({
   canonical_resident <- resident |>
     dplyr::mutate(la_of_mother = ifelse(la_of_mother %in% supplied,
       expected[match(la_of_mother, supplied)], la_of_mother)) |>
-    dplyr::group_by(la_of_mother, birth_yr, age_at_birth_mother) |>
+    dplyr::group_by(la_of_mother, birth_yr, estimated_yr, age_at_birth_mother, age_at_booking_mother) |>
     dplyr::summarise(count = sum(count), .groups = "drop")
   ons <- tidyr::expand_grid(area_code = c(unique(expected), "E08000025"), age_group = as.character(15:44), year = 2025:2026) |>
     dplyr::mutate(area_name = area_code, projected_births = 100)
@@ -63,7 +68,8 @@ local({
     identical(cohort, original$cohort), identical(resident, original$resident), identical(ons, original_ons),
     identical(prepare_report_cohort(cohort)$LA_source, cohort$la_of_mother),
     nrow(prepare_report_cohort(cohort)) == nrow(cohort),
-    sum(attr(mapped, "allocation_tables")$residents$MSDS_resident_count) == sum(resident$count),
+    sum(attr(mapped, "allocation_tables")$residents$MSDS_resident_count) ==
+      sum(resident$count[!is.na(resident$birth_yr)]),
     setequal(attr(mapped, "geography_changes")$Source_code, supplied),
     nrow(attr(canonical, "geography_changes")) == 0,
     nrow(report_applied_geography(character())) == 0)

@@ -22,14 +22,18 @@ local({
     c(30, 39, NA, 19, 19, 43, 44, 54, 13, 30, 29))
   original <- cohort
   prepared <- prepare_report_cohort(cohort)
-  near(prepared$Age, c(31,39,NA,20,19,44,44,54,12,NA,NA))
+  near(prepared$Age, c(31,39,NA,20,19,44,44,54,12,30.5,Inf))
   stopifnot(identical(cohort, original), nrow(prepared) == nrow(cohort),
     identical(prepared$Age_source, c("Birth","Booking fallback","Unknown","Birth",
-      "Booking fallback","Birth","Booking fallback","Booking fallback","Birth","Unknown","Unknown")),
+      "Booking fallback","Birth","Booking fallback","Booking fallback","Birth","Birth","Birth")),
     identical(prepared$Age_band, c("30-34","35-39","Unknown","20-24","Under 20",
-      "40-44","40-44","45+","Under 20","Unknown","Unknown")))
+      "40-44","40-44","45+","Under 20","30.5","Inf")))
   typed <- make_cohort(factor(c("31", NA, NA)), factor(c("30", "39", NA)))
   near(prepare_report_cohort(typed)$Age, c(31,39,NA))
+  # Supplied values remain visible labels; only NA triggers booking fallback.
+  supplied <- make_cohort(c("-20", "green", NA), c("30", "28", "green"))
+  stopifnot(identical(prepare_report_cohort(supplied)$Age_value, c("-20", "green", "green")),
+    identical(prepare_report_cohort(supplied)$Age_band, c("-20", "green", "green")))
   typed$age_at_birth_mother <- c("31", NA, "invalid")
   typed$age_at_booking_mother <- c("30", "39", "28")
   near(prepare_report_cohort(typed)$Age, c(31,39,NA))
@@ -46,7 +50,14 @@ local({
   fallback <- full
   fallback$age_at_birth_mother[recovered] <- NA_real_
   residents <- full |> dplyr::filter(birth_flag == 1) |>
-    dplyr::count(la_of_mother,age_at_birth_mother,birth_yr,name="count")
+    dplyr::count(la_of_mother,age_at_birth_mother,birth_yr,name="count") |>
+    dplyr::mutate(estimated_yr = NA_character_, age_at_booking_mother = age_at_birth_mother)
+  residents <- dplyr::bind_rows(residents,
+    full |> dplyr::filter(birth_flag == 0) |>
+      dplyr::transmute(la_of_mother, estimated_yr = birth_yr, birth_yr = NA_character_,
+        age_at_booking_mother = age_at_birth_mother, age_at_birth_mother = NA_real_) |>
+      dplyr::count(la_of_mother, estimated_yr, birth_yr,
+        age_at_booking_mother, age_at_birth_mother, name = "count"))
   ons <- tidyr::expand_grid(area_code="E08000025",age_group=as.character(15:44),year=2023:2027) |>
     dplyr::mutate(area_name=area_code,projected_births=100)
   counts <- read_national_age_counts()
@@ -95,21 +106,52 @@ local({
   bands <- make_cohort(c(20,NA,NA,26,NA,35,NA,NA,46,NA,NA,NA),
     c(19,19,24,25,29,34,39,44,45,50,NA,30.5))
   band_counts <- summarise_booking_age_fallback(bands)
-  near(band_counts$Booking_age_known, c(2,1,2,1,1,1,2))
-  near(band_counts$Birth_age_missing, c(1,1,1,0,1,1,1))
-  stopifnot(identical(band_counts$Age_band, report_age_bands))
+  near(band_counts$Booking_age_known, c(2,1,2,1,1,1,2,1,1))
+  near(band_counts$Birth_age_missing, c(1,1,1,0,1,1,1,1,1))
+  stopifnot(identical(band_counts$Age_band, c(report_age_bands, "Unknown", "30.5")))
   band_outputs <- booking_age_fallback_outputs(band_counts)
   shown <- band_outputs$table[['_data']]
-  near(shown$Booking_age_known, rep(5,7))
-  near(shown$Birth_age_missing, c(5,5,5,0,5,5,5))
-  near(shown$Share, c(1,1,1,0,1,1,1))
+  near(shown$Booking_age_known, rep(5,9))
+  near(shown$Birth_age_missing, c(5,5,5,0,5,5,5,5,5))
+  near(shown$Share, c(1,1,1,0,1,1,1,1,1))
   near(plotly::plotly_build(band_outputs$chart)$x$data[[1]]$y, shown$Share)
   bigger_bands <- summarise_booking_age_fallback(bands[rep(seq_len(nrow(bands)),each=100), ])
   shown <- booking_age_fallback_outputs(bigger_bands)$table[['_data']]
-  near(shown$Share, c(.5,1,.5,0,1,1,.5))
+  near(shown$Share, c(.5,1,.5,0,1,1,.5,1,1))
   empty_bands <- summarise_booking_age_fallback(bands[FALSE, ])
   empty_outputs <- booking_age_fallback_outputs(empty_bands)
   stopifnot(all(is.na(empty_outputs$table[['_data']]$Share)))
+
+  # Delivery, appointment and due years remain independent; neither missing
+  # dates nor month-only delivery dates acquire an invented day.
+  dates <- make_cohort(c(30, NA, 34, NA), c(29, 28, 35, NA))
+  dates$birth_yr <- c("2024/25", NA, "2025/26", NA)
+  dates$birth_date <- c("2025-02", "2025-09", NA, NA)
+  dates$edd_yr <- c("2024/25", "2025/26", "2025/26", "2026/27")
+  dates$antenatal_app_date <- c("2025-03-31", "2025-04-01", NA, "2025-04")
+  dates$birth_flag <- c(1, 0, 1, 0)
+  dates$booking_provider <- c("RQ3", NA, "", "RQ3")
+  before <- dates
+  resolved <- prepare_report_cohort(dates)
+  near(resolved$Delivery_year, c(2024, NA, 2025, NA))
+  near(resolved$Booking_year, c(2024, 2025, NA, NA))
+  stopifnot(identical(resolved$Birth_recorded, c(TRUE, FALSE, TRUE, FALSE)),
+    all(is.na(resolved$Delivery_date)), identical(dates, before))
+  completeness <- summarise_record_completeness(dates)
+  totals <- completeness$fields |>
+    dplyr::group_by(Scope, Field) |> dplyr::summarise(N = sum(N), .groups = "drop")
+  stopifnot(all(totals$N == nrow(dates)),
+    any(completeness$fields$Group == "Unknown (NA)"),
+    any(completeness$fields$Group == "Unknown (blank)"))
+  source_totals <- completeness$age_sources |>
+    dplyr::group_by(Scope) |> dplyr::summarise(N = sum(N), .groups = "drop")
+  stopifnot(all(source_totals$N == nrow(dates)))
+  for (view in record_completeness_outputs(completeness)$by_scope) {
+    stopifnot(nchar(gt::as_raw_html(view$age_table)) > 0,
+      nchar(gt::as_raw_html(view$field_table)) > 0)
+    plotly::plotly_build(view$chart)
+  }
+  cat("PASS: event-year separation, no invented dates, due year never establishes delivery, unknown years/providers and completeness chart/table counts.\n")
   cat("PASS: within-booking-age prevalence, birthdays across bands, missing/invalid booking ages, completed-count disclosure controls, zero/absent groups and chart/table agreement.\n")
   cat("PASS: age-completeness counts, birth-status separation, whole-cohort and missing-age denominators, disclosure-controlled percentages, no missing ages and empty cohort.\n")
   cat("PASS: birth-age precedence, booking fallback, factors/characters, unknown/invalid ages, required input column, all 13-54 model ages, calibration, private factors, both allocation paths and historical age totals.\n")

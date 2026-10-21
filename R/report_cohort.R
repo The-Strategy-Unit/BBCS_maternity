@@ -53,6 +53,50 @@ report_la_country <- function(x) {
   result
 }
 
+report_country_coverage <- function(episodes) {
+  countries <- c("England", "Wales", "Scotland", "Northern Ireland", "Unknown/other code")
+  records <- episodes |>
+    dplyr::transmute(FY = dplyr::coalesce(Pregnancy_FY, "Unknown FY"),
+      Country = report_la_country(LA),
+      Booking = Booking_provider_supplied | Booking_date_supplied,
+      Delivery = Birth_recorded)
+  activities <- c("Whole cohort", "Bookings", "Deliveries")
+  years <- sort(unique(c("2023/24", "2024/25", "2025/26", records$FY)))
+  counts <- dplyr::bind_rows(
+    dplyr::mutate(records, Activity = "Whole cohort"),
+    dplyr::mutate(dplyr::filter(records, Booking), Activity = "Bookings"),
+    dplyr::mutate(dplyr::filter(records, Delivery), Activity = "Deliveries")) |>
+    dplyr::count(FY, Activity, Country, name = "N") |>
+    tidyr::complete(FY = years, Activity = activities, Country = countries, fill = list(N = 0L)) |>
+    dplyr::group_by(FY, Activity) |>
+    dplyr::mutate(Denominator = sum(N)) |>
+    dplyr::ungroup()
+  shown <- dc_cells(counts, c("N", "Denominator"), list(Share = c("N", "Denominator")))
+  tables <- stats::setNames(lapply(activities, function(activity) {
+    n_columns <- paste0(years, "_N")
+    pct_columns <- paste0(years, "_Share")
+    columns <- as.vector(rbind(n_columns, pct_columns))
+    table <- shown |>
+      dplyr::filter(Activity == activity, Country %in% countries[1:3]) |>
+      dplyr::select(Country, FY, N, Share) |>
+      tidyr::pivot_wider(names_from = FY, values_from = c(N, Share), names_glue = "{FY}_{.value}") |>
+      dplyr::arrange(match(Country, countries)) |>
+      dplyr::select(Country, dplyr::all_of(columns)) |>
+      gt::gt(rowname_col = "Country") |>
+      gt::tab_header(title = paste(activity, "by country of resident LA")) |>
+      gt::cols_label(.list = stats::setNames(rep(c("n", "%"), length(years)), columns)) |>
+      gt::fmt_number(columns = dplyr::all_of(n_columns), decimals = 0) |>
+      gt::fmt_percent(columns = dplyr::all_of(pct_columns), decimals = 1) |>
+      gt::sub_missing(missing_text = "Unavailable") |>
+      gt::tab_source_note("Pregnancies, not distinct mothers. Each FY percentage uses all countries, including Northern Ireland and unknown residence, in that activity's denominator. The three displayed countries need not sum to 100%.") |>
+      gt::tab_options(table.width = gt::pct(100), container.overflow.x = TRUE)
+    for (i in seq_along(years)) table <- gt::tab_spanner(table,
+      label = years[i], columns = dplyr::all_of(c(n_columns[i], pct_columns[i])))
+    table
+  }), c("cohort", "booking", "delivery"))
+  list(counts = counts, display = shown, tables = tables)
+}
+
 report_applied_geography <- function(cohort_codes, resident_codes = character()) {
   used <- unique(report_code(c(cohort_codes, resident_codes)))
   report_la_crosswalk[report_la_crosswalk$Source_code %in% used,

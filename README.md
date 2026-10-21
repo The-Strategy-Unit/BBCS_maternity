@@ -46,8 +46,16 @@ Existing related checks are in `R/QA.R` section 5 and the prepared objects
 `$allocation_tables$calibration`. The gap object excludes known out-of-range
 ages; the new script includes them when reconciling the full coverage table.
 
-Run `source("R/Country matching overview.R")` with the cohort loaded, or the
-first section of `R/HH scratch area.R`, for country counts and percentages by
+Section **1.2, Country of residence by financial year** contains three-row
+England/Wales/Scotland tables with FY counts and percentages, in separate whole-
+cohort, booking and delivery tabs. Report values are disclosure-controlled;
+Northern Ireland and unknown residence remain in each percentage denominator.
+
+Run `source("R/HH scratch area.R")` with the cohort loaded for compact country
+counts and percentages: by FY and pooled, with separate cohort, booking and
+delivery columns. Older scratch investigations are skipped unless selected
+manually. For the additional age/provider breakdowns, run
+`source("R/Country matching overview.R")` for country counts and percentages by
 assigned FY, plus pooled non-English age-band and destination trust/ICB splits.
 It produces overview tables only, without individual-LA lists or a report build.
 Counts are pregnancies per activity, not distinct mothers. Unknown residence
@@ -551,7 +559,13 @@ sum of all ICB/event groups, not just the two named ICBs. Section 4.2 shows all
 booking-to-delivery paths, including no-booking, no-delivery and home-birth
 nodes. Section 4.3 groups all cohort pregnancies by booking provider/ICB and
 uses the existing four delivery outcomes, including delivery-only pregnancies
-in their own no-booking group. Every demographic split reconciles to the same
+in their own no-booking group. Each organisation has one Sankey per variable
+in each of two tabs: **Between category** uses controlled pregnancy counts;
+**Within category** normalises the controlled outcome counts to equal-height
+category bars. Its outcome widths give equal weight to categories, not patients.
+Hover percentages use independently controlled category/organisation totals in
+both views, so within-category widths can differ from hover percentages after
+rounding. Every demographic split reconciles to the same
 whole-cohort population before display controls.
 
 Booking evidence is a supplied provider or appointment date. Delivery evidence

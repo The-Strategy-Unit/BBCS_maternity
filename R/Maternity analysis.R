@@ -418,7 +418,7 @@ residence_booking_birth_flow <- make_residence_booking_birth_flow(report_episode
 
 # Visible inclusion accounting: these mutually exclusive delivery categories add up.
 flow_coverage <- report_episodes |>
-  dplyr::mutate(Period = dplyr::coalesce(Year, "Missing/invalid delivery year")) |>
+  dplyr::mutate(Period = dplyr::coalesce(Year, "Missing/invalid pregnancy FY")) |>
   dplyr::group_by(Period) |>
   dplyr::summarise(Supplied_rows = dplyr::n(),
     No_recorded_birth = sum(!Birth_recorded),
@@ -1003,7 +1003,7 @@ build_delivery_outcome_trends <- function(starts, trend_outcomes, trend_labels, 
         text = hover, hovertemplate = "%{text}<extra></extra>", connectgaps = FALSE)
     }
     chart <- plotly::layout(chart,
-      xaxis = list(title = if (compact) "Booking year" else "Booking financial year", tickmode = "array",
+      xaxis = list(title = if (compact) "Pregnancy FY" else "Assigned pregnancy financial year", tickmode = "array",
         tickvals = pathway_years, ticktext = c("2023/24", "2024/25", "2025/26")),
       yaxis = if (show_change) {
         list(title = "% change in share from 2023/24", tickformat = ".0%",
@@ -1082,8 +1082,8 @@ build_delivery_outcome_trends <- function(starts, trend_outcomes, trend_labels, 
                   Share, YoY_change, Base_change) |>
     gt::gt(groupname_col = "Group") |>
     gt::tab_header(title = table_title,
-                   subtitle = "Booking financial years 2023/24 to 2025/26") |>
-    gt::cols_label(Year = "Booking year", Outcome = "Outcome",
+                   subtitle = "Assigned pregnancy financial years 2023/24 to 2025/26") |>
+    gt::cols_label(Year = "Pregnancy FY", Outcome = "Outcome",
       Numerator = "Pregnancies with this outcome", Denominator = "All antenatal bookings",
       Share = "% of antenatal bookings", YoY_change = "% change in share year on year",
       Base_change = "% change in share from 2023/24") |>
@@ -1180,6 +1180,7 @@ booking_icb_delivery_over_time <- build_delivery_outcome_trends(booking_icb_deli
 # Save the exploration outputs; QA runs separately through R/QA.R.
 save_report_rds(
   list(icb_sankey = icb_sankey, trust_sankey = trust_sankey, by_year = by_year,
+       country_coverage = report_country_coverage(report_episodes),
        maternal_age_completeness = maternal_age_completeness,
        maternal_age_completeness_table = maternal_age_completeness_display,
        booking_age_fallback_counts = booking_age_fallback_counts,
@@ -2879,8 +2880,8 @@ build_first_draft_projections <- function(baseline_fy = projection_baseline,
   denominator_display$Booking_Denominator_Factor <- denominator_display$Estimated_maternities - denominator_display$Cohort_pregnancies
   result$booking_denominator_summary_table <- denominator_display |>
     base_table("Resident and cohort counts", "All resident totals come from the expanded LA extract; provider counts come from the linked cohort") |>
-    gt::cols_label(LA_name = "Resident LA", LA = "LA code", Resident_births = "Resident births",
-      Cohort_births = "Cohort births", Birth_gap = "Birth gap", Cohort_pregnancies = "Cohort pregnancies",
+    gt::cols_label(LA_name = "Resident LA", LA = "LA code", Resident_births = "Resident deliveries",
+      Cohort_births = "Cohort deliveries", Birth_gap = "Delivery gap", Cohort_pregnancies = "Cohort pregnancies",
       Estimated_maternities = "Estimated maternities", Booking_Denominator_Factor = "Booking Denominator Factor",
       Ages_with_birth_gap = "Ages with a birth gap", Ages_requiring_review = "Ages requiring review") |>
     gt::fmt_number(columns = where(is.numeric), decimals = 1)
@@ -2905,12 +2906,12 @@ build_first_draft_projections <- function(baseline_fy = projection_baseline,
       "Shared_maternity_denominator", "Booking_Denominator_Factor"), decimals = 1) |>
     gt::fmt_number(columns = "Bookings_uplift_modifier", decimals = 3) |>
     gt::cols_label(LA_name = "Resident LA", LA = "LA code", Age = "Age (SY)",
-      MSDS_resident_count = "Resident births", Cohort_recorded_births = "Cohort births",
+      MSDS_resident_count = "Resident deliveries", Cohort_recorded_births = "Cohort deliveries",
       Resident_antenatal_only = "LA antenatal-only pregnancies", Resident_pregnancies = "LA pregnancies",
-      Resident_birth_gap = "Birth gap", Cohort_no_recorded_delivery = "Cohort: no recorded delivery",
+      Resident_birth_gap = "Delivery gap", Cohort_no_recorded_delivery = "Cohort: no recorded delivery",
       Bookings_uplift_modifier = "Maternity pathway adjustment", Bookings_uplift_source = "Pathway factor source",
       Shared_maternity_denominator = "Shared denominator", Booking_Denominator_Factor = "Booking Denominator Factor",
-      Birth_gap_review = "Birth-count check", Calibration_issue = "Allocation check")
+      Birth_gap_review = "Delivery-count check", Calibration_issue = "Allocation check")
   result$unestimated_cells_table <- result$unestimated_cells |>
     base_table("LA/age cells with zero pathway factors or unavailable projections",
       "Zero or missing resident deliveries give a zero pathway factor. Rates are never borrowed from other LAs or ages.") |>

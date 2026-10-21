@@ -154,36 +154,98 @@ demo_pathway_summary <- function(master, group, codes = NULL) {
   }))
 }
 
-demo_pathway_grid <- function(master, group, field = NULL) {
-  organisations <- demo_pathway_summary(master, group)$Code
-  panels <- function(rows) {
-    summary <- demo_pathway_summary(rows, group, organisations)
-    htmltools::div(class = "demo-sankey-grid",
-      lapply(seq_len(nrow(summary)), function(i) {
-        htmltools::div(class = "demo-sankey-panel",
-          htmltools::tags$h5(summary$Organisation[i]),
-          make_pathway_sankey(summary[i, , drop = FALSE],
-            count_label = "Pregnancies", period = demo_period))
-      }))
+demo_outcome_counts <- function(rows, field) {
+  categories <- demo_category_values(rows, field)
+  outcomes <- c("Within cluster", "Outside cluster", "No recorded delivery", "Unknown location")
+  counts <- rows |>
+    dplyr::group_by(Category = as.character(.data[[field]]), Outcome) |>
+    dplyr::summarise(N = sum(N), .groups = "drop")
+  totals <- counts |>
+    dplyr::group_by(Category) |>
+    dplyr::summarise(Category_total = sum(N), .groups = "drop")
+  counts |>
+    dplyr::left_join(totals, by = "Category", na_matches = "na") |>
+    dplyr::mutate(Organisation_total = sum(rows$N)) |>
+    dc_cells(c("N", "Category_total", "Organisation_total"),
+      list(Category_share = c("N", "Category_total"),
+        Organisation_share = c("N", "Organisation_total"))) |>
+    dplyr::mutate(Source = match(Category, categories) - 1L,
+      Target = length(categories) + match(Outcome, outcomes) - 1L) |>
+    dplyr::arrange(Source, Target)
+}
+
+demo_outcome_sankey <- function(rows, field, proportions = FALSE) {
+  rows <- rows[!is.na(rows$N) & rows$N > 0, , drop = FALSE]
+  if (!nrow(rows) || sum(rows$N) == 0) return(htmltools::div("No pregnancies in this group."))
+  categories <- demo_category_values(rows, field)
+  category_labels <- vapply(categories, demo_category_label, character(1), field = field)
+  outcomes <- c("Within cluster", "Outside cluster", "No recorded delivery", "Unknown location")
+  links <- demo_outcome_counts(rows, field)
+  category_totals <- links$Category_total[match(seq_along(categories) - 1L, links$Source)]
+  outcome_totals <- dc_count(vapply(outcomes, function(outcome) sum(rows$N[rows$Outcome == outcome]), numeric(1)))
+  total <- dc_count(sum(rows$N))
+  labels <- c(category_labels, outcome_labels)
+  totals <- c(category_totals, outcome_totals)
+  percentages <- scales::percent(dc_divide(totals, total), accuracy = 0.1)
+  node_labels <- paste0(vapply(labels, function(label) paste(strwrap(label, 25), collapse = "<br>"), character(1)),
+    "<br>", percentages)
+  links <- links[links$N > 0 & !is.na(links$N), , drop = FALSE]
+  values <- links$N
+  metadata <- NULL
+  if (proportions) {
+    values <- 100 * links$N / ave(links$N, links$Source, FUN = sum)
+    node_labels <- c(paste0(vapply(category_labels, function(label)
+      paste(strwrap(label, 25), collapse = "<br>"), character(1)), "<br>100%"),
+      vapply(outcome_labels, function(label) paste(strwrap(label, 25), collapse = "<br>"), character(1)))
+    metadata <- list(msds_sankey_scale = "normalised_categories",
+      display_counts = links$N, display_denominators = links$Category_total)
   }
-  if (is.null(field)) return(htmltools::tagList(pathway_legend, panels(master)))
-  categories <- demo_category_values(master, field)
-  if (!length(categories)) return(htmltools::div("No supplied cohort pregnancies."))
-  htmltools::tagList(pathway_legend, lapply(categories, function(value) {
-    selected <- if (is.na(value)) is.na(master[[field]]) else
-      !is.na(master[[field]]) & as.character(master[[field]]) == value
-    htmltools::div(class = "demo-pathway-category",
-      htmltools::tags$h4(demo_category_label(value, field)),
-      panels(master[selected, , drop = FALSE]))
-  }))
+  plotly::plot_ly(type = "sankey", arrangement = "snap", orientation = "h",
+    meta = metadata,
+    height = max(400, 55 * length(categories)),
+    node = list(label = node_labels, pad = 22, thickness = 18,
+      color = c(rep("#5D7790", length(categories)), outcome_colours),
+      x = c(rep(0.01, length(categories)), rep(0.99, 4)),
+      y = c(seq(0.02, 0.98, length.out = length(categories)), seq(0.08, 0.92, length.out = 4)),
+      customdata = paste0(labels, "<br>Pregnancies: ", scales::comma(totals),
+        "<br>", percentages, " of organisation pregnancies"),
+      hovertemplate = "%{customdata}<extra></extra>"),
+    link = list(source = links$Source, target = links$Target, value = values,
+      color = grDevices::adjustcolor(outcome_colours[match(links$Outcome, outcomes)], alpha.f = 0.4),
+      customdata = paste0(category_labels[links$Source + 1L], " \u2192 ",
+        outcome_labels[match(links$Outcome, outcomes)],
+        "<br>Pregnancies: ", scales::comma(links$N),
+        "<br>", scales::percent(links$Category_share, accuracy = 0.1), " of this demographic category",
+        "<br>", scales::percent(links$Organisation_share, accuracy = 0.1), " of organisation pregnancies"),
+      hovertemplate = "%{customdata}<extra></extra>")) |>
+    plotly::layout(font = list(family = "Arial", size = 12),
+      margin = list(l = 12, r = 12, t = 12, b = 20), paper_bgcolor = "white", plot_bgcolor = "white") |>
+    plotly::config(displayModeBar = FALSE, responsive = TRUE) |>
+    dc_widget()
+}
+
+demo_pathway_grid <- function(master, group, field = NULL, proportions = FALSE) {
+  summary <- demo_pathway_summary(master, group)
+  panels <- lapply(seq_len(nrow(summary)), function(i) {
+    rows <- demo_org_rows(master, "Booking", group, summary$Code[i])
+    htmltools::div(class = "demo-sankey-panel",
+      htmltools::tags$h5(summary$Organisation[i]),
+      htmltools::tags$p(paste0(scales::comma(dc_count(summary$Starts[i])), " pregnancies")),
+      if (is.null(field)) make_pathway_sankey(summary[i, , drop = FALSE],
+        count_label = "Pregnancies", period = demo_period) else demo_outcome_sankey(rows, field, proportions))
+  })
+  htmltools::tagList(pathway_legend,
+    htmltools::div(class = if (is.null(field)) "demo-sankey-grid" else "demo-outcome-grid", panels))
 }
 
 demo_pathway_tabs <- function(master, group) {
+  versions <- function(field) list(counts = demo_pathway_grid(master, group, field),
+    proportions = demo_pathway_grid(master, group, field, proportions = TRUE))
   list(overall = demo_pathway_grid(master, group),
-    ethnicity = demo_pathway_grid(master, group, "ethnicity_broad"),
-    ethnicity_description = demo_pathway_grid(master, group, "ethnicity_description"),
-    imd = demo_pathway_grid(master, group, "imd_decile"),
-    age = demo_pathway_grid(master, group, "Age_band"))
+    ethnicity = versions("ethnicity_broad"),
+    ethnicity_description = versions("ethnicity_description"),
+    imd = versions("imd_decile"),
+    age = versions("Age_band"))
 }
 
 # 4. POOLED DEMOGRAPHIC BAR CHARTS -------------------------------------
@@ -248,6 +310,7 @@ demo_overview_tabs <- function(master, mode) {
 demographics_cleaned <- prepare_demographics(demographics)
 `Demo Sankeys` <- build_demo_sankeys(final_cohort_2326, demographics_cleaned, report_episodes)
 demo_sankey_charts <- list(
+  version = "demographic-outcomes-v2",
   cohort_total = dc_count(sum(`Demo Sankeys`$N)),
   overview_delivery = demo_overview_tabs(`Demo Sankeys`, "Delivery"),
   overview_booking = demo_overview_tabs(`Demo Sankeys`, "Booking"),

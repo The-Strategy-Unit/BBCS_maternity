@@ -2,6 +2,7 @@
 library(dplyr)
 source("R/demographics.R")
 source("R/report_cohort.R")
+source("R/disclosure.R")
 
 local({
   codes <- c("A", "B", "C", "D", "E", "F", "G", "H", "J", "K", "L", "M", "N", "P", "R", "S", "Z")
@@ -66,7 +67,8 @@ local({
   for (statement in parse("R/Maternity analysis.R")) {
     if (is.call(statement) && identical(statement[[1]], as.name("<-")) &&
         as.character(statement[[2]])[1] %in% c("cluster_icbs", "icb_provider_codes", "provider_icb",
-          "cluster_trusts", "trust_labels", "flow_trust_labels", "group_flow_code", "classify_pathway_outcome"))
+          "cluster_trusts", "trust_labels", "flow_trust_labels", "group_flow_code", "classify_pathway_outcome",
+          "icb_labels", "outcome_columns", "outcome_labels", "outcome_colours", "outcome_key", "pathway_legend"))
       eval(statement)
   }
   for (statement in parse("R/Demo Sankeys.R")) {
@@ -94,5 +96,36 @@ local({
     n_distinct(master$Age_band[master$ethnicity_broad %in% "Black or Black British"]) == 2)
   for (field in c("ethnicity_broad", "ethnicity_description", "imd_decile", "Age_band"))
     stopifnot(sum((master |> group_by(.data[[field]]) |> summarise(N = sum(N)))$N) == nrow(cohort))
+  outcome_rows <- data.frame(ethnicity_description = c("A", "A", "A", "B", "B", NA),
+    Outcome = c("Within cluster", "Within cluster", "Outside cluster", "Within cluster",
+      "No recorded delivery", "Unknown location"), N = c(1, 1, 8, 13, 2, 4))
+  displayed <- demo_outcome_counts(outcome_rows, "ethnicity_description")
+  stopifnot(identical(displayed$N, c(5, 10, 15, 5, 5)),
+    identical(displayed$Category_total, c(10, 10, 15, 15, 5)),
+    all(displayed$Organisation_total == 30),
+    isTRUE(all.equal(displayed$Category_share, c(.5, 1, 1, 1/3, 1))))
+  for (proportions in c(FALSE, TRUE)) {
+    payload <- htmlwidgets:::createPayload(demo_outcome_sankey(outcome_rows,
+      "ethnicity_description", proportions))$x
+    trace <- payload$data[[1]]
+    expected <- if (proportions) 100 * displayed$N / ave(displayed$N, displayed$Source, FUN = sum) else displayed$N
+    stopifnot(isTRUE(all.equal(as.numeric(trace$link$value), expected)),
+      any(grepl("Unknown \\(NA\\)", trace$node$label)),
+      any(grepl("50.0% of this demographic category", trace$link$customdata, fixed = TRUE)),
+      is.null(payload$attrs), is.null(payload$visdat))
+    if (proportions) stopifnot(all(abs(tapply(trace$link$value, trace$link$source, sum) - 100) < 1e-8))
+  }
+  count_widgets <- function(x) {
+    if (inherits(x, "plotly")) return(1L)
+    if (!is.list(x) || is.data.frame(x)) return(0L)
+    sum(vapply(x, count_widgets, integer(1)))
+  }
+  for (group in c("Trust", "ICB_Cluster")) {
+    expected <- sum(demo_pathway_summary(master, group)$Starts > 0)
+    for (proportions in c(FALSE, TRUE)) stopifnot(
+      count_widgets(demo_pathway_grid(master, group, "ethnicity_description", proportions)) == expected)
+  }
+  stopifnot(!inherits(demo_outcome_sankey(outcome_rows[0, ], "ethnicity_description"), "plotly"))
   cat("PASS: 289 ethnicity pairs, singles/unknowns, repeatable LSOA selection, IMD lookup and pregnancy join.\n")
+  cat("PASS: one outcome Sankey per organisation, protected counts/hover rates and equal-height category normalisation.\n")
 })

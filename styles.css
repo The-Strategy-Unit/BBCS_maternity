@@ -174,11 +174,15 @@ a { color: var(--su-blue); }
 .demo-sankey-panel { min-width: 0; padding: 0.5rem; background: white; }
 .demo-sankey-panel h4 { margin: 0 0 0.25rem; font-size: 1rem; overflow-wrap: anywhere; }
 .demo-sankey-panel h5 { margin: 0 0 0.5rem; font-size: 1rem; overflow-wrap: anywhere; }
-.demo-pathway-category { margin-bottom: 2rem; }
+.demo-outcome-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1.5rem;
+}
 .demo-sankey-panel p { margin: 0.2rem 0; font-size: 0.85rem; }
 .demo-sankey-stages { color: #5f5b58; }
 @media (max-width: 800px) {
-  .demo-sankey-grid { grid-template-columns: 1fr; }
+  .demo-sankey-grid, .demo-outcome-grid { grid-template-columns: 1fr; }
 }
 
 /* Compare the same delivery flows in two years, with a shared colour key. */

@@ -93,12 +93,29 @@ ons_only <- list(x = list(data = list(list(type = "scatter", y = c(11, 17))),
   layout = list(yaxis = list(title = "ONS published births"))))
 demographic <- list(x = list(data = list(list(type = "bar", x = c(0, 5, 15, NA))),
   layout = list(xaxis = list(title = list(text = "Pregnancies")))))
+proportions <- list(x = list(data = list(list(type = "sankey",
+  meta = list(msds_sankey_scale = "normalised_categories", display_counts = c(5, 10),
+    display_denominators = c(10, 10)),
+  link = list(source = c(0, 0), target = c(1, 2), value = c(100/3, 200/3))))))
 write_payloads <- function() writeLines(paste0('<section id="disclosure-control"></section>',
   '<script type="application/json">', jsonlite::toJSON(controlled, auto_unbox = TRUE), '</script>',
   '<script type="application/json">', jsonlite::toJSON(demographic, auto_unbox = TRUE, na = "null"), '</script>',
+  '<script type="application/json">', jsonlite::toJSON(proportions, auto_unbox = TRUE, digits = 10), '</script>',
   '<script type="application/json">', jsonlite::toJSON(ons_only, auto_unbox = TRUE), '</script>'), html_path)
 write_payloads()
 audit_disclosure_html(html_path)
+proportions$x$data[[1]]$meta$display_counts[1] <- 1
+write_payloads()
+stopifnot(inherits(try(audit_disclosure_html(html_path), silent = TRUE), "try-error"))
+proportions$x$data[[1]]$meta$display_counts[1] <- 5
+proportions$x$data[[1]]$meta$display_denominators[1] <- 11
+write_payloads()
+stopifnot(inherits(try(audit_disclosure_html(html_path), silent = TRUE), "try-error"))
+proportions$x$data[[1]]$meta$display_denominators[1] <- 10
+proportions$x$data[[1]]$link$value <- c(50, 50)
+write_payloads()
+stopifnot(inherits(try(audit_disclosure_html(html_path), silent = TRUE), "try-error"))
+proportions$x$data[[1]]$link$value <- c(100/3, 200/3)
 demographic$x$data[[1]]$x[2] <- 1
 write_payloads()
 stopifnot(inherits(try(audit_disclosure_html(html_path), silent = TRUE), "try-error"),

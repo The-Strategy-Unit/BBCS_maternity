@@ -158,7 +158,21 @@ audit_disclosure_widgets <- function(html) {
     for (trace in x$data) {
       if (identical(trace$type, "sankey")) {
         checked["sankeys"] <- checked["sankeys"] + 1L
-        if (!multiples(trace$link$value)) stop("Uncontrolled Sankey counts in the HTML")
+        if (is.list(trace$meta) && identical(trace$meta$msds_sankey_scale, "normalised_categories")) {
+          counts <- unlist(trace$meta$display_counts, use.names = FALSE)
+          denominators <- unlist(trace$meta$display_denominators, use.names = FALSE)
+          sources <- unlist(trace$link$source, use.names = FALSE)
+          values <- unlist(trace$link$value, use.names = FALSE)
+          if (!length(counts) || length(counts) != length(values) ||
+              length(counts) != length(sources) || length(counts) != length(denominators) ||
+              !multiples(counts) || !multiples(denominators) ||
+              any(!is.finite(counts) | counts <= 0) || any(!is.finite(denominators) | denominators <= 0) ||
+              any(!is.finite(values)) || any(!is.finite(sources)))
+            stop("Uncontrolled proportion Sankey inputs in the HTML")
+          expected <- 100 * counts / ave(counts, sources, FUN = sum)
+          if (any(abs(values - expected) > 1e-6))
+            stop("Proportion Sankey widths do not use controlled counts")
+        } else if (!multiples(trace$link$value)) stop("Uncontrolled Sankey counts in the HTML")
       }
       if (y_count || x_count) {
         checked["count_traces"] <- checked["count_traces"] + 1L

@@ -12,6 +12,7 @@
 !/R/Demo Sankeys.R
 !/R/demographics.R
 !/R/test_demographics.R
+!/R/test_country_coverage.R
 !/R/test_pregnancy_year.R
 !/R/ons_data.R
 !/R/disclosure.R

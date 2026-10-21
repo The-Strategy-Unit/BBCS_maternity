@@ -1,8 +1,53 @@
+# MSDS COUNTRY CONTRIBUTIONS: run this block or source this file --------
+# Internal QA: raw pregnancy counts, percentages of all countries.
+library(dplyr)
+source("R/report_cohort.R")
+stopifnot(exists("final_cohort_2326"))
 
-# COUNTRY MATCHING IMPACT: overview tables only ------------------------
-# Run with final_cohort_2326 loaded; no full analysis needed.
-source("R/Country matching overview.R")
-# END COUNTRY MATCHING IMPACT ------------------------------------------
+hh_country <- prepare_report_cohort(final_cohort_2326) |>
+  transmute(FY = coalesce(Pregnancy_FY, "Unknown FY"),
+    Country = report_la_country(LA),
+    Booking = Booking_provider_supplied | Booking_date_supplied,
+    Delivery = Birth_recorded)
+
+hh_country_summary <- function(rows) {
+  countries <- c("England", "Wales", "Scotland", "Northern Ireland", "Unknown/other code")
+  counts <- rows |> group_by(Country) |>
+    summarise(Cohort_n = n(), Bookings_n = sum(Booking), Deliveries_n = sum(Delivery), .groups = "drop") |>
+    tidyr::complete(Country = countries,
+      fill = list(Cohort_n = 0L, Bookings_n = 0L, Deliveries_n = 0L)) |>
+    arrange(match(Country, countries))
+  total <- counts |> summarise(across(ends_with("_n"), sum)) |>
+    mutate(Country = "All countries")
+  non_england <- counts |> filter(Country %in% c("Wales", "Scotland", "Northern Ireland")) |>
+    summarise(across(ends_with("_n"), sum)) |>
+    mutate(Country = "Known non-England subtotal")
+  pct <- function(n, denominator) if (denominator > 0) round(100 * n / denominator, 2) else rep(NA_real_, length(n))
+  bind_rows(counts, non_england, total) |>
+    mutate(Cohort_pct = pct(Cohort_n, total$Cohort_n),
+      Bookings_pct = pct(Bookings_n, total$Bookings_n),
+      Deliveries_pct = pct(Deliveries_n, total$Deliveries_n)) |>
+    select(Country, Cohort_n, Cohort_pct, Bookings_n, Bookings_pct, Deliveries_n, Deliveries_pct)
+}
+
+hh_country_by_fy <- bind_rows(lapply(sort(unique(c("2023/24", "2024/25", "2025/26", hh_country$FY))), function(fy) {
+  hh_country_summary(filter(hh_country, FY == fy)) |> mutate(FY = fy, .before = 1)
+}))
+hh_country_all_years <- hh_country_summary(hh_country)
+
+cat("\nMSDS COUNTRY CONTRIBUTIONS BY PREGNANCY FY\n")
+print(hh_country_by_fy, n = Inf, width = Inf)
+cat("\nMSDS COUNTRY CONTRIBUTIONS: ALL SUPPLIED YEARS COMBINED\n")
+print(hh_country_all_years, n = Inf, width = Inf)
+cat("\nCounts are pregnancies, not distinct mothers. FY = birth_yr first, otherwise edd_yr.\n",
+  "Each percentage uses all countries for the same FY and activity; pooled percentages use all supplied years.\n",
+  "Known non-England = Wales + Scotland + Northern Ireland; unknown residence is separate.\n",
+  "Subtotal/total rows overlap the country rows. Bookings and deliveries also overlap; do not add them.\n",
+  "NA percentages mean no activity in the denominator.\n", sep = "")
+# END MSDS COUNTRY CONTRIBUTIONS ---------------------------------------
+
+# Older investigations: select their lines to run; sourcing skips them.
+if (FALSE) {
 
 # QUICK RAW UPLIFT: same groups, FYs and ages; NA counts stay visible -----
 library(dplyr)
@@ -512,3 +557,4 @@ if (file.exists(".projections.rds")) {
       Difference = Saved_raw_count - Raw_recount) |>
     print(n = Inf)
 } else message("No .projections.rds here; checks 1-4 do not need a rendered report.")
+}

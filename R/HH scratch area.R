@@ -26,7 +26,7 @@ hh_uplift |> filter(Missing_counts > 0 | Unknown_groups > 0 | !is.finite(Raw_upl
 # Model counts currently replace NA with zero and use zero for no deliveries.
 # This raw check keeps NA/Inf/NaN and includes all supplied LAs, before catchment selection.
 # END QUICK RAW UPLIFT --------------------------------------------------
->>>>>>> d863add920956dcdef3c658e84c0a6cb7dd4f991
+
 
 # QUICK COMPARISON: ALL LAs AND COMBINED COHORT LAs ----------------------
 # Run this section only. Reads Sarah's two loaded objects directly.

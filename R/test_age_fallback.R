@@ -51,12 +51,12 @@ local({
   fallback$age_at_birth_mother[recovered] <- NA_real_
   residents <- full |> dplyr::filter(birth_flag == 1) |>
     dplyr::count(la_of_mother,age_at_birth_mother,birth_yr,name="count") |>
-    dplyr::mutate(estimated_yr = NA_character_, age_at_booking_mother = age_at_birth_mother)
+    dplyr::mutate(group = "antenatal+delivery", edd_yr = NA_character_, age_at_booking_mother = age_at_birth_mother)
   residents <- dplyr::bind_rows(residents,
     full |> dplyr::filter(birth_flag == 0) |>
-      dplyr::transmute(la_of_mother, estimated_yr = birth_yr, birth_yr = NA_character_,
+      dplyr::transmute(group = "antenatal only", la_of_mother, edd_yr = birth_yr, birth_yr = NA_character_,
         age_at_booking_mother = age_at_birth_mother, age_at_birth_mother = NA_real_) |>
-      dplyr::count(la_of_mother, estimated_yr, birth_yr,
+      dplyr::count(group, la_of_mother, edd_yr, birth_yr,
         age_at_booking_mother, age_at_birth_mother, name = "count"))
   ons <- tidyr::expand_grid(area_code="E08000025",age_group=as.character(15:44),year=2023:2027) |>
     dplyr::mutate(area_name=area_code,projected_births=100)
@@ -122,8 +122,7 @@ local({
   empty_outputs <- booking_age_fallback_outputs(empty_bands)
   stopifnot(all(is.na(empty_outputs$table[['_data']]$Share)))
 
-  # Delivery, appointment and due years remain independent; neither missing
-  # dates nor month-only delivery dates acquire an invented day.
+  # One assigned FY: birth first, otherwise EDD; appointment dates remain audit only.
   dates <- make_cohort(c(30, NA, 34, NA), c(29, 28, 35, NA))
   dates$birth_yr <- c("2024/25", NA, "2025/26", NA)
   dates$birth_date <- c("2025-02", "2025-09", NA, NA)
@@ -133,8 +132,8 @@ local({
   dates$booking_provider <- c("RQ3", NA, "", "RQ3")
   before <- dates
   resolved <- prepare_report_cohort(dates)
-  near(resolved$Delivery_year, c(2024, NA, 2025, NA))
-  near(resolved$Booking_year, c(2024, 2025, NA, NA))
+  near(resolved$Delivery_year, c(2024, 2025, 2025, 2026))
+  near(resolved$Booking_year, c(2024, 2025, 2025, 2026))
   stopifnot(identical(resolved$Birth_recorded, c(TRUE, FALSE, TRUE, FALSE)),
     all(is.na(resolved$Delivery_date)), identical(dates, before))
   completeness <- summarise_record_completeness(dates)
@@ -151,7 +150,7 @@ local({
       nchar(gt::as_raw_html(view$field_table)) > 0)
     plotly::plotly_build(view$chart)
   }
-  cat("PASS: event-year separation, no invented dates, due year never establishes delivery, unknown years/providers and completeness chart/table counts.\n")
+  cat("PASS: shared birth/EDD FY, no invented dates, due year never establishes delivery, unknown years/providers and completeness chart/table counts.\n")
   cat("PASS: within-booking-age prevalence, birthdays across bands, missing/invalid booking ages, completed-count disclosure controls, zero/absent groups and chart/table agreement.\n")
   cat("PASS: age-completeness counts, birth-status separation, whole-cohort and missing-age denominators, disclosure-controlled percentages, no missing ages and empty cohort.\n")
   cat("PASS: birth-age precedence, booking fallback, factors/characters, unknown/invalid ages, required input column, all 13-54 model ages, calibration, private factors, both allocation paths and historical age totals.\n")

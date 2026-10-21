@@ -10,6 +10,9 @@
 !/R/Read parquet files from azure.R
 !/R/Maternity analysis.R
 !/R/Demo Sankeys.R
+!/R/demographics.R
+!/R/test_demographics.R
+!/R/test_pregnancy_year.R
 !/R/ons_data.R
 !/R/disclosure.R
 !/R/test_disclosure.R
@@ -17,6 +20,8 @@
 !/R/report_cohort.R
 !/R/age_boundary_review.R
 !/R/QA.R
+!/R/ONS to MSDS Matching QA.R
+!/R/Country matching overview.R
 !/R/test_projection_scale.R
 !/R/test_private_nhs.R
 !/R/test_age_fallback.R
@@ -48,6 +53,9 @@
 !/data/lookups/la_names.csv
 !/data/lookups/la_to_2023.csv
 !/data/lookups/trust_names.csv
+!/data/lookups/imd2019_lsoa2011.csv
+!/data/lookups/ethnic_category.csv
+!/data/lookups/ethnicity_pair_rules.csv
 !/ONS Birth Methods Review.docx
 
 # Generated Quarto files and separately supplied data stay local.

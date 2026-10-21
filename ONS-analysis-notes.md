@@ -13,24 +13,23 @@ All adjusted projections use one LA(R) × Age (SY) × year master in
 3. Apply M/(L+S) from those same national counts.
 4. Apply the Private–NHS modifier: 1 minus pooled 2023–2025 England Table 4
    non-NHS maternities / all maternities, within each available age band.
-5. Apply the maternity pathway adjustment: all cohort pregnancies / recorded cohort deliveries
-   for each cluster LA/age. Only No recorded delivery drives the uplift;
-   home births and Delivery location unknown remain recorded births.
+5. Apply the maternity pathway adjustment from the corrected LA total file:
+   (`antenatal+delivery` + `birth only` + `antenatal only`) /
+   (`antenatal+delivery` + `birth only`), using sums of `count` at each LA/age.
 
-Use supplied cohort rows aged 13–54, without another date filter. BBCS resident
-delivery counts and age weights come from `final_cohort_2326`, using
-`age_at_birth_mother`, falling back to `age_at_booking_mother` only when birth age is `NA`.
-The resolved age is used throughout cohort-based outputs, calibration, age-band modifiers
-and allocations. No year is added to booking age; it may be younger than delivery age
-and move a pregnancy into a younger band. Neither usable age means an unknown age.
-Both input columns are required; source values and the selected source are retained
-in the prepared cohort for QA. Only contributing outside LAs use `total_births_by_LA_2326`
-for their full resident delivery counts and age distributions. Outside LAs use the
-same-age ratio pooled among residents of the configured cluster LAs. The same
-proxy applies where a cluster LA lacks local recorded-birth evidence. Do not
-borrow a rate from another age. A positive source count without same-age
-uplift evidence remains unestimated, including an unsplit boundary with no
-exact age. Zero-weight source contributions remain zero.
+Every LA uses its own `total_births_by_LA_2326` delivery counts, age distribution
+and pathway ratio. There is no borrowed cluster uplift. The `group` column
+defines pathway membership independently of dates. Both components use the
+assigned pregnancy FY: `birth_yr` first, otherwise `edd_yr`, pooled over
+2023/24-2025/26. Age uses birth age first, with booking age only for source NA.
+Missing counts are zero in the model but remain NA in raw diagnostics; an
+unknown group is visible in QA and prevents allocation at that LA/age.
+Zero delivery denominators give zero uplift. Positive ONS contributions without
+usable same-age evidence remain unavailable; zero source contributions stay zero.
+
+Provider shares use supplied cohort rows aged 13-54 without another date filter.
+Each pregnancy contributes once, including separate pregnancies for one mother.
+Home births and unknown delivery locations remain recorded deliveries.
 
 ## Shared denominator and residual groups
 
@@ -48,22 +47,19 @@ booking evidence. A valid provider can be allocated without a booking date.
 
 **Booking Denominator Factor = estimated resident maternities − cohort
 pregnancy count.** This is a separate residual group, not observed bookings
-or known no-booking records. The cluster proxy is an explicit assumption for
-unobserved flows, not a national MSDS ratio.
-
-Example: an outside LA with 100 resident deliveries, 60 cohort deliveries and 15
-no-delivery records, using a same-age cluster uplift of 1.25, has denominator 125,
-delivery gap 40 and booking residual 50. Within BBCS, the cohort supplies both
-local counts, so the residual is zero where the local ratio can be calculated.
-Outside-LA proxy rates can create differences from their
-observed cohort mix; these stay visible in the review.
+or known no-booking records. For example, 80 antenatal+delivery, 20 birth only
+and 25 antenatal only give 100 deliveries, 105 observed antenatal pregnancies
+and 125 total pregnancies. The pathway factor is 125/100 = 1.25.
+With 60 cohort deliveries and 15 cohort no-delivery records, the delivery gap
+is 40 and the booking residual is 50. The shared denominator is 125; it is not
+a count of observed bookings. These rules apply to cluster and outside LAs.
 
 ## Review and reporting
 
 The saved `booking_modifications` table compares resident and cohort deliveries
 by LA and age, shows the uplift source, and calculates the booking residual.
 Resident deliveries outside the linked cohort remain in the residual category.
-Negative gaps or a proxy no-delivery estimate below the observed cohort count
+Negative gaps or an LA antenatal-only count below the observed cohort count
 leave provider allocations Unallocated; negative residuals are never silently
 clamped. Missing uplift evidence is shown explicitly. QA checks coverage as
 well as totals. The booking section shows projected residual counts and shares
@@ -97,12 +93,13 @@ references to the same `Adjusted_maternities` value. Do not add their totals.
 `National_conversion_factor` contains the two national factors only;
 the master's `Maternity_modifier` also includes the Private–NHS modifier and maternity pathway adjustment and is
 applied after the age split.
-Calculation version: `ons-shared-age-calculations-v21`.
+Calculation version: `ons-shared-age-calculations-v24`.
 
 Resident charts sum the master before allocation; trust charts sum completed
 provider contributions. The historical comparison is in-sample, not independent
 validation. All final age bands are applied after the calculations. Descriptive
-annual delivery/booking-share charts retain their event-year definitions;
+annual delivery/booking-share charts use one assigned pregnancy FY: birth FY
+first, otherwise EDD FY in both cohort and LA counts;
 they do not rerun the full-cohort model on mismatched annual populations.
 The detailed ONS growth tables compare source birth counts directly, taking the
 repeated source count once per LA/source age/year. An unavailable modifier at
@@ -175,7 +172,7 @@ objects; it is not a pipeline step and does not create a prescribed output.
 
 The report calls the fifth modifier **Maternity pathway adjustment**. The existing
 `Bookings_uplift_modifier` column name is retained for compatibility; it still means
-all cohort pregnancies divided by recorded cohort deliveries, not bookings divided
+all resident pregnancies divided by resident deliveries, not bookings divided
 by deliveries. Within BBCS, allocating the shared total by B/T and D/T gives
 P × B/D bookings and P deliveries, where P is the ONS-derived delivery-equivalent
 projection after the Private–NHS modifier and before pathway adjustment. Apply

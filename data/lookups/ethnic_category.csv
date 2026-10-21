@@ -1,0 +1,18 @@
+code,description,group_code
+A,White - British,W
+B,White - Irish,W
+C,White - Any other White background,W
+D,Mixed - White and Black Caribbean,M
+E,Mixed - White and Black African,M
+F,Mixed - White and Asian,M
+G,Mixed - Any other mixed background,M
+H,Asian or Asian British - Indian,A
+J,Asian or Asian British - Pakistani,A
+K,Asian or Asian British - Bangladeshi,A
+L,Asian or Asian British - Any other Asian background,A
+M,Black or Black British - Caribbean,B
+N,Black or Black British - African,B
+P,Black or Black British - Any other Black background,B
+R,Other Ethnic Groups - Chinese,OOC
+S,Other Ethnic Groups - Any other ethnic group,OO
+Z,Not stated,Z

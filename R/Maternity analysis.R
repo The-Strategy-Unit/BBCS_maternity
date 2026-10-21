@@ -253,11 +253,11 @@ ons_exploration <- list(
 # MODEL_INPUT: MSDS_BOOKINGS
 # All supplied pregnancies, including no recorded booking or delivery.
 # MODEL_INPUT: MSDS_RESIDENTS
-# Every LA: total_births_by_LA_2326 deliveries by birth FY/birth age and
-# antenatal-only pregnancies by estimated due FY/booking age.
+# Every LA: group identifies deliveries (birth only + antenatal+delivery) and
+# antenatal only. Both use birth FY/age first, with EDD FY/booking-age fallback.
 # Source names containing "births" do not change their maternity counting unit.
 # 2.1 Latest-year patient flows (report section 2.2.4) ------------------------
-# CONTEXT_ONLY: booking-year charts and Age (B) summaries stay exploratory.
+# CONTEXT_ONLY: pregnancy-year charts and Age (B) summaries stay exploratory.
 # Section 3 uses supplied rows aged 13--54 and one shared LA(R)/Age (SY) denominator.
 # Check the required inputs once; data QA is in R/QA.R.
 required_objects <- "final_cohort_2326"
@@ -379,7 +379,7 @@ make_flows <- function(source, target, count, keep_codes) {
 }
 
 
-# Use the same pregnancy records, flags and delivery-year definition in every year.
+# Use the same pregnancy records, flags and pregnancy-year definition in every year.
 # The separately supplied aggregate matrices have unconfirmed inclusion/period rules.
 make_cohort_year_flows <- function(start_year) {
   cohort <- report_episodes |>
@@ -629,12 +629,13 @@ activity_episodes <- report_episodes |>
   dplyr::transmute(Row, person_id_mother = Person, uniq_preg_id = Pregnancy,
     delivery_date = Delivery_date, delivery_year = Delivery_year,
     birth_code = Trust, booking_code = Booking_Trust, residence_code = Resident_ICB,
-    booking_date = Booking_date, booking_year = Booking_year,
+    booking_date = Booking_date, booking_year = Pregnancy_year,
+    pregnancy_fy = Pregnancy_FY, pregnancy_year_source = Pregnancy_year_source,
     birth_flag = Birth_flag, birth_recorded = Birth_recorded, home_birth = Home)
 
 # Shared pathway definition for the latest-year and three-year outputs.
 classify_pathway_outcome <- function(episodes) {
-  # A year/date alone is not a recorded birth. Follow-up may extend beyond booking year.
+  # Assigned birth/due FY does not establish a recorded birth.
   # Home births remain starts but are outside hospital delivery locations.
   dplyr::case_when(
     !episodes$birth_recorded ~ "No recorded delivery",
@@ -669,7 +670,7 @@ classify_booking_icb_delivery_outcome <- function(episodes) {
 }
 
 cluster_activity <- list(
-  note = "The combined cluster includes Black Country and Birmingham and Solihull. Delivery totals count each pregnancy with a recorded live birth or stillbirth at a cluster provider once, in its delivery financial year. Home births and records with unknown home status are excluded from these hospital totals. Antenatal bookings count pregnancies by booking provider and booking financial year, retaining every recorded outcome, including home births, unknown delivery locations and no recorded delivery."
+  note = "The combined cluster includes Black Country and Birmingham and Solihull. Delivery totals count each pregnancy with a recorded live birth or stillbirth at a cluster provider once, in its assigned pregnancy financial year. Home births and records with unknown home status are excluded from these hospital totals. Antenatal bookings count pregnancies by booking provider and assigned pregnancy financial year, retaining every recorded outcome, including home births, unknown delivery locations and no recorded delivery."
 )
 
 safe_share <- function(n, total) dc_ratio(n, total)
@@ -755,7 +756,7 @@ cluster_activity$outside_text <- paste0(count_text(nrow(outside_deliveries)), " 
   " Residence was unknown for ", count_text(sum(deliveries_2526$residence_type == "Unknown residence")),
   " deliveries; these are excluded from the outside-resident count.")
 
-# Same delivery-year definition across all three years
+# Same pregnancy-year definition across all three years
 delivery_trend <- do.call(rbind, lapply(analysis_years, function(year) {
   year_deliveries <- deliveries[deliveries$delivery_year == year, ]
   data.frame(Year = paste0(year, "/", substr(year + 1L, 3, 4)),
@@ -779,7 +780,7 @@ cluster_activity$trend_text <- paste0(
   "). The share for women living outside the cluster changed from ", percent_text(delivery_trend$Outside_share[1]),
   " to ", percent_text(delivery_trend$Outside_share[3]), ".")
 
-# Antenatal starts: booking year 2025/26; all recorded delivery dates
+# Antenatal starts: assigned pregnancy year 2025/26; all recorded delivery dates
 starts <- activity_episodes[
   !is.na(activity_episodes$booking_year) & activity_episodes$booking_year == latest_year &
     activity_episodes$booking_code %in% cluster_trusts, ]
@@ -811,7 +812,7 @@ cluster_activity$pathway_table <- gt::gt(dc_counts(pathways, c("Starts", outcome
     No_delivery = "No recorded delivery", Unknown = "Delivery location unknown") |>
   gt::fmt_number(columns = c("Starts", "Within", "Outside", "No_delivery", "Unknown"), decimals = 0)
 cluster_activity$pathway_text <- paste0(
-  count_text(nrow(starts)), " pregnancies were booked at cluster trusts in 2025/26; ",
+  count_text(nrow(starts)), " pregnancies were assigned to 2025/26 with a cluster booking provider; ",
   count_text(sum(starts$outcome == "Outside cluster")), " had a recorded delivery outside the cluster or at home and ",
   count_text(sum(starts$outcome == "No recorded delivery")), " had no recorded delivery. ",
   "The charts group the same bookings by trust, ICB and combined cluster.")
@@ -1090,7 +1091,7 @@ build_delivery_outcome_trends <- function(starts, trend_outcomes, trend_labels, 
     gt::fmt_percent(columns = c("Share", "YoY_change", "Base_change"), decimals = 1) |>
     gt::sub_missing(missing_text = "n.a.") |>
     gt::tab_source_note(source_note = paste0(
-      "Share = pregnancies with this outcome / all antenatal bookings in the same ", booking_group_text, " and booking year. ",
+      "Share = pregnancies with this outcome / all antenatal bookings in the same ", booking_group_text, " and assigned pregnancy year. ",
       "Changes are relative changes in that share: (current share / reference share - 1) x 100, ",
       "not percentage-point differences. n.a. = no antenatal bookings, no prior year, or a zero/unavailable reference share. ",
       "The base-year change is 0% where the 2023/24 share is positive. ",
@@ -1111,7 +1112,7 @@ build_delivery_outcome_trends <- function(starts, trend_outcomes, trend_labels, 
     dplyr::select(Level, Organisation, dplyr::all_of(change_columns))
   change_table <- gt::gt(change_wide, groupname_col = "Level", rowname_col = "Organisation") |>
     gt::tab_header(title = "Percentage change in delivery outcome shares",
-                   subtitle = "Relative change from booking financial year 2023/24") |>
+                   subtitle = "Relative change from assigned pregnancy financial year 2023/24") |>
     gt::tab_stubhead(label = if ("Trust" %in% group_levels) "Booking trust / ICB / cluster" else
                       "Booking ICB / cluster") |>
     gt::cols_label(.list = stats::setNames(
@@ -1827,6 +1828,9 @@ build_allocation_tables <- function(cohort, resident_totals,
   model_ages <- seq(parameters[["minimum_maternal_age"]], parameters[["maximum_maternal_age"]])
   required_las <- projection_resident_las(episodes, cluster_resident_las)
   usable <- function(x) !x %in% c("Unknown LA", "L99999999", "") & !is.na(x)
+  unknown_groups <- prepare_la_records(resident_totals) |>
+    dplyr::filter(is.na(Pathway_group), Pregnancy_FY %in% calibration_years) |>
+    dplyr::count(LA = report_la_code(la_of_mother), Age, name = "Resident_unclassified_rows")
   residents <- prepare_la_deliveries(resident_totals, missing_count_zero = TRUE) |>
     dplyr::filter(as.character(birth_yr) %in% calibration_years) |>
     dplyr::transmute(LA = report_la_code(la_of_mother),
@@ -1838,7 +1842,7 @@ build_allocation_tables <- function(cohort, resident_totals,
     dplyr::left_join(residents, by = c("LA", "Age")) |>
     dplyr::mutate(MSDS_resident_count = dplyr::coalesce(MSDS_resident_count, 0))
   antenatal <- prepare_la_antenatal_only(resident_totals, missing_count_zero = TRUE) |>
-    dplyr::filter(as.character(estimated_yr) %in% calibration_years) |>
+    dplyr::filter(as.character(edd_yr) %in% calibration_years) |>
     dplyr::transmute(LA = report_la_code(la_of_mother),
       Age = report_age(age_at_booking_mother), Resident_antenatal_only = report_number(count)) |>
     dplyr::filter(LA %in% required_las, Age %in% model_ages) |>
@@ -1854,19 +1858,24 @@ build_allocation_tables <- function(cohort, resident_totals,
   calibration <- dplyr::full_join(residents, cohort_counts, by = c("LA", "Age")) |>
     dplyr::mutate(dplyr::across(dplyr::starts_with("Cohort_"), ~ dplyr::coalesce(.x, 0))) |>
     dplyr::left_join(antenatal, by = c("LA", "Age")) |>
+    dplyr::left_join(unknown_groups, by = c("LA", "Age")) |>
     dplyr::mutate(
+    Resident_unclassified_rows = dplyr::coalesce(Resident_unclassified_rows, 0L),
     Resident_antenatal_only = dplyr::coalesce(Resident_antenatal_only, 0),
     Resident_pregnancies = MSDS_resident_count + Resident_antenatal_only,
-    Bookings_uplift_modifier = dplyr::if_else(MSDS_resident_count > 0,
-      Resident_pregnancies / MSDS_resident_count, 0),
-    Bookings_uplift_source = dplyr::if_else(MSDS_resident_count > 0,
-      "Own LA and age: expanded resident extract", "Zero: no resident deliveries at this LA and age"),
+    Bookings_uplift_modifier = dplyr::if_else(Resident_unclassified_rows > 0, NA_real_,
+      dplyr::if_else(MSDS_resident_count > 0, Resident_pregnancies / MSDS_resident_count, 0)),
+    Bookings_uplift_source = dplyr::case_when(
+      Resident_unclassified_rows > 0 ~ "Unknown/missing resident pathway group",
+      MSDS_resident_count > 0 ~ "Own LA and age: expanded resident extract",
+      TRUE ~ "Zero: no resident deliveries at this LA and age"),
     Resident_birth_gap = MSDS_resident_count - Cohort_recorded_births,
     Shared_maternity_denominator = dplyr::if_else(MSDS_resident_count == 0,
       0, MSDS_resident_count * Bookings_uplift_modifier),
     Estimated_no_recorded_delivery = Shared_maternity_denominator - MSDS_resident_count,
     Booking_Denominator_Factor = Shared_maternity_denominator - Cohort_pregnancies,
     Calibration_issue = dplyr::case_when(
+      Resident_unclassified_rows > 0 ~ "Unknown/missing resident pathway group",
       is.na(MSDS_resident_count) ~ "No matching resident birth count",
       Resident_birth_gap < -1e-8 ~ "Cohort births exceed resident births: check source periods/processing",
       Booking_Denominator_Factor < -1e-8 ~ "Cohort pregnancies exceed estimated resident total",
@@ -1906,7 +1915,8 @@ build_allocation_tables <- function(cohort, resident_totals,
     delivery_observed = delivery_observed, booking_observed = booking_observed,
     calibration = calibration, cohort_counts = cohort_counts,
     cluster_resident_las = cluster_resident_las, years = calibration_years, ages = model_ages,
-    period_review = episodes |> dplyr::count(Year, Booking_year, Birth_recorded, name = "Pregnancies"),
+    period_review = episodes |> dplyr::count(Year, Birth_FY, Due_FY, Pregnancy_year_source,
+      Birth_recorded, name = "Pregnancies"),
     exclusions = episodes |> dplyr::mutate(LA_usable = usable(LA), Age_usable = Age %in% model_ages) |>
       dplyr::count(LA_usable, Age_usable, Birth_recorded, name = "Pregnancies"))
 }
@@ -1920,8 +1930,9 @@ check_projection_la_sources <- function(cohort, resident_totals, ons_births,
     sort(unique(codes[!codes %in% c("Unknown LA", "L99999999", "") & !is.na(codes)]))
   }
   cohort_las <- usable_codes(report_la_code(cohort$la_of_mother))
-  resident_las <- usable_codes(report_la_code(resident_totals$la_of_mother[
-    as.character(resident_totals$birth_yr) %in% calibration_years]))
+  resident_deliveries <- prepare_la_deliveries(resident_totals)
+  resident_las <- usable_codes(report_la_code(resident_deliveries$la_of_mother[
+    as.character(resident_deliveries$birth_yr) %in% calibration_years]))
   ons_las <- usable_codes(ons_births$area_code[ons_births$age_group != "All ages" &
     ons_births$year >= start_year &
     ons_births$year <= if (is.null(end_year)) Inf else end_year])
@@ -2067,12 +2078,12 @@ build_projection_master <- function(cohort, resident_totals, ons_births, registr
   attr(master, "geography_changes") <- report_applied_geography(
     cohort$la_of_mother,
     resident_totals$la_of_mother[
-      as.character(resident_totals$birth_yr) %in% calibration_years &
+      report_pregnancy_fy(resident_totals$birth_yr, resident_totals$edd_yr) %in% calibration_years &
       report_la_code(resident_totals$la_of_mother) %in% residents$LA])
   attr(master, "registration_source") <- registration_counts
   attr(master, "ons_modifications") <- ons_modifications
   attr(master, "private_nhs") <- private_nhs
-  attr(master, "calculation_version") <- "ons-shared-age-calculations-v22"
+  attr(master, "calculation_version") <- "ons-shared-age-calculations-v24"
   master
 }
 
@@ -2118,7 +2129,7 @@ projection_column_dictionary <- function(master) {
       Column == "Year" ~ "ONS projection year.",
       Column == "ONS_live_births" ~ "Source births (L); repeated across ages within a combined group.",
       Column == "Age_weight" ~ "Pooled exact-age recorded resident deliveries / matching combined-age total; 1 for ages 16--43.",
-      Column == "MSDS_resident_count" ~ "Expanded LA extract: deliveries by birth year and age at birth, pooled over the calibration financial years for every LA. Missing counts are zero in the model.",
+      Column == "MSDS_resident_count" ~ "LA extract birth only + antenatal+delivery counts, by assigned pregnancy FY and resolved birth/booking age, pooled over calibration years for every LA. Missing counts are zero in the model.",
       Column == "Exact_age_live_births" ~ "ONS births (L) after the age split only: ONS_live_births * Age_weight; before stillbirth, multiplicity, Private-NHS or pathway adjustments.",
       Column %in% c("Pooled_live_births", "Pooled_stillbirths", "Pooled_total_births", "Pooled_maternities") ~ "National Table 5 count summed across 2023--2025 at the matching registration age; used to calculate the factors, not a projected count.",
       Column == "Calculation_basis" ~ "Pool national counts across 2023--2025 at each published age, then divide.",
@@ -2133,9 +2144,10 @@ projection_column_dictionary <- function(master) {
       Column == "Maternities_after_private" ~ "Maternities_before_private * Private_NHS_factor; the delivery-equivalent projection before pathway uplift.",
       Column == "Maternity_modifier" ~ "Stillbirth_factor * Multiplicity_factor * Private_NHS_factor * Bookings_uplift_modifier; apply after the local age split.",
       Column == "Adjusted_births_ls" ~ "Exact_age_live_births * Stillbirth_factor.",
-      Column == "Bookings_uplift_modifier" ~ "(LA deliveries + LA antenatal-only pregnancies) / LA deliveries at the same age over the calibration years. Delivery uses birth FY/birth age; antenatal-only uses due FY/booking age. Zero if the delivery denominator is zero or missing; no borrowed rate.",
+      Column == "Bookings_uplift_modifier" ~ "(LA deliveries + LA antenatal-only pregnancies) / LA deliveries at the same age over the calibration years. group defines deliveries (birth only + antenatal+delivery) and antenatal only. Both use birth FY first, otherwise EDD, and birth age first, otherwise booking age when birth age is NA. Zero if the delivery denominator is zero or missing; no borrowed rate.",
       Column == "Bookings_uplift_source" ~ "Own LA/age evidence from the expanded resident extract, or the agreed zero-denominator treatment.",
-      Column == "Resident_antenatal_only" ~ "LA extract count with missing birth_yr and estimated_yr in the calibration period, grouped by age_at_booking_mother. Missing counts are zero in the model.",
+      Column == "Resident_antenatal_only" ~ "LA extract antenatal only group in the assigned pregnancy-FY calibration period, grouped by resolved birth/booking age. Missing counts are zero in the model.",
+      Column == "Resident_unclassified_rows" ~ "Source aggregate rows with unknown/missing pathway group in this LA/age and calibration period; any such row blocks allocation.",
       Column == "Resident_pregnancies" ~ "Resident deliveries plus antenatal-only pregnancies from the LA extract; each pregnancy counted once.",
       Column == "Cohort_pregnancies" ~ "All supplied pregnancy rows with this usable resident LA and maternal age; no additional date filter.",
       Column == "Cohort_recorded_births" ~ "Supplied pregnancies with birth_flag = 1: live birth or stillbirth, counted once per pregnancy, including home deliveries and unknown delivery locations.",
@@ -2146,7 +2158,7 @@ projection_column_dictionary <- function(master) {
       Column == "Allocation_available" ~ "Whether the supplied resident count and selected uplift support nonnegative destination allocations.",
       Column == "Booking_Denominator_Factor" ~ "Estimated resident pregnancy denominator minus all supplied cohort pregnancies; a residual allocation group, not observed bookings.",
       Column == "Shared_maternity_denominator" ~ "Recorded resident deliveries * Bookings_uplift_modifier; common denominator for both allocation views.",
-      Column == "Estimated_no_recorded_delivery" ~ "Shared maternity denominator minus recorded resident deliveries, including the proxy allowance outside the cohort.",
+      Column == "Estimated_no_recorded_delivery" ~ "Shared maternity denominator minus resident deliveries, using the LA extract antenatal-only count where the delivery denominator is positive.",
       Column == "Projection_available" ~ "False where a positive ONS count has no same-age uplift evidence; the projection remains missing.",
       Column == "Adjusted_maternities" ~ "Exact_age_live_births * Stillbirth_factor * Multiplicity_factor * Private_NHS_factor * Bookings_uplift_modifier; shared allocation total.",
       Column == "Delivery_projection_base" ~ "Adjusted maternities available for delivery allocation.",
@@ -2280,8 +2292,8 @@ if (length(absent)) stop("Missing objects: ", paste(absent, collapse = ", "),
 required_columns <- list(
   final_cohort_2326 = c("person_id_mother", "uniq_preg_id", "birth_yr", "birth_flag",
     "la_of_mother", "age_at_birth_mother", "age_at_booking_mother", "birth_provider", "home_birth"),
-  total_births_by_LA_2326 = c("birth_yr", "estimated_yr", "la_of_mother",
-    "age_at_birth_mother", "age_at_booking_mother", "count"))
+  total_births_by_LA_2326 = c("birth_yr", "edd_yr", "la_of_mother",
+    "age_at_birth_mother", "age_at_booking_mother", "group", "count"))
 for (name in names(required_columns)) {
   missing_columns <- setdiff(required_columns[[name]], names(get(name)))
   if (length(missing_columns)) stop(name, " is missing: ",
@@ -2310,7 +2322,7 @@ make_projection_coverage_table <- function(coverage, baseline_fy) {
       Unmatched = "Not allocated") |>
     gt::fmt_number(columns = c("Recorded_births", "Home_births", "Unknown_home_flag",
       "Observed_baseline", "Matched_allocation", "Unmatched"), decimals = 0) |>
-    gt::tab_source_note("One pregnancy per row; birth flag = 1 and the stated delivery year. Recorded maternities = home + unknown home flag + non-home baseline. Baseline = matched LA/age + not allocated, including unresolved calibration issues. Home births can involve NHS care; they are excluded only from these trust-location totals.") |>
+    gt::tab_source_note("One pregnancy per row; birth flag = 1 and the assigned pregnancy FY. Recorded maternities = home + unknown home flag + non-home baseline. Baseline = matched LA/age + not allocated, including unresolved calibration issues. Home births can involve NHS care; they are excluded only from these trust-location totals.") |>
     gt::tab_options(container.width = "100%", container.overflow.x = TRUE)
 }
 
@@ -2320,7 +2332,7 @@ build_provider_total_comparison <- function(master, cohort, organisations, model
     history_years = projection_history_years, history_master = NULL) {
   booking <- type == "Booking"
   provider <- if (booking) projection_booking_destination(cohort) else projection_delivery_destination(cohort)
-  event_year <- if (booking) cohort$Booking_year else cohort$Delivery_year
+  event_year <- cohort$Pregnancy_year
   historical <- as.integer(substr(history_years, 1, 4))
   # Earlier ONS bases use the already-calculated master, with the same shares.
   # Do not manufacture observed ONS provider counts or blend source years.
@@ -2500,7 +2512,7 @@ build_first_draft_projections <- function(baseline_fy = projection_baseline,
         !LA_usable ~ "Missing/unusable resident LA",
         !Age_usable ~ "Missing/unusable maternal age",
         !Age %in% attr(wide_master, "allocation_tables")$ages ~ "Outside projection age range",
-        !ONS_covered ~ "No England ONS series for resident LA",
+        !ONS_covered ~ "No ONS series for resident LA in supplied projections",
         is.na(Calibration_issue) ~ "No matching LA/age calibration",
         Calibration_issue != "" ~ Calibration_issue, TRUE ~ ""))
   coverage <- dplyr::bind_rows(lapply(seq_len(nrow(organisations)), function(i) {
@@ -2765,11 +2777,12 @@ build_first_draft_projections <- function(baseline_fy = projection_baseline,
   projection_note <- paste("ONS births (L) \u00d7 local exact-age share \u00d7 [1 + S/L]",
     "\u00d7 M/(L+S) \u00d7 Private\u2013NHS modifier \u00d7 maternity pathway adjustment \u00d7 LA/age destination proportion.",
     "National Table 5 counts pool 2023--2025; MSDS calibration uses supplied cohort rows aged 13--54.",
+    "Historical bookings and recorded deliveries share pregnancy FY: birth_yr first, otherwise edd_yr; appointments do not assign FY.",
     "Private\u2013NHS factors use pooled 2023--2025 England Table 4 age bands; the same setting-proxy reduction is assumed for bookings and deliveries.",
     "Every LA uses its own resident deliveries and antenatal-only counts for 2023/24--2025/26; a zero/missing delivery denominator gives a zero pathway factor.",
     "Both allocations use one adjusted total. Home, no recorded delivery/booking, unknowns",
     "and the Booking Denominator Factor remain separate. No rebasing to observed activity.")
-  result <- list(calculation_version = "ons-shared-age-calculations-v22", organisations = organisations, feeder_shares = feeder_shares,
+  result <- list(calculation_version = "ons-shared-age-calculations-v24", organisations = organisations, feeder_shares = feeder_shares,
     master = wide_master, delivery_rows = master, booking_rows = booking_rows,
     booking_totals = list(Trust = booking_trust_totals, ICB = booking_icb_totals, Cluster = booking_cluster_totals),
     booking_age_projections = booking_age_projections, booking_total_projections = booking_total_projections,
@@ -2873,7 +2886,8 @@ build_first_draft_projections <- function(baseline_fy = projection_baseline,
     gt::fmt_number(columns = where(is.numeric), decimals = 1)
   result$booking_period_table <- dc_counts(attr(wide_master, "allocation_tables")$period_review, "Pregnancies") |>
     base_table("Source periods in the full supplied cohort", "These counts are retained without an additional calibration date filter") |>
-    gt::cols_label(Year = "Delivery financial year", Booking_year = "Booking FY start", Birth_recorded = "Birth recorded")
+    gt::cols_label(Year = "Assigned pregnancy FY", Birth_FY = "Supplied birth FY", Due_FY = "Supplied EDD FY",
+      Pregnancy_year_source = "FY source", Birth_recorded = "Birth recorded")
   result$booking_exclusions_table <- dc_counts(attr(wide_master, "allocation_tables")$exclusions, "Pregnancies") |>
     base_table("LA and age availability in the supplied cohort",
       "Records without a usable LA or age remain in this source audit but cannot inform an LA/age modifier or allocation") |>
@@ -3556,7 +3570,7 @@ build_projection_sankeys <- function(observed, projected, organisations,
 build_input_variation_review <- function(cohort, resident_totals, registration_counts,
     pooled, providers = cluster_trusts) {
   years <- pooled$years
-  # Descriptive annual shares use their recorded event years. They do not
+  # Descriptive annual shares use the shared pregnancy FY. They do not
   # change the model's full-cohort calibration or allocate the residual group.
   episodes <- prepare_report_cohort(cohort)
   episodes$Delivery_destination <- projection_delivery_destination(episodes)
@@ -3572,8 +3586,8 @@ build_input_variation_review <- function(cohort, resident_totals, registration_c
   annual_delivery <- valid |> dplyr::filter(Year %in% years, Birth_recorded) |>
     dplyr::count(LA, Age, FY = Year, Destination = Delivery_destination, name = "Count") |>
     dplyr::full_join(annual_residents, by = c("LA", "Age", "FY"))
-  annual_booking <- valid |> dplyr::filter(Booking_year %in% as.integer(substr(years, 1, 4))) |>
-    dplyr::mutate(FY = paste0(Booking_year, "/", substr(Booking_year + 1L, 3, 4))) |>
+  annual_booking <- valid |> dplyr::filter(Pregnancy_FY %in% years) |>
+    dplyr::mutate(FY = Pregnancy_FY) |>
     dplyr::count(LA, Age, FY, Destination = Booking_destination, name = "Count") |>
     dplyr::group_by(LA, Age, FY) |> dplyr::mutate(MSDS_booking_total = sum(Count)) |>
     dplyr::ungroup()

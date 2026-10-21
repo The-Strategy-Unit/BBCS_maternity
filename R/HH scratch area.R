@@ -1,12 +1,40 @@
+# COUNTRY MATCHING IMPACT: overview tables only ------------------------
+# Run with final_cohort_2326 loaded; no full analysis needed.
+source("R/Country matching overview.R")
+# END COUNTRY MATCHING IMPACT ------------------------------------------
+
+# QUICK RAW UPLIFT: same groups, FYs and ages; NA counts stay visible -----
+library(dplyr)
+source("R/report_cohort.R")
+hh_uplift <- prepare_la_records(total_births_by_LA_2326) |>
+  mutate(LA = report_la_code(la_of_mother)) |>
+  filter(Pregnancy_FY %in% c("2023/24", "2024/25", "2025/26"), Age %in% 13:54) |>
+  group_by(LA, Age) |>
+  summarise(
+    Both = sum(count[Pathway_group %in% "antenatal+delivery"]),
+    Birth_only = sum(count[Pathway_group %in% "birth only"]),
+    Antenatal_only = sum(count[Pathway_group %in% "antenatal only"]),
+    Missing_counts = sum(is.na(count)),
+    Unknown_groups = sum(is.na(Pathway_group)), .groups = "drop") |>
+  mutate(Deliveries = Both + Birth_only,
+    Raw_uplift = if_else(Unknown_groups > 0, NA_real_,
+      (Deliveries + Antenatal_only) / Deliveries))
+print(hh_uplift, n = 30, width = Inf)
+hh_uplift |> filter(Missing_counts > 0 | Unknown_groups > 0 | !is.finite(Raw_uplift)) |>
+  print(n = Inf, width = Inf)
+# Model counts currently replace NA with zero and use zero for no deliveries.
+# This raw check keeps NA/Inf/NaN and includes all supplied LAs, before catchment selection.
+# END QUICK RAW UPLIFT --------------------------------------------------
+
 # QUICK COMPARISON: ALL LAs AND COMBINED COHORT LAs ----------------------
 # Run this section only. Reads Sarah's two loaded objects directly.
 # Cohort LAs = Birmingham, Dudley, Sandwell, Solihull, Walsall, Wolverhampton.
 # These are RESIDENT groups, not provider groups. All LAs includes missing LA.
 # Total-file pregnancies = deliveries + antenatal-only, plus any unassigned rows.
-# Its deliveries use birth_yr; antenatal-only uses estimated_yr (DUE year).
-# It cannot give appointment-year bookings. Cohort bookings use appointment FY.
+# Assign one FY: birth_yr first, otherwise edd_yr in both files.
 # Sum count in the total file; count rows in the cohort. No deduplication/rounding.
 library(dplyr)
+source("R/report_cohort.R")
 
 quick_comparison <- bind_rows(lapply(c("All LAs", "Cohort LAs"), function(scope) {
   totals <- total_births_by_LA_2326
@@ -17,24 +45,26 @@ quick_comparison <- bind_rows(lapply(c("All LAs", "Cohort LAs"), function(scope)
     cohort <- filter(cohort, la_of_mother %in%
       c("E08000025", "E08000027", "E08000028", "E08000029", "E08000030", "E08000031"))
   }
-  total_counts <- totals |>
-    mutate(FY = coalesce(birth_yr, estimated_yr)) |>
+  total_counts <- prepare_la_records(totals) |>
+    mutate(FY = Pregnancy_FY) |>
     group_by(FY, .drop = FALSE) |>
     summarise(Total_file_pregnancies = sum(count),
-      Total_file_antenatal_only = sum(count[is.na(birth_yr) & !is.na(estimated_yr)]),
-      Total_file_deliveries = sum(count[!is.na(birth_yr)]), .groups = "drop") |>
+      Total_file_antenatal_only = sum(count[Pathway_group %in% "antenatal only"]),
+      Total_file_birth_only = sum(count[Pathway_group %in% "birth only"]),
+      Total_file_both = sum(count[Pathway_group %in% "antenatal+delivery"]),
+      Total_file_deliveries = sum(count[Has_delivery]),
+      Total_file_bookings = sum(count[Has_antenatal]),
+      Total_file_unknown_group = sum(count[is.na(Pathway_group)]), .groups = "drop") |>
     tidyr::complete(FY = c("2023/24", "2024/25", "2025/26"),
       fill = list(Total_file_pregnancies = 0, Total_file_antenatal_only = 0,
-        Total_file_deliveries = 0), explicit = FALSE)
+        Total_file_birth_only = 0, Total_file_both = 0, Total_file_deliveries = 0,
+        Total_file_bookings = 0, Total_file_unknown_group = 0), explicit = FALSE)
   cohort_counts <- bind_rows(
-    cohort |>
-      mutate(appointment = as.Date(antenatal_app_date, format = "%Y-%m-%d"),
-        start = as.integer(format(appointment, "%Y")) -
-          as.integer(as.integer(format(appointment, "%m")) < 4)) |>
-      transmute(FY = if_else(is.na(start), NA_character_,
-        paste0(start, "/", substr(start + 1L, 3, 4))), Event = "Booking"),
-    cohort |> filter(birth_flag %in% 1) |>
-      transmute(FY = birth_yr, Event = "Delivery")
+    prepare_report_cohort(cohort) |>
+      filter(Booking_provider_supplied | Booking_date_supplied) |>
+      transmute(FY = Pregnancy_FY, Event = "Booking"),
+    prepare_report_cohort(cohort) |> filter(Birth_recorded) |>
+      transmute(FY = Pregnancy_FY, Event = "Delivery")
   ) |>
     group_by(FY, .drop = FALSE) |>
     summarise(Cohort_bookings = sum(Event == "Booking"),
@@ -52,8 +82,8 @@ tidyr::expand_grid(Scope = c("All LAs", "Cohort LAs"),
   print(n = Inf, width = Inf)
 
 # Separate small table so missing/other years cannot disappear unnoticed.
-# In the NA-year row, Cohort_bookings counts rows with no assignable appointment
-# year, not confirmed bookings. NA counts are left as NA, never replaced by zero.
+# NA-year bookings have booking evidence but no usable birth/EDD FY.
+# NA source counts remain NA.
 quick_comparison |>
   filter(!FY %in% c("2023/24", "2024/25", "2025/26")) |>
   arrange(Scope, FY) |>
@@ -93,10 +123,10 @@ final_cohort_2326 |>
     Missing_LA_rows = sum(is.na(la_of_mother)), .groups = "drop") |>
   print(n = Inf, width = Inf)
 
-# 2. BOOKINGS: derived appointment FY, including absent/unparsed dates.
+# 2. RAW APPOINTMENT AUDIT ONLY: not the model's assigned pregnancy FY.
 # Sarah supplies ISO dates. The parse is a separate diagnostic column.
 # Unparsed source values stay in the NA FY group; the raw values appear below.
-# A usable appointment date identifies dated bookings. Unknown-date rows remain
+# These dates do not assign pregnancy FY. Unknown-date rows remain
 # visible rather than being counted as confirmed bookings in an invented year.
 final_cohort_2326 |>
   mutate(Diagnostic_date = as.Date(antenatal_app_date, format = "%Y-%m-%d"),
@@ -136,12 +166,12 @@ final_cohort_2326 |>
   print(n = Inf, width = Inf)
 
 # 4. LA EXTRACT: every supplied delivery/due-year pair, without coalescing them.
-# Non-NA birth_yr = deliveries. NA birth_yr + non-NA estimated_yr =
-# antenatal-only pregnancies by DUE FY, not appointment FY.
+# group supplies antenatal only, birth only or antenatal+delivery.
+# Dates assign FY: birth_yr first, otherwise edd_yr.
 # Both years NA = unassigned, still printed. Provider totals cannot be obtained
 # from this LA extract because it has no provider field.
 total_births_by_LA_2326 |>
-  group_by(birth_yr, estimated_yr, .drop = FALSE) |>
+  group_by(group, birth_yr, edd_yr, .drop = FALSE) |>
   summarise(Source_rows = n(), Whole_file_count = sum(count),
     Cluster_LA_resident_count = sum(count[la_of_mother %in%
       c("E08000025", "E08000027", "E08000028", "E08000029", "E08000030", "E08000031")]),
@@ -214,12 +244,12 @@ final_cohort_2326 |>
   print(n = Inf, width = Inf)
 
 # 4. LA FILE: BOTH supplied year fields together, including null combinations.
-# birth_yr present = deliveries; birth_yr NA = the added antenatal bookings.
-# estimated_yr is due FY. Do not combine these into a cleaned/coalesced year.
+# Pathway membership comes from group, never from whether birth_yr is populated.
+# Raw field audit only. The model uses birth_yr first, otherwise edd_yr.
 # Total_count includes every row; cluster/unknown-LA columns are extra subtotals.
 # No na.rm: an NA count stays visible as an NA sum, with Missing_count_rows shown.
 total_births_by_LA_2326 |>
-  group_by(birth_yr, estimated_yr, .drop = FALSE) |>
+  group_by(group, birth_yr, edd_yr, .drop = FALSE) |>
   summarise(Source_rows = n(), Total_count = sum(count),
     Cluster_resident_count = sum(count[la_of_mother %in%
       c("E08000025", "E08000027", "E08000028", "E08000029", "E08000030", "E08000031")]),
@@ -237,7 +267,7 @@ total_births_by_LA_2326 |>
       c("E08000025", "E08000027", "E08000028", "E08000029", "E08000030", "E08000031") ~
         "Combined cluster residents",
     TRUE ~ "All other supplied LA values")) |>
-  group_by(Residence_group, birth_yr, estimated_yr, .drop = FALSE) |>
+  group_by(Residence_group, group, birth_yr, edd_yr, .drop = FALSE) |>
   summarise(Source_rows = n(), Total_count = sum(count),
     Missing_count_rows = sum(is.na(count)), .groups = "drop") |>
   print(n = Inf, width = Inf)
@@ -346,7 +376,7 @@ total_births_by_LA_2326 |>
     Source_LA_missing = is.na(la_of_mother),
     code_changed = report_code(la_of_mother, "Unknown LA") != LA_2023,
     in_ONS = LA_2023 %in% ons_codes) |>
-  group_by(birth_yr, estimated_yr, Source_LA_missing, code_changed, in_ONS,
+  group_by(group, birth_yr, edd_yr, Source_LA_missing, code_changed, in_ONS,
     .drop = FALSE) |>
   summarise(Source_rows = n(), Total_count = sum(count),
     Missing_count_rows = sum(is.na(count)), .groups = "drop")
@@ -378,11 +408,6 @@ file.exists("render.log")
 # This section does not change the source objects, run the model or save files.
 library(dplyr)
 source("R/report_cohort.R")
-hh_booking_fy <- function(date) {
-  start <- as.integer(format(date, "%Y")) -
-    as.integer(as.integer(format(date, "%m")) < 4L)
-  ifelse(is.na(start), NA_character_, paste0(start, "/", substr(start + 1L, 3, 4)))
-}
 # Read just the organisation settings from the analysis, without executing it.
 hh_booking_config <- new.env(parent = baseenv())
 for (hh_statement in parse("R/Maternity analysis.R")) {
@@ -393,7 +418,7 @@ for (hh_statement in parse("R/Maternity analysis.R")) {
 }
 hh_bookings <- prepare_report_cohort(final_cohort_2326) |>
   mutate(Source_birth_FY = as.character(final_cohort_2326$birth_yr),
-    Booking_FY = hh_booking_fy(Booking_date),
+    Booking_FY = Pregnancy_FY,
     Booking_ICB = coalesce(unname(hh_booking_config$provider_icb[Booking_Trust]),
       "Outside lookup / unknown"),
     Booking_in_cluster = Booking_Trust %in% hh_booking_config$cluster_trusts)
@@ -406,8 +431,7 @@ tibble::as_tibble(final_cohort_2326) |>
   print(n = Inf)
 
 # Missing dates/providers and failed appointment-date parsing.
-# Delivery FY uses birth_yr only; birth_date is not needed for these totals.
-# A provider without a usable booking date cannot enter a booking-FY chart.
+# Assigned FY uses birth_yr first, otherwise edd_yr; appointment dates are audit only.
 hh_bookings |>
   group_by(Source_birth_FY) |>
   summarise(rows = n(), recorded_deliveries = sum(Birth_recorded),
@@ -437,23 +461,20 @@ hh_bookings |>
 # ICB here means the BOOKING PROVIDER'S ICB, as in the chart, not residence.
 
 # 3. Annual cluster counts, including unknown and out-of-period years.
-# Each event uses its own FY; the two columns are not a linked outcome comparison.
+# Both recorded events use the same assigned pregnancy FY.
 hh_bookings |> filter(Booking_in_cluster) |>
   count(FY = Booking_FY, name = "bookings") |>
   full_join(hh_bookings |> filter(Birth_recorded,
       Trust %in% hh_booking_config$cluster_trusts) |>
-      count(FY = Source_birth_FY, name = "recorded_deliveries"), by = "FY") |>
+      count(FY = Pregnancy_FY, name = "recorded_deliveries"), by = "FY") |>
   arrange(FY) |>
   print(n = Inf)
 
-# 4. Is this a delivery-year cohort being used to count booking-year activity?
-# Complete 2025/26 DELIVERIES do not prove complete 2025/26 BOOKINGS: later
-# bookings may lead to 2026/27 deliveries. Check the extract's SQL selection
-# with the analysts if those pregnancies are absent; do not assume a cause.
-# Split birth_flag too: pregnancies without a recorded delivery may be included.
+# 4. Assigned pregnancy FY and its birth/EDD source.
 hh_bookings |>
   filter(Booking_in_cluster) |>
-  count(Booking_FY, Source_birth_FY, Birth_flag, name = "bookings") |>
+  count(Booking_FY, Pregnancy_year_source, Source_birth_FY, Due_FY,
+    Birth_flag, name = "bookings") |>
   print(n = Inf)
 # Duplicate pregnancy keys could inflate earlier years; inspect, don't deduplicate.
 hh_bookings |>

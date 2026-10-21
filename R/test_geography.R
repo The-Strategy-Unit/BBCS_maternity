@@ -40,9 +40,9 @@ local({
   resident <- rbind(resident, data.frame(la_of_mother = "E08000025",
     birth_yr = c("2023/24", "2024/25", "2025/26"), age_at_birth_mother = 25, count = 10))
   resident <- resident |> dplyr::mutate(
-    estimated_yr = NA_character_, age_at_booking_mother = age_at_birth_mother)
+    group = "antenatal+delivery", edd_yr = NA_character_, age_at_booking_mother = age_at_birth_mother)
   resident <- dplyr::bind_rows(resident, resident |>
-    dplyr::mutate(estimated_yr = birth_yr, birth_yr = NA_character_,
+    dplyr::mutate(group = "antenatal only", edd_yr = birth_yr, birth_yr = NA_character_,
       age_at_birth_mother = NA_real_, count = 2))
   original <- list(cohort = cohort, resident = resident)
   canonical_cohort <- cohort
@@ -51,7 +51,7 @@ local({
   canonical_resident <- resident |>
     dplyr::mutate(la_of_mother = ifelse(la_of_mother %in% supplied,
       expected[match(la_of_mother, supplied)], la_of_mother)) |>
-    dplyr::group_by(la_of_mother, birth_yr, estimated_yr, age_at_birth_mother, age_at_booking_mother) |>
+    dplyr::group_by(group, la_of_mother, birth_yr, edd_yr, age_at_birth_mother, age_at_booking_mother) |>
     dplyr::summarise(count = sum(count), .groups = "drop")
   ons <- tidyr::expand_grid(area_code = c(unique(expected), "E08000025"), age_group = as.character(15:44), year = 2025:2026) |>
     dplyr::mutate(area_name = area_code, projected_births = 100)
@@ -73,6 +73,27 @@ local({
     setequal(attr(mapped, "geography_changes")$Source_code, supplied),
     nrow(attr(canonical, "geography_changes")) == 0,
     nrow(report_applied_geography(character())) == 0)
+  # Non-English feeders use supplied projections; absent projections stay gaps.
+  country_codes <- c("W06000002", "S12000047")
+  country_cohort <- dplyr::bind_rows(lapply(country_codes, function(code)
+    transform(local_rows, la_of_mother = code)))
+  country_residents <- dplyr::bind_rows(lapply(country_codes, function(code)
+    transform(resident[resident$la_of_mother == "E08000025", ], la_of_mother = code)))
+  country_ons <- dplyr::bind_rows(lapply(country_codes, function(code)
+    transform(ons[ons$area_code == "E08000025", ], area_code = code, area_name = code)))
+  country_model <- build_projection_master(dplyr::bind_rows(cohort, country_cohort),
+    dplyr::bind_rows(resident, country_residents), dplyr::bind_rows(ons, country_ons), counts)
+  stopifnot(all(country_codes %in% country_model$LA),
+    all(country_codes %in% country_model$LA[country_model$Delivery_count_RQ3 > 0 &
+      !is.na(country_model$Delivery_count_RQ3)]),
+    identical(report_la_country(c(country_codes, NA, "L99999999")),
+      c("Wales", "Scotland", "Unknown/other code", "Unknown/other code")))
+  missing_country_model <- build_projection_master(dplyr::bind_rows(cohort, country_cohort),
+    dplyr::bind_rows(resident, country_residents), ons, counts)
+  country_sources <- attr(missing_country_model, "la_source_matching") |>
+    dplyr::filter(LA %in% country_codes)
+  stopifnot(all(country_sources$In_resident_counts), !any(country_sources$In_ONS),
+    all(country_codes %in% attr(missing_country_model, "allocation_tables")$cohort_counts$LA))
   # Cohort pooling has no date filter: the audit must include a conversion
   # found only outside the three resident-count financial years.
   earlier <- cohort
@@ -86,5 +107,5 @@ local({
   # Mapping changes keys once; it does not replicate or deduplicate observations.
   mixed <- rbind(cohort, transform(cohort[1, ], la_of_mother = "E08000016"))
   stopifnot(nrow(prepare_report_cohort(mixed)) == nrow(cohort) + 1L)
-  message("PASS: verified 2023 targets, chained mergers, 2025 predecessors, unchanged Wales/unknowns; raw counts and source objects preserved; full model agrees with independently harmonised inputs.")
+  message("PASS: 2023 targets, chained mergers, Wales/Scotland feeders with/without ONS; raw counts preserved; model agrees with independently harmonised inputs.")
 })

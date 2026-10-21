@@ -45,6 +45,14 @@ report_la_code <- function(x, missing = "Unknown LA") {
   code
 }
 
+report_la_country <- function(x) {
+  code <- report_code(x)
+  country <- c(E = "England", W = "Wales", S = "Scotland", N = "Northern Ireland")
+  result <- unname(country[substr(code, 1, 1)])
+  result[!grepl("^[ENSW][0-9]{8}$", code)] <- "Unknown/other code"
+  result
+}
+
 report_applied_geography <- function(cohort_codes, resident_codes = character()) {
   used <- unique(report_code(c(cohort_codes, resident_codes)))
   report_la_crosswalk[report_la_crosswalk$Source_code %in% used,
@@ -70,26 +78,69 @@ report_date <- function(x) {
   date
 }
 
-# Expanded LA extract: age at booking now splits delivery cells further.
-# Keep unknown ages and missing counts; sum pregnancies, never aggregate rows.
-# Raw inputs are unchanged. Financial years remain as supplied.
+report_financial_year <- function(x) {
+  year <- trimws(as.character(x))
+  start <- suppressWarnings(as.integer(substr(year, 1, 4)))
+  valid <- !is.na(year) & grepl("^[0-9]{4}/[0-9]{2}$", year) &
+    year == paste0(start, "/", substr(start + 1L, 3, 4))
+  year[!valid] <- NA_character_
+  year
+}
+
+report_fy_start <- function(x) suppressWarnings(as.integer(substr(report_financial_year(x), 1, 4)))
+
+report_year_missing <- function(x) is.na(x) | trimws(as.character(x)) == ""
+
+report_pregnancy_fy <- function(birth_year, due_year) {
+  report_financial_year(ifelse(report_year_missing(birth_year),
+    as.character(due_year), as.character(birth_year)))
+}
+
+report_resident_group <- function(x) {
+  value <- gsub("[[:space:]_-]", "", tolower(as.character(x)))
+  dplyr::case_when(
+    value == "antenatalonly" ~ "antenatal only",
+    value == "birthonly" ~ "birth only",
+    value == "antenatal+delivery" ~ "antenatal+delivery",
+    TRUE ~ NA_character_)
+}
+
+prepare_la_records <- function(residents) {
+  required <- c("la_of_mother", "birth_yr", "edd_yr", "age_at_birth_mother",
+    "age_at_booking_mother", "group", "count")
+  absent <- setdiff(required, names(residents))
+  if (length(absent)) stop("total_births_by_LA_2326 is missing: ",
+    paste(absent, collapse = ", "), call. = FALSE)
+  residents |>
+    dplyr::mutate(count = report_number(count),
+      Pregnancy_FY = report_pregnancy_fy(birth_yr, edd_yr),
+      Pathway_group = report_resident_group(group),
+      Has_delivery = Pathway_group %in% c("birth only", "antenatal+delivery"),
+      Has_antenatal = Pathway_group %in% c("antenatal only", "antenatal+delivery"),
+      Age_value = dplyr::if_else(is.na(age_at_birth_mother),
+        as.character(age_at_booking_mother), as.character(age_at_birth_mother)),
+      Age = report_age(Age_value))
+}
+
+# Group defines the pathway; dates only assign its shared FY. Keep NA counts.
+# Output year/age fields are the assigned pregnancy keys for existing consumers.
 prepare_la_deliveries <- function(residents, missing_count_zero = FALSE) {
-  residents$count <- report_number(residents$count)
+  residents <- prepare_la_records(residents)
   if (missing_count_zero) residents$count <- dplyr::coalesce(residents$count, 0)
   residents |>
-    dplyr::filter(!is.na(birth_yr)) |>
+    dplyr::filter(Has_delivery) |>
+    dplyr::mutate(birth_yr = Pregnancy_FY, age_at_birth_mother = Age) |>
     dplyr::group_by(la_of_mother, birth_yr, age_at_birth_mother, .drop = FALSE) |>
     dplyr::summarise(count = sum(count), .groups = "drop")
 }
 
-# Due-year activity, NOT appointment-year bookings. Neither-year rows remain in
-# the source object and are shown in the manual QA/scratch reconciliation.
 prepare_la_antenatal_only <- function(residents, missing_count_zero = FALSE) {
-  residents$count <- report_number(residents$count)
+  residents <- prepare_la_records(residents)
   if (missing_count_zero) residents$count <- dplyr::coalesce(residents$count, 0)
   residents |>
-    dplyr::filter(is.na(birth_yr), !is.na(estimated_yr)) |>
-    dplyr::group_by(la_of_mother, estimated_yr, age_at_booking_mother, .drop = FALSE) |>
+    dplyr::filter(Pathway_group == "antenatal only") |>
+    dplyr::mutate(edd_yr = Pregnancy_FY, age_at_booking_mother = Age) |>
+    dplyr::group_by(la_of_mother, edd_yr, age_at_booking_mother, .drop = FALSE) |>
     dplyr::summarise(count = sum(count), .groups = "drop")
 }
 
@@ -101,12 +152,10 @@ prepare_report_cohort <- function(cohort) {
   if (length(absent)) stop("final_cohort_2326 is missing: ",
     paste(absent, collapse = ", "), call. = FALSE)
 
-  year <- trimws(as.character(cohort$birth_yr))
-  start <- suppressWarnings(as.integer(substr(year, 1, 4)))
-  valid_year <- !is.na(year) & grepl("^[0-9]{4}/[0-9]{2}$", year) &
-    year == paste0(start, "/", substr(start + 1L, 3, 4))
-  year[!valid_year] <- NA_character_
-  start[!valid_year] <- NA_integer_
+  due_year <- if ("edd_yr" %in% names(cohort)) cohort$edd_yr else rep(NA_character_, nrow(cohort))
+  # One pregnancy, one FY for both event views; appointment dates never assign it.
+  year <- report_pregnancy_fy(cohort$birth_yr, due_year)
+  start <- report_fy_start(year)
   booking_date <- report_date(cohort$antenatal_app_date)
   # Agreed maternal-age rule: birth age takes priority; only a source NA
   # permits booking age. Keep Age_source visible rather than relabelling the
@@ -123,7 +172,11 @@ prepare_report_cohort <- function(cohort) {
     Row = seq_len(nrow(cohort)),
     Person = trimws(as.character(cohort$person_id_mother)),
     Pregnancy = trimws(as.character(cohort$uniq_preg_id)),
-    Year = year, Delivery_year = start, Delivery_date = report_date(cohort$birth_date),
+    Year = year, Pregnancy_FY = year, Pregnancy_year = start,
+    Birth_FY = report_financial_year(cohort$birth_yr), Due_FY = report_financial_year(due_year),
+    Pregnancy_year_source = ifelse(!report_year_missing(cohort$birth_yr), "Birth year",
+      ifelse(!report_year_missing(due_year), "EDD year", "Missing")),
+    Delivery_year = start, Delivery_date = report_date(cohort$birth_date),
     Birth_flag = report_number(cohort$birth_flag),
     Birth_recorded = Birth_flag %in% 1,
     LA_source = report_code(cohort$la_of_mother, "Unknown LA"),
@@ -142,8 +195,7 @@ prepare_report_cohort <- function(cohort) {
     Booking_date_supplied = !is.na(cohort$antenatal_app_date) &
       nzchar(trimws(as.character(cohort$antenatal_app_date))),
     Booking_date = booking_date,
-    Booking_year = as.integer(format(booking_date, "%Y")) -
-      as.integer(as.integer(format(booking_date, "%m")) < 4L))
+    Booking_year = start)
 }
 
 # Descriptive diagnostic over the whole supplied cohort, before age/year filters.

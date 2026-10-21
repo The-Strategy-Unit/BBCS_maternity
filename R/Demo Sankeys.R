@@ -1,6 +1,7 @@
 # DEMOGRAPHIC SANKEYS ===================================================
 # Run after Maternity analysis.R; Run analysis.R does this automatically.
 # The master is an aggregate table: no mother or pregnancy IDs are retained.
+source("R/demographics.R")
 demo_period <- "2023/24\u20132025/26"
 
 demo_provider_labels <- function() {
@@ -30,7 +31,7 @@ build_demo_sankeys <- function(cohort, demographics, episodes = prepare_report_c
   # many-to-one prevents conflicting duplicate mother records multiplying flows.
   records <- episodes |>
     dplyr::mutate(
-      person_id_mother = cohort$person_id_mother[Row],
+      person_id_mother = demographic_mother_id(cohort$person_id_mother[Row]),
       Has_booking = Booking_provider_supplied | Booking_date_supplied,
       Pathway = dplyr::case_when(
         Birth_recorded & Has_booking ~ "Delivery with recorded booking",
@@ -88,6 +89,7 @@ demo_category_values <- function(master, field) {
   values <- unique(as.character(master[[field]]))
   preferred <- switch(field,
     imd_decile = as.character(1:10),
+    ethnicity_broad = unname(demographic_ethnicity_groups),
     Age_band = report_age_bands,
     character())
   c(preferred[preferred %in% values],
@@ -242,9 +244,9 @@ demo_overview_tabs <- function(master, mode) {
 }
 
 # 5. OBJECTS FOR RSTUDIO AND THE REPORT ---------------------------------
-# Keep supplied demographic categories, including pipe-separated values.
-# NA is labelled only for display; no other ethnicity/IMD fields are substituted.
-`Demo Sankeys` <- build_demo_sankeys(final_cohort_2326, demographics, report_episodes)
+# Clean once per mother before the pregnancy join; keep raw inputs for inspection.
+demographics_cleaned <- prepare_demographics(demographics)
+`Demo Sankeys` <- build_demo_sankeys(final_cohort_2326, demographics_cleaned, report_episodes)
 demo_sankey_charts <- list(
   cohort_total = dc_count(sum(`Demo Sankeys`$N)),
   overview_delivery = demo_overview_tabs(`Demo Sankeys`, "Delivery"),

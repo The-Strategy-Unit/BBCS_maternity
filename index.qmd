@@ -129,7 +129,7 @@ All model calculations and intermediate aggregations use raw values. These contr
 
 ## 1.2 The BBCS cohort and cluster {#bbcs-cohort}
 
-The supplied MSDS cohort contains one row per pregnancy. Historical deliveries are counted in the delivery financial year and antenatal bookings in the booking financial year. Provider counts use the supplied cohort without a further date filter. For every modelled LA and ages **13–54**, resident delivery counts, age distributions and pathway factors come from the expanded LA extract for 2023/24–2025/26. Antenatal-only counts in that extract use estimated due financial year, not booking financial year.
+The supplied MSDS cohort contains one row per pregnancy. **Each pregnancy has one assigned financial year: `birth_yr` when supplied, otherwise `edd_yr`.** Both its booking and recorded delivery use that same year, even when care spans financial years. Appointment dates do not assign the model year. Provider shares use the supplied cohort without a further date filter. For every modelled LA and ages **13-54**, resident delivery counts, age distributions and pathway factors come from the expanded LA extract for 2023/24-2025/26. That extract uses `group` to identify pathways, and `birth_yr` first, otherwise `edd_yr`, to assign the same pregnancy FY.
 
 The supplied cohort includes pregnancies identified through delivery at a BBCS trust, a first antenatal booking at a BBCS trust, or residence in the BBCS area. Deliveries cover 2023/24–2025/26. Where a booked pregnancy has no linked birth record, inclusion uses an estimated due date within that period. Residence is based on the most recent demographic information, so it may differ from residence at booking or delivery.
 
@@ -156,7 +156,7 @@ The combined cluster sums its provider ICB groups. The configured provider looku
 | **Maternity — this project** | One pregnancy entering maternity care through booking and/or delivery, regardless of pregnancy outcome. | Includes live births, stillbirths and booked pregnancies without a recorded delivery. Counted once per pregnancy: a booking followed by a delivery is the same maternity, and twins or triplets also count as one. |
 | **Maternity — ONS** | One pregnancy resulting in at least one live birth or stillbirth. | The source definition used in ONS maternity tables and conversion factors. |
 | **Delivery** | One pregnancy resulting in at least one live birth or stillbirth, counted once even when there are twins or triplets. | MSDS resident delivery totals include home deliveries and deliveries outside the cluster. Trust delivery totals require a recorded non-home delivery at that provider. Pregnancies without a recorded delivery are excluded from delivery counts. |
-| **Antenatal booking** | A pregnancy with recorded antenatal booking information, counted once rather than once per appointment. | Provider counts use the recorded booking provider, including pregnancies without a recorded delivery. Historical counts also need a booking date to identify the financial year. “Bookings” is used as a short form of “antenatal bookings”. |
+| **Antenatal booking** | A pregnancy with recorded antenatal booking information, counted once rather than once per appointment. | Provider counts use the recorded booking provider, including pregnancies without a recorded delivery. Historical counts use birth financial year first, otherwise estimated due financial year; an appointment date is not required. “Bookings” is used as a short form of “antenatal bookings”. |
 | **All pregnancies** | Pregnancies regardless of outcome or contact with maternity services. | The project cohort covers those entering the maternity pathway. |
 | **Unique women / mothers** | Individual people counted once during a defined period. | Not supplied by the maternity total: one woman can have more than one maternity during that period. |
 | **Singleton / multiple maternity** | One baby / two or more babies from one pregnancy. | “Multiplicity” describes how many babies are involved. It explains why baby and maternity counts differ. |
@@ -233,7 +233,7 @@ ONS registrations use calendar years; ONS birth projections cover successive mid
 
 The ONS projection uses **2023 LA geography**. Before aggregation, MSDS residence codes in both the pregnancy cohort and resident delivery totals are harmonised using the [ONS code-change list](https://github.com/ONSdigital/uk-topojson/blob/1fcecd26ccf6abf84bb46204ae32179be480b46d/input/changes.csv). Former districts are combined into their 2023 successors, including successive mergers where needed. Each supplied pregnancy or count contributes once; original source codes are retained for audit. The same geography is used for descriptive views, denominators, allocations and QA. ONS values are unchanged.
 
-The 2025 codes for **Barnsley (E08000038)** and **Sheffield (E08000039)** are mapped to their 2023 predecessors **E08000016** and **E08000019**. This is a boundary approximation: the [2025 change transferred land between the two authorities](https://www.legislation.gov.uk/uksi/2024/1328/pdfs/uksi_20241328_en.pdf), and LA-level counts cannot identify the affected residents. Counts remain with the named authority; they are not reallocated across that boundary. Welsh codes are retained. Unlisted codes remain unchanged and any unresolved source gaps remain visible in the coverage checks.
+The 2025 codes for **Barnsley (E08000038)** and **Sheffield (E08000039)** are mapped to their 2023 predecessors **E08000016** and **E08000019**. This is a boundary approximation: the [2025 change transferred land between the two authorities](https://www.legislation.gov.uk/uksi/2024/1328/pdfs/uksi_20241328_en.pdf), and LA-level counts cannot identify the affected residents. Counts remain with the named authority; they are not reallocated across that boundary. Welsh and Scottish codes are retained. The supplied ONS births projection CSV contains 296 English LAs and no Welsh or Scottish LAs; those residents remain in observed counts and coverage gaps. A name-lookup match does not supply an ONS projection. Unlisted codes remain unchanged and any unresolved source gaps remain visible in the coverage checks.
 
 ```{r}
 #| label: applied-la-geography
@@ -579,11 +579,11 @@ population_plot(
 | Input | Unit and detail | Use |
 |----|----|----|
 | Supplied pregnancy cohort | One pregnancy row; resident LA, maternal age, booking provider/date and recorded delivery details | Recorded activity, patient flows and provider counts |
-| Expanded resident-LA totals | Deliveries by birth FY/birth age; antenatal-only pregnancies by due FY/booking age; sum `count` | Resident delivery totals, delivery age distributions and each LA's own pathway factor, for cluster and outside LAs |
+| Expanded resident-LA totals | Pathways from `group`; shared FY uses birth first, otherwise EDD; age uses birth first, otherwise booking for NA birth age; sum `count` | Resident delivery totals, delivery age distributions and each LA's own pathway factor, for cluster and outside LAs |
 
 The pregnancy records come from `final_cohort_2326`. Maternal age uses `age_at_birth_mother`; only where this is missing (`NA`), it uses `age_at_booking_mother`. This selected maternal age is used throughout cohort-based charts, age bands, calibration, provider allocations and projections. Booking age is used as supplied, without adding a year; it is not an exact delivery age and can place a pregnancy in a younger age band. Records with neither usable age remain unknown. Calculations use ages 13–54. Detailed counting rules accompany the relevant delivery and booking views.
 
-**Where are missing values concentrated?** These charts distinguish birth age, booking-age fallback and unknown age. Every pregnancy row remains in its group, including rows with no supplied delivery year or provider. The tables retain supplied age values, including negative values and text, and show missing values in the original date and year fields. Only NA triggers the booking-age fallback. A due year is not used to fill a missing booking year. Publication rounding can mean displayed percentages do not sum to 100%.
+**Where are missing values concentrated?** These charts distinguish birth age, booking-age fallback and unknown age. Every pregnancy row remains in its group, including rows with no supplied delivery year or provider. The tables retain supplied age values, including negative values and text, and show missing values in the original date and year fields. Only NA triggers the booking-age fallback. Pregnancy FY uses birth FY first and EDD FY when birth FY is missing. Publication rounding can mean displayed percentages do not sum to 100%.
 
 ```{r}
 #| label: record-completeness-setup
@@ -1011,7 +1011,7 @@ delivery_geography$all_changes_table
 
 These diagrams show **2025/26 recorded non-home deliveries** by the mother's residence ICB, booking trust and delivery provider. Use the tabs to compare the two-stage flows or view residence, antenatal booking and delivery together.
 
-Each supplied row counts as one pregnancy. These charts include pregnancies with a recorded birth, a recorded delivery financial year of 2025/26 and a known non-home delivery. Home births and records with unknown home status are excluded from these diagrams; they remain in the [resident-to-destination view](#delivery-la-destinations). Unknown residence or provider codes remain separate from known organisations grouped as “Other”.
+Each supplied row counts as one pregnancy. These charts include pregnancies with a recorded birth, a recorded assigned pregnancy financial year of 2025/26 and a known non-home delivery. Home births and records with unknown home status are excluded from these diagrams; they remain in the [resident-to-destination view](#delivery-la-destinations). Unknown residence or provider codes remain separate from known organisations grouped as “Other”.
 
 ::: panel-tabset
 ##### ICB of residence to delivery provider ICB
@@ -1050,7 +1050,7 @@ residence_booking_birth_sankey
 
 ### 2.2.5 Patient flows across the three years {#patient-flows-by-year}
 
-Compare the same residence-to-delivery and booking-to-delivery flows across 2023/24, 2024/25 and 2025/26. Years are delivery financial years, using the [section 2.2.4 counting rules](#patient-flow-counting-rules). The delivery ICB is taken from the provider, rather than the mother's residence. Providers outside the named groups and unknown providers remain distinct.
+Compare the same residence-to-delivery and booking-to-delivery flows across 2023/24, 2024/25 and 2025/26. Years are assigned pregnancy financial years, using the [section 2.2.4 counting rules](#patient-flow-counting-rules). The delivery ICB is taken from the provider, rather than the mother's residence. Providers outside the named groups and unknown providers remain distinct.
 
 #### ICB of residence to delivery provider ICB
 
@@ -1172,9 +1172,9 @@ by_year[["2025/26"]]$trust_table
 
 These charts show what happened after antenatal booking: delivery at a cluster trust, delivery outside the cluster or at home, no recorded delivery, or delivery location unknown. Compare each outcome's **share of all antenatal bookings at the organisation in each financial year**, from 2023/24 to 2025/26. ICB panels group booking trusts; the combined cluster includes both ICBs.
 
-Each pregnancy with a cluster booking provider and a usable booking date contributes one antenatal booking in that financial year. Every booking remains in the total used to calculate the outcome percentages. Recorded outcomes include deliveries after the booking year and deliveries without a recorded delivery year. A recorded delivery with unknown home status or an unusable non-home provider is shown as “Delivery location unknown”. “No recorded delivery” means neither a live birth nor a stillbirth is recorded in the supplied data; it does not establish that the pregnancy ended without a birth. Recent booking years may have less follow-up.
+Each pregnancy with a cluster booking provider and a usable assigned pregnancy FY contributes one antenatal booking in that year: birth FY first, otherwise EDD FY. The appointment can fall in an earlier FY or its date can be missing. Every booking remains in the denominator, and recorded outcomes are attached to that same pregnancy. A recorded delivery with unknown home status or an unusable non-home provider is shown as Delivery location unknown. No recorded delivery means neither a live birth nor a stillbirth is recorded in the supplied data; it does not establish that the pregnancy ended without a birth. Recent pregnancy years may have less follow-up.
 
-These booking-year denominators differ from the delivery-year totals elsewhere. [Section 2.2.7](#booking-delivery-destination-over-time) splits cluster deliveries by whether the delivery trust or ICB matches booking.
+Booking and delivery views use the same assigned pregnancy FY. Their totals can differ because booking and delivery evidence and provider membership differ. [Section 2.2.7](#booking-delivery-destination-over-time) splits cluster deliveries by whether the delivery trust or ICB matches booking.
 
 Tables include outcome counts, total antenatal bookings, percentages and changes. **Relative change = (current percentage / reference percentage − 1) × 100**: 20% rising to 25% is a 25% increase. The base year is 2023/24. No antenatal bookings means no outcome percentage; a zero or unavailable reference share means no relative change.
 
@@ -1238,7 +1238,7 @@ delivery_over_time$change_table
 
 ### 2.2.7 Booking organisation and delivery destination {#booking-delivery-destination-over-time}
 
-These charts repeat section 2.2.6 with cluster deliveries split in two ways: **same or different trust from booking**, and **same or different ICB from booking**. Both divide by all antenatal bookings at that organisation in the booking year and use the same follow-up rules and relative-change calculation.
+These charts repeat section 2.2.6 with cluster deliveries split in two ways: **same or different trust from booking**, and **same or different ICB from booking**. Both divide by all antenatal bookings at that organisation in the assigned pregnancy year and use the same follow-up rules and relative-change calculation.
 
 | Comparison | Same as booking | Different within the cluster |
 |----|----|----|
@@ -1382,7 +1382,7 @@ These charts show how annual provider proportions and age shares vary around the
 ::: panel-tabset
 #### Delivery proportions
 
-These boxes compare each year's delivery share with the pooled share for the same resident LA, age and trust. Each share divides deliveries at that trust by recorded resident deliveries, including home deliveries, for the same LA and age. Annual counts use delivery financial years; the pooled provider count uses all supplied pregnancies with a recorded delivery. **Zero means the shares match; +5 means five percentage points higher.** The projection shares additionally multiply recorded resident deliveries by the maternity pathway adjustment before division.
+These boxes compare each year's delivery share with the pooled share for the same resident LA, age and trust. Each share divides deliveries at that trust by recorded resident deliveries, including home deliveries, for the same LA and age. Annual counts use assigned pregnancy financial years; the pooled provider count uses all supplied pregnancies with a recorded delivery. **Zero means the shares match; +5 means five percentage points higher.** The projection shares additionally multiply recorded resident deliveries by the maternity pathway adjustment before division.
 
 ```{r}
 #| label: variation-msds-delivery
@@ -1391,7 +1391,7 @@ htmltools::browsable(first_draft_projections$input_variation$delivery_chart)
 
 #### Booking proportions
 
-These boxes compare each year’s booking share with the pooled share for the same resident LA, age and trust. Annual shares use pregnancies with a booking date in that financial year. The pooled share divides each provider’s count by all supplied cohort pregnancies at that LA and age, including records with no recorded booking or an unknown provider. These charts describe the supplied cohort and exclude the estimated Booking Denominator Factor. The projection shares instead divide by recorded resident deliveries multiplied by the maternity pathway adjustment.
+These boxes compare each year’s booking share with the pooled share for the same resident LA, age and trust. Annual shares use the assigned pregnancy FY (birth FY first, otherwise EDD FY), including pregnancies whose appointment date is missing or in an earlier year. The pooled share divides each provider’s count by all supplied cohort pregnancies at that LA and age, including records with no recorded booking or an unknown provider. These charts describe the supplied cohort and exclude the estimated Booking Denominator Factor. The projection shares instead divide by recorded resident deliveries multiplied by the maternity pathway adjustment.
 
 ```{r}
 #| label: variation-msds-booking
@@ -1670,7 +1670,7 @@ older_age_review$plots$projected_change
 
 #### MSDS age mix
 
-These charts show recorded non-home deliveries at cluster trusts by delivery financial year. Individual ages run from 40 to 54; the 50+ group here covers ages 50–54. Stillbirth and multiplicity rates are not calculated from these delivery counts.
+These charts show recorded non-home deliveries at cluster trusts by assigned pregnancy financial year. Individual ages run from 40 to 54; the 50+ group here covers ages 50–54. Stillbirth and multiplicity rates are not calculated from these delivery counts.
 
 ```{r}
 #| label: review-msds-profile
@@ -1797,7 +1797,7 @@ private_nhs_modifier_table(first_draft_projections$private_nhs$pooled)
 
 #### Maternity pathway adjustment {#bookings-uplift-adjustment}
 
-For every LA and individual age from **13 to 54**, use **(resident deliveries + antenatal-only pregnancies) ÷ resident deliveries** from `total_births_by_LA_2326`. Each pregnancy counts once. Rows with non-missing `birth_yr` contribute deliveries by birth financial year and age at birth; rows with missing `birth_yr` and a supplied `estimated_yr` contribute antenatal-only pregnancies by due financial year and age at booking. Both components use 2023/24–2025/26. Sum `count` before division; age-at-booking splits do not create additional deliveries.
+For every LA and individual age from **13 to 54**, use **(resident deliveries + antenatal-only pregnancies) ÷ resident deliveries** from `total_births_by_LA_2326`. Each pregnancy counts once. The `group` values `birth only` and `antenatal+delivery` contribute deliveries; `antenatal only` contributes pregnancies without delivery. Thus the numerator counts all three disjoint groups once and the denominator counts the two delivery groups. Group membership never comes from missing dates. Both components use birth FY first, otherwise `edd_yr`, and birth age first, falling back to booking age only when birth age is NA. Both components use 2023/24–2025/26. Sum `count` before division; age-at-booking splits do not create additional deliveries.
 
 The method is identical inside and outside the cluster and always uses the LA's own counts. Missing counts are treated as zero in the model. A zero or missing delivery denominator produces a **zero pathway factor and zero adjusted projection**, even if antenatal-only activity is recorded. Those antenatal counts remain visible in the reconciliation table. This is the agreed zero-denominator convention, not a calculated ratio; no rate is borrowed from another LA or age. Unknown years and ages remain in the raw diagnostics.
 
@@ -2025,7 +2025,7 @@ first_draft_projections$provider_coverage_table
 
 Each organisation keeps one colour across the total charts. Solid lines show recorded MSDS deliveries in the shaded historical period and modelled deliveries in the future period; dashed lines show the ONS base on both sides of the divider after 2025/26. The ONS base distributes the original projected live births using the same delivery-provider shares as the model, after splitting the combined age groups but before applying the stillbirth, multiplicity, Private–NHS and maternity pathway adjustment factors. Its historical segment is also projection-derived, not observed ONS provider activity. ONS does not publish a separate provider forecast.
 
-Recorded deliveries count each pregnancy with a recorded live birth or stillbirth at the organisation once, including multiple births as one delivery. Home births and births with unknown location are excluded from these provider totals. Historical points use the delivery financial year’s start: 2023 means 2023/24. ONS projection years start at 2025; the [reporting-year convention](#reporting-years) pairs ONS 2025 with MSDS 2025/26. The tabs show trusts, ICBs and the combined cluster both together and in separate charts.
+Recorded deliveries count each pregnancy with a recorded live birth or stillbirth at the organisation once, including multiple births as one delivery. Home births and births with unknown location are excluded from these provider totals. Historical points use the assigned pregnancy financial year (birth FY first, otherwise EDD FY), plotted at its start: 2023 means 2023/24. ONS projection years start at 2025; the [reporting-year convention](#reporting-years) pairs ONS 2025 with MSDS 2025/26. The tabs show trusts, ICBs and the combined cluster both together and in separate charts.
 
 ::: panel-tabset
 #### Trusts
@@ -2198,7 +2198,7 @@ No recorded booking, unknown providers and the Booking Denominator Factor remain
 
 Each organisation uses the same colour as in the delivery charts. Solid lines show recorded MSDS bookings in the shaded historical period and modelled bookings in the future period; dashed lines show the ONS base on both sides of the divider after 2025/26. The ONS base distributes the original projected live births using the same booking-provider shares as the model, after splitting the combined age groups but before applying the stillbirth, multiplicity, Private–NHS and maternity pathway adjustment factors. Its historical segment is also projection-derived; ONS does not publish observed booking counts or booking projections for these providers.
 
-Recorded bookings count each pregnancy once at its booking provider, in the financial year of booking, whether or not a delivery is recorded. They count pregnancies, not appointments. Historical points use the booking financial year's start: 2023 means 2023/24. Bookings without a usable date cannot be assigned to a historical year, although they contribute to the model's provider shares when resident LA and age are known. ONS projection years start at 2025; the [reporting-year convention](#reporting-years) pairs ONS 2025 with MSDS 2025/26. The tabs show trusts, ICBs and the combined cluster both together and in separate charts.
+Recorded bookings count each pregnancy once at its booking provider in its assigned pregnancy FY: `birth_yr` first, otherwise `edd_yr`, whether or not a delivery is recorded. They count pregnancies, not appointments. Historical points use that FY's start: 2023 means 2023/24. A missing or earlier appointment date does not remove or move the pregnancy. Records without a usable assigned FY remain in pooled provider shares when LA and age are known, but cannot enter annual historical points. ONS projection years start at 2025; the [reporting-year convention](#reporting-years) pairs ONS 2025 with MSDS 2025/26. The tabs show trusts, ICBs and the combined cluster both together and in separate charts.
 
 ::: panel-tabset
 #### Trusts
@@ -2413,7 +2413,7 @@ first_draft_projections$backtest$all_table
 
 All charts in this section use the **whole supplied BBCS cohort, pooled across 2023/24–2025/26**. Each supplied pregnancy row contributes once, whether it has a delivery and booking, a delivery without a recorded booking, or a booking without a recorded delivery. Separate pregnancies for the same woman remain separate. Records without either event remain visible too. There is no further event-year filter: missing dates and bookings before the delivery year do not remove a cohort record.
 
-A booking is recorded when a booking provider or appointment date is supplied; a delivery uses the recorded birth flag. Due years do not establish either event. Maternal age uses birth age first and booking age only when birth age is NA. Demographics use `imd_decile`, `ethnicity_broad` and `ethnicity_description`; unknown values remain visible. Counts are controlled independently for display, so displayed subgroup totals can differ slightly from the overall total.
+A booking is recorded when a booking provider or appointment date is supplied; a delivery uses the recorded birth flag. Due years do not establish either event. Maternal age uses birth age first and booking age only when birth age is NA. Where two residence LSOAs are supplied, one is selected at random with a repeatable choice per mother, then linked to [English IMD 2019 on 2011 LSOAs](https://www.gov.uk/government/statistics/english-indices-of-deprivation-2019). Decile 1 is most deprived and 10 least deprived; missing or unmatched LSOAs retain an unknown decile. Ethnicity uses NHS category descriptions and seven broad groups, with paired codes resolved using the agreed combination grid. Unresolved conflicting pairs remain **Two conflicting**; unknown codes remain visible separately from **Not stated**. Detailed descriptions are retained for single categories; paired categories show the broad result without inferring a subtype. Counts are controlled independently for display, so displayed subgroup totals can differ slightly from the overall total.
 
 ## 4.1 Demographic overview {#demographic-overview}
 

@@ -117,11 +117,18 @@ save_report_rds <- function(object, file) {
   saveRDS(object, file)
 }
 
-# Check the actual embedded payload as well as the tested presentation builders.
-audit_disclosure_html <- function(path) {
-  html <- paste(readLines(path, warn = FALSE, encoding = "UTF-8"), collapse = "\n")
-  if (!grepl('id="disclosure-control"', html, fixed = TRUE))
-    stop("Disclosure method note is absent from the rendered report")
+read_report_rds <- function(file, run_id) {
+  object <- readRDS(file)
+  if (!identical(attr(object, "disclosure_version"), msds_disclosure_version) ||
+      is.null(run_id) || !identical(attr(object, "run_id"), run_id))
+    stop("Outdated or incompatible report data: ", file,
+      ". Run R/Run analysis.R to prepare the controlled report outputs.", call. = FALSE)
+  dc_report_objects(object)
+}
+
+# Also runs on knitted QMD output, before it can become a shareable report.
+audit_disclosure_widgets <- function(html) {
+  html <- paste(html, collapse = "\n")
   scripts <- regmatches(html, gregexpr(
     '(?s)<script\\b[^>]*type="application/json"[^>]*>.*?</script>', html, perl = TRUE))[[1]]
   checked <- c(widgets = 0L, count_traces = 0L, sankeys = 0L)
@@ -145,9 +152,9 @@ audit_disclosure_html <- function(path) {
       stop("Original Plotly construction data remains in the HTML")
     if (grepl('"(person_id_mother|uniq_preg_id|private_unused_sentinel)"', payload))
       stop("A raw record field remains in a widget payload")
-    y_count <- grepl('^Projected (deliveries|antenatal bookings)$|^Deliveries$|^Deliveries /|^Antenatal bookings /',
+    y_count <- grepl('^Projected (deliveries|antenatal bookings)$|^Deliveries$|^Deliveries /|^Antenatal bookings /|^Recorded (non-home|/ modelled non-home) deliveries$',
       axis_title(x$layout$yaxis))
-    x_count <- identical(axis_title(x$layout$xaxis), "Deliveries")
+    x_count <- axis_title(x$layout$xaxis) %in% c("Deliveries", "Pregnancies")
     for (trace in x$data) {
       if (identical(trace$type, "sankey")) {
         checked["sankeys"] <- checked["sankeys"] + 1L
@@ -161,7 +168,14 @@ audit_disclosure_html <- function(path) {
     }
   }
   if (any(checked == 0L)) stop("The HTML disclosure audit found incomplete chart output")
-  message("HTML disclosure audit passed: ", checked["widgets"], " widgets; ",
+  message("Embedded disclosure audit passed: ", checked["widgets"], " widgets; ",
     checked["count_traces"], " count traces; ", checked["sankeys"], " Sankeys.")
   invisible(checked)
+}
+
+audit_disclosure_html <- function(path) {
+  html <- paste(readLines(path, warn = FALSE, encoding = "UTF-8"), collapse = "\n")
+  if (!grepl('id="disclosure-control"', html, fixed = TRUE))
+    stop("Disclosure method note is absent from the rendered report")
+  audit_disclosure_widgets(html)
 }

@@ -20,6 +20,11 @@ library(ggplot2)
 library(plotly)
 library(scales)
 
+knitr::knit_hooks$set(document = function(x) {
+  audit_disclosure_widgets(x)
+  x
+})
+
 # Only complete outputs from a single successful preparation are rendered.
 # This check reads saved results; it does not rerun the analysis or Azure reader.
 read_completed_analysis <- function() {
@@ -45,13 +50,13 @@ read_completed_analysis <- function() {
   report_run
 }
 report_run <- read_completed_analysis()
-# Load each prepared result once. Data/output audits run separately in R/QA.R.
-ons_exploration <- readRDS(".ons_exploration.rds")
+# Load controlled presentation objects from this run; model QA remains separate.
+ons_exploration <- read_report_rds(".ons_exploration.rds", report_run$run_id)
 list2env(ons_exploration, envir = knitr::knit_global())
-patient_flows <- readRDS(".patient_flows.rds")
-delivery_geography <- readRDS(".delivery_geography.rds")
-first_draft_projections <- readRDS(".projections.rds")
-demo_sankey_charts <- readRDS(".demo_sankeys.rds")
+patient_flows <- read_report_rds(".patient_flows.rds", report_run$run_id)
+delivery_geography <- read_report_rds(".delivery_geography.rds", report_run$run_id)
+first_draft_projections <- read_report_rds(".projections.rds", report_run$run_id)
+demo_sankey_charts <- read_report_rds(".demo_sankeys.rds", report_run$run_id)
 ```
 
 ```{r}

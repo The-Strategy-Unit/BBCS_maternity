@@ -51,6 +51,37 @@ stopifnot(!grepl("private_unused_sentinel|913127|913129|913133", encoded),
   is.null(payload$x$attrs), is.null(payload$x$visdat), is.null(payload$x$cur_data))
 near(payload$x$data[[1]]$y, c(5, 15, 20))
 
+# The QMD reload checks preparation metadata and strips unused raw data again.
+saved_path <- tempfile(fileext = ".rds")
+saved <- list(chart = widget, raw_for_internal_QA = frame)
+attr(saved, "disclosure_version") <- msds_disclosure_version
+attr(saved, "run_id") <- "test-run"
+saveRDS(saved, saved_path)
+loaded <- read_report_rds(saved_path, "test-run")
+reloaded_payload <- htmlwidgets:::createPayload(loaded$chart)
+stopifnot(is.null(reloaded_payload$x$attrs), is.null(reloaded_payload$x$visdat),
+  identical(loaded$raw_for_internal_QA, frame),
+  inherits(try(read_report_rds(saved_path, "different-run"), silent = TRUE), "try-error"))
+attr(saved, "disclosure_version") <- NULL
+saveRDS(saved, saved_path)
+stopifnot(inherits(try(read_report_rds(saved_path, "test-run"), silent = TRUE), "try-error"))
+unlink(saved_path)
+
+local({
+  for (statement in parse("R/Demo Sankeys.R")) {
+    if (is.call(statement) && identical(statement[[1]], as.name("<-")) &&
+        as.character(statement[[2]])[1] %in% c("demo_overview_bar", "demo_pathway_colours",
+          "demo_category_values", "demo_category_label")) eval(statement)
+  }
+  rows <- data.frame(ethnicity_description = c("Category A", "Category A", "Category B"),
+    Pathway = "Delivery with recorded booking", N = c(1, 1, 13))
+  chart <- dc_report_objects(demo_overview_bar(rows, "ethnicity_description"))
+  shown <- htmlwidgets:::createPayload(chart)$x
+  near(shown$data[[1]]$x, c(5, 15))
+  stopifnot(all(grepl("Pregnancies: (5|15)$", shown$data[[1]]$text)),
+    is.null(shown$attrs), is.null(shown$visdat), identical(rows$N, c(1, 1, 13)))
+})
+
 # Fail closed on a raw chart coordinate or a retained construction payload.
 # ONS-only counts are exempt from MSDS rounding.
 html_path <- tempfile(fileext = ".html")
@@ -60,11 +91,19 @@ controlled <- list(x = list(data = list(
   layout = list(yaxis = list(title = "Deliveries"))))
 ons_only <- list(x = list(data = list(list(type = "scatter", y = c(11, 17))),
   layout = list(yaxis = list(title = "ONS published births"))))
+demographic <- list(x = list(data = list(list(type = "bar", x = c(0, 5, 15, NA))),
+  layout = list(xaxis = list(title = list(text = "Pregnancies")))))
 write_payloads <- function() writeLines(paste0('<section id="disclosure-control"></section>',
   '<script type="application/json">', jsonlite::toJSON(controlled, auto_unbox = TRUE), '</script>',
+  '<script type="application/json">', jsonlite::toJSON(demographic, auto_unbox = TRUE, na = "null"), '</script>',
   '<script type="application/json">', jsonlite::toJSON(ons_only, auto_unbox = TRUE), '</script>'), html_path)
 write_payloads()
 audit_disclosure_html(html_path)
+demographic$x$data[[1]]$x[2] <- 1
+write_payloads()
+stopifnot(inherits(try(audit_disclosure_html(html_path), silent = TRUE), "try-error"),
+  inherits(try(audit_disclosure_widgets(readLines(html_path)), silent = TRUE), "try-error"))
+demographic$x$data[[1]]$x[2] <- 5
 controlled$x$data[[1]]$y[1] <- 11
 write_payloads()
 stopifnot(inherits(try(audit_disclosure_html(html_path), silent = TRUE), "try-error"))
@@ -73,4 +112,4 @@ controlled$x$attrs <- list(raw = 11)
 write_payloads()
 stopifnot(inherits(try(audit_disclosure_html(html_path), silent = TRUE), "try-error"))
 unlink(html_path)
-cat("Disclosure boundary, raw aggregation, rates, change and widget payload tests passed.\n")
+cat("Disclosure boundary, raw aggregation, rates, change, report reload and widget payload tests passed.\n")

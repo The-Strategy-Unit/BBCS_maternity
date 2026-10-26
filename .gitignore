@@ -6,7 +6,6 @@
 # Share runtime scripts, Heather's scratch file and Sarah's standalone matrix script.
 # Other R scripts (including local checks) stay local unless added here.
 !/R/Run analysis.R
-!/R/run_maternity_project.R
 !/R/HH scratch area.R
 !/R/Read parquet files from azure.R
 !/R/Maternity analysis.R

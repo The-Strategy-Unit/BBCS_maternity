@@ -41,6 +41,7 @@ library(scales)
 # Shared source readers, counting rules and age-review functions ----------
 # These existing support files contain reusable functions, not a second model.
 source("R/disclosure.R")
+source("R/report_colours.R")
 source("R/ons_data.R")
 source("R/report_cohort.R")
 source("R/age_boundary_review.R")
@@ -51,35 +52,12 @@ analysis_years <- 2023:2025
 latest_year <- max(analysis_years)
 cluster_icbs <- c("QUA", "QHL")
 cluster_label <- "Combined cluster"
-flow_palette <- c("#005EB8", "#D55E00", "#00856A", "#8E5EA2",
-                  "#B07300", "#C44E52", "#4477AA", "#727272")
 outcome_columns <- c("Within", "Outside", "No_delivery", "Unknown")
 outcome_labels <- c("Delivery at cluster trust", "Other trust or home birth",
                     "No recorded delivery", "Delivery location unknown")
-outcome_colours <- c("#00856A", "#D55E00", "#727272", "#8E5EA2")
+outcome_colours <- c("#006747", "#ED8B00", "#2C2825", "#959595")
 trend_grid_columns <- c(Trust = 3L, ICB_Cluster = 3L)
 main_chart_colour <- "#005EB8"
-
-# Stable organisation colours across combined charts and individual panels.
-organisation_line_colours <- function(keys) {
-  palette <- c("trust-rbk" = "#0072B2", "trust-rl4" = "#D55E00",
-    "trust-rna" = "#009E73", "trust-rq3" = "#CC79A7", "trust-rrk" = "#56B4E9",
-    "trust-rxk" = "#8C6D31", "icb-qhl" = "#6A3D9A", "icb-qua" = "#E7298A",
-    "cluster" = "#333333")
-  missing <- setdiff(keys, names(palette))
-  # Additional providers retain a deterministic colour without blocking a chart.
-  for (key in sort(missing)) {
-    code <- utf8ToInt(key)
-    hue <- sum(code * seq_along(code)^2) %% 360
-    colour <- grDevices::hcl(h = hue, c = 65, l = 45)
-    while (colour %in% palette) {
-      hue <- (hue + 137.5) %% 360
-      colour <- grDevices::hcl(h = hue, c = 65, l = 45)
-    }
-    palette[key] <- colour
-  }
-  palette[keys]
-}
 
 icb_labels <- c(
   QHL = "Birmingham and Solihull ICB", QUA = "Black Country ICB",
@@ -98,10 +76,10 @@ trust_labels <- c(
   RXK = "Sandwell and West Birmingham NHS Trust", Other = "Other trusts"
 )
 
-icb_source_order <- c("QJ2", "QWU", "QUA", "QHL", "Other", "QGH", "QOC", "QNC")
-icb_target_order <- c("Other", "QUA", "QWU", "QJ2", "QHL", "QNC", "QGH", "QOC")
-trust_source_order <- c("RNA", "RXK", "RBK", "RL4", "Other", "RRK", "RQ3")
-trust_target_order <- c("RNA", "RL4", "RQ3", "RXK", "Other", "RBK", "RRK")
+icb_source_order <- c("QJ2", "QWU", "QUA", "QHL", "QGH", "QOC", "QNC", "Other")
+icb_target_order <- icb_source_order
+trust_source_order <- c("RNA", "RXK", "RBK", "RL4", "RRK", "RQ3", "Other")
+trust_target_order <- trust_source_order
 
 # Trust-to-ICB grouping from NHS ODS etr.csv
 icb_provider_codes <- list(
@@ -363,8 +341,37 @@ record_completeness <- record_completeness_outputs(record_completeness_counts)
 group_flow_code <- function(x, keep_codes) {
   code <- report_code(x)
   code_pattern <- paste0("^", substr(keep_codes[1], 1, 1), "[A-Z0-9]{2}$")
-  ifelse(code %in% keep_codes, code,
-    ifelse(code == "OTHER" | grepl(code_pattern, code), "Other", "Unknown"))
+  as.character(ifelse(code %in% keep_codes, code,
+    ifelse(code == "OTHER" | grepl(code_pattern, code), "Other", "Unknown")))
+}
+
+# Shared with section 4.2: retain pregnancies with either or neither event.
+flow_stage_icb <- function(provider, stage) {
+  icb <- unname(provider_icb[provider])
+  icb[is.na(icb)] <- ifelse(grepl("^R[A-Z0-9]{2}$", provider[is.na(icb)]), "Other", "Unknown")
+  special <- stage %in% c("No booking", "No delivery", "Home")
+  icb[special] <- stage[special]
+  icb
+}
+
+classify_patient_flow_stages <- function(cohort) {
+  keep <- union(setdiff(names(trust_labels), "Other"), cluster_trusts)
+  cohort |>
+    dplyr::mutate(
+      Has_booking = Booking_provider_supplied | Booking_date_supplied,
+      Booking = dplyr::if_else(Has_booking, group_flow_code(Booking_Trust, keep), "No booking"),
+      Delivery = dplyr::case_when(
+        !Birth_recorded ~ "No delivery", Home %in% 1 ~ "Home",
+        TRUE ~ group_flow_code(Trust, keep)),
+      Booking_ICB = flow_stage_icb(Booking_Trust, Booking),
+      Delivery_ICB = flow_stage_icb(Trust, Delivery))
+}
+
+full_flow_trust_labels <- function() {
+  extra <- setdiff(cluster_trusts, names(flow_trust_labels))
+  c(flow_trust_labels, stats::setNames(extra, extra),
+    `No booking` = "No recorded booking", `No delivery` = "No recorded delivery",
+    Home = "Home birth")
 }
 
 make_flows <- function(source, target, count, keep_codes) {
@@ -399,11 +406,14 @@ trust_flow <- latest_flows$trust
 
 # Keep each pregnancy's three organisations together before counting either leg.
 # The booking nodes combine origins; ribbons describe adjacent stages only.
-make_residence_booking_birth_flow <- function(cohort) {
+make_residence_booking_birth_flow <- function(cohort, all_pregnancies = FALSE) {
+  if (all_pregnancies) cohort <- classify_patient_flow_stages(cohort)
   paths <- tibble::tibble(
     residence = group_flow_code(cohort$Resident_ICB, setdiff(names(icb_labels), "Other")),
-    booking = group_flow_code(cohort$Booking_Trust, setdiff(names(trust_labels), "Other")),
-    birth = group_flow_code(cohort$Trust, setdiff(names(trust_labels), "Other"))) |>
+    booking = if (all_pregnancies) cohort$Booking else
+      group_flow_code(cohort$Booking_Trust, setdiff(names(trust_labels), "Other")),
+    birth = if (all_pregnancies) cohort$Delivery else
+      group_flow_code(cohort$Trust, setdiff(names(trust_labels), "Other"))) |>
     dplyr::count(residence, booking, birth, name = "n")
   list(paths = paths,
     residence_booking = paths |>
@@ -415,6 +425,19 @@ make_residence_booking_birth_flow <- function(cohort) {
 }
 residence_booking_birth_flow <- make_residence_booking_birth_flow(report_episodes |>
   dplyr::filter(Delivery_year == latest_year, Birth_recorded, Home == 0))
+
+# Section 2.2.4B: same assigned year, with no booking/delivery/home filter.
+make_full_cohort_year_flows <- function(start_year, episodes = report_episodes) {
+  cohort <- episodes |> dplyr::filter(Pregnancy_year == start_year)
+  stages <- classify_patient_flow_stages(cohort)
+  three_stage <- make_residence_booking_birth_flow(cohort, all_pregnancies = TRUE)
+  icb <- stages |>
+    dplyr::count(source = group_flow_code(Resident_ICB, setdiff(names(icb_labels), "Other")),
+      target = Delivery_ICB, name = "n")
+  list(icb = list(links = icb), trust = list(links = three_stage$booking_birth),
+    residence_booking_birth = three_stage)
+}
+full_patient_flows <- make_full_cohort_year_flows(latest_year)
 
 # Visible inclusion accounting: these mutually exclusive delivery categories add up.
 flow_coverage <- report_episodes |>
@@ -434,20 +457,66 @@ flow_coverage_table <- gt::gt(dc_counts(flow_coverage, setdiff(names(flow_covera
     Unknown_home_flag = "Home flag unknown/invalid", Non_home = "Recorded non-home deliveries",
     Unknown_birth_provider = "Of non-home: provider unknown/invalid") |>
   gt::fmt_number(columns = -Period, decimals = 0) |>
-  gt::tab_source_note("Only recorded non-home deliveries in 2023/24–2025/26 enter the patient-flow views. Unknown providers remain separate. The four inclusion categories are mutually exclusive; the last column is a subset.") |>
+  gt::tab_source_note("Only recorded non-home deliveries in 2023/24–2025/26 enter sections 2.2.4A and 2.2.5. Section 2.2.4B includes all supplied pregnancies assigned to 2025/26. Unknown providers remain separate. The four inclusion categories are mutually exclusive; the last column is a subset.") |>
   gt::tab_options(container.width = "100%", container.overflow.x = TRUE)
 
 # Sankey charts
 
+# Keep catch-all, non-hospital and missing-event categories below named categories.
+# Use a shared domain, not counts, so filtering a year or demographic cannot reorder it.
+sankey_category_order <- function(preferred, available = preferred) {
+  available <- unique(as.character(available))
+  ordered <- unique(c(preferred, sort(setdiff(available[!is.na(available)], preferred))))
+  ordered <- ordered[!is.na(ordered) & ordered %in% available]
+  key <- tolower(trimws(ordered))
+  last <- !nzchar(key) | key %in% c("na", "n/a", "null", "<na>", "none", "blank") |
+    grepl("^(other($| trust| provider| icb| ethnic)|all other |home($| birth| delivery)|no (recorded |booking|delivery)|unknown|missing|not (stated|known|recorded)|two conflicting|l999)", key)
+  # The tail must also be comparable across chart families, whose input lists
+  # can append Home/No booking/No delivery after an existing Unknown category.
+  tail_rank <- rep(5L, length(key))
+  tail_rank[grepl("^(other($| trust| provider| icb| ethnic)|all other )", key)] <- 1L
+  tail_rank[grepl("^home($| birth| delivery)", key)] <- 2L
+  tail_rank[grepl("^no (recorded )?booking", key)] <- 3L
+  tail_rank[grepl("^no (recorded )?delivery", key)] <- 4L
+  c(ordered[!last], ordered[last][order(tail_rank[last])], if (anyNA(available)) NA_character_)
+}
+
+# Node arrays define the top-to-bottom order within each stage. Position centres
+# using displayed ribbon widths only: raw counts must not leak through geometry.
+# Mirror this calculation in assets/report-charts.html when the chart is resized.
+sankey_node_y <- function(x, source, target, value, height, pad) {
+  incoming <- outgoing <- numeric(length(x))
+  for (i in seq_along(value)) if (is.finite(value[i]) && value[i] > 0) {
+    outgoing[source[i] + 1L] <- outgoing[source[i] + 1L] + value[i]
+    incoming[target[i] + 1L] <- incoming[target[i] + 1L] + value[i]
+  }
+  weights <- pmax(incoming, outgoing)
+  layers <- lapply(unique(x), function(stage) which(x == stage & weights > 0))
+  layers <- Filter(length, layers)
+  y <- rep(0.5, length(x))
+  if (!length(layers)) return(y)
+  gap <- min(pad, height / max(1L, max(lengths(layers)) - 1L))
+  scale <- min(vapply(layers, function(ids)
+    (height - gap * (length(ids) - 1L)) / sum(weights[ids]), numeric(1)))
+  for (ids in layers) {
+    sizes <- weights[ids] * scale
+    spare <- height - sum(sizes) - gap * (length(ids) - 1L)
+    y[ids] <- (spare / 2 + cumsum(sizes) - sizes / 2 + gap * (seq_along(ids) - 1L)) / height
+  }
+  y
+}
+
 make_sankey <- function(flow, labels, source_suffix, target_suffix,
-                        source_order, target_order) {
+                        source_order, target_order,
+                        empty_message = "No recorded non-home deliveries in this year.") {
   links <- flow$links
+  source_order <- sankey_category_order(source_order)
+  target_order <- sankey_category_order(target_order)
   codes <- unique(c(source_order, target_order))
-  colours <- setNames(rep(flow_palette, length.out = length(codes)), codes)
-  colours["Unknown"] <- "#999999"
+  colours <- identity_colours(codes)
   display_label <- function(x) unname(labels[x])
   total <- sum(links$n)
-  if (!nrow(links)) return(htmltools::div("No recorded non-home deliveries in this year."))
+  if (!nrow(links)) return(htmltools::div(empty_message))
 
   source_nodes <- source_order[source_order %in% links$source]
   target_nodes <- target_order[target_order %in% links$target]
@@ -463,6 +532,8 @@ make_sankey <- function(flow, labels, source_suffix, target_suffix,
   node_totals <- dc_count(node_totals)
   source_totals <- dc_count(source_totals)
   links$n <- dc_count(links$n)
+  chart_height <- max(500, length(node_codes) * 38)
+  node_x <- c(rep(0.01, length(source_nodes)), rep(0.99, length(target_nodes)))
   hover <- paste0(display_label(links$source), " to ", display_label(links$target),
                   "<br>Records: ", scales::comma(links$n),
                   "<br>", scales::percent(links$n / source_totals, accuracy = 0.1),
@@ -471,10 +542,11 @@ make_sankey <- function(flow, labels, source_suffix, target_suffix,
                   " of all records")
 
   plotly::plot_ly(
-    type = "sankey", height = max(500, length(node_codes) * 38),
-    orientation = "h", arrangement = "snap",
+    type = "sankey", height = chart_height,
+    orientation = "h", arrangement = "fixed",
     node = list(
       label = node_labels, color = unname(colours[node_codes]),
+      x = node_x, y = sankey_node_y(node_x, from_id, to_id, links$n, chart_height - 36, 14),
       customdata = paste0(scales::comma(node_totals), "<br>", scales::percent(dc_divide(node_totals, total), accuracy = 0.1)),
       pad = 14, thickness = 18,
       line = list(color = "rgba(44,40,37,0.35)", width = 0.5),
@@ -495,23 +567,31 @@ make_sankey <- function(flow, labels, source_suffix, target_suffix,
 }
 
 # Three distinct node layers: the same trust at booking and birth has different IDs.
-make_three_stage_sankey <- function(flow) {
+make_three_stage_sankey <- function(flow, all_pregnancies = FALSE) {
   total <- sum(flow$paths$n)
-  if (!nrow(flow$paths)) return(htmltools::div("No recorded non-home deliveries in this year."))
+  if (!nrow(flow$paths)) return(htmltools::div(if (all_pregnancies)
+    "No supplied pregnancies assigned to this year." else "No recorded non-home deliveries in this year."))
+
+  provider_labels <- if (all_pregnancies) full_flow_trust_labels() else flow_trust_labels
+  source_order <- sankey_category_order(trust_source_order, names(provider_labels))
+  target_order <- sankey_category_order(trust_target_order, names(provider_labels))
+  count_label <- if (all_pregnancies) "Pregnancies" else "Deliveries"
+  count_noun <- tolower(count_label)
+  stage_labels <- if (all_pregnancies) c("ICB of residence", "Booking trust / status", "Delivery trust / status") else
+    c("ICB of residence", "Booking trust", "Delivery trust")
 
   residence <- icb_source_order[icb_source_order %in% flow$paths$residence]
-  booking <- trust_source_order[trust_source_order %in% flow$paths$booking]
-  birth <- trust_target_order[trust_target_order %in% flow$paths$birth]
-  stage <- rep(c("ICB of residence", "Booking trust", "Delivery trust"),
+  booking <- source_order[source_order %in% flow$paths$booking]
+  birth <- target_order[target_order %in% flow$paths$birth]
+  stage <- rep(stage_labels,
                c(length(residence), length(booking), length(birth)))
-  full_labels <- unname(c(flow_icb_labels[residence], flow_trust_labels[booking],
-                         flow_trust_labels[birth]))
+  full_labels <- unname(c(flow_icb_labels[residence], provider_labels[booking],
+                         provider_labels[birth]))
   short_labels <- sub(" NHS.*$", "", sub(" ICB$", "", full_labels))
   short_labels <- vapply(short_labels, function(label)
     paste(strwrap(label, width = 24), collapse = "<br>"), character(1))
-  icb_colours <- setNames(rep(flow_palette, length.out = length(icb_source_order)), icb_source_order)
-  trust_colours <- setNames(rep(flow_palette, length.out = length(trust_source_order)), trust_source_order)
-  icb_colours["Unknown"] <- trust_colours["Unknown"] <- "#999999"
+  icb_colours <- identity_colours(icb_source_order)
+  trust_colours <- identity_colours(source_order)
   node_colours <- unname(c(icb_colours[residence], trust_colours[booking], trust_colours[birth]))
 
   first <- flow$residence_booking
@@ -528,19 +608,22 @@ make_three_stage_sankey <- function(flow) {
   total <- dc_count(total)
   node_totals <- dc_count(node_totals)
   counts <- dc_count(counts)
+  chart_height <- max(520, 58 * max(length(residence), length(booking), length(birth)))
+  node_x <- c(rep(0.01, length(residence)), rep(0.5, length(booking)), rep(0.99, length(birth)))
   hover <- paste0(stage[from_id + 1L], ": ", full_labels[from_id + 1L], "<br>",
     stage[to_id + 1L], ": ", full_labels[to_id + 1L],
-    "<br>Deliveries: ", scales::comma(counts),
+    "<br>", count_label, ": ", scales::comma(counts),
     "<br>", scales::percent(counts / node_totals[from_id + 1L], accuracy = 0.1),
-    " of deliveries from this origin at this stage",
-    "<br>", scales::percent(counts / total, accuracy = 0.1), " of all included deliveries")
+    " of ", count_noun, " from this origin at this stage",
+    "<br>", scales::percent(counts / total, accuracy = 0.1), " of all included ", count_noun)
 
-  plotly::plot_ly(type = "sankey", height = max(520, 58 * max(length(residence), length(booking), length(birth))),
-    orientation = "h", arrangement = "snap",
+  plotly::plot_ly(type = "sankey", height = chart_height,
+    orientation = "h", arrangement = "fixed",
     node = list(label = short_labels, color = node_colours, pad = 22, thickness = 18,
+      x = node_x, y = sankey_node_y(node_x, from_id, to_id, counts, chart_height - 54, 22),
       line = list(color = "rgba(44,40,37,0.35)", width = 0.5),
-      customdata = paste0(stage, ": ", full_labels, "<br>Deliveries: ", scales::comma(node_totals), "<br>",
-        scales::percent(node_totals / total, accuracy = 0.1), " of all included deliveries"),
+      customdata = paste0(stage, ": ", full_labels, "<br>", count_label, ": ", scales::comma(node_totals), "<br>",
+        scales::percent(node_totals / total, accuracy = 0.1), " of all included ", count_noun),
       hovertemplate = "%{customdata}<extra></extra>"),
     link = list(source = from_id, target = to_id, value = counts,
       color = grDevices::adjustcolor(node_colours[from_id + 1L], alpha.f = 0.42),
@@ -551,9 +634,9 @@ make_three_stage_sankey <- function(flow) {
         list(x = 0, y = 1.07, xref = "paper", yref = "paper", xanchor = "left",
              text = "<b>ICB of residence</b>", showarrow = FALSE),
         list(x = 0.5, y = 1.07, xref = "paper", yref = "paper", xanchor = "center",
-             text = "<b>Booking trust</b>", showarrow = FALSE),
+             text = paste0("<b>", stage_labels[2], "</b>"), showarrow = FALSE),
         list(x = 1, y = 1.07, xref = "paper", yref = "paper", xanchor = "right",
-             text = "<b>Delivery trust</b>", showarrow = FALSE)),
+             text = paste0("<b>", stage_labels[3], "</b>"), showarrow = FALSE)),
       paper_bgcolor = "white", plot_bgcolor = "white") |>
     plotly::config(displayModeBar = FALSE, responsive = TRUE)
 }
@@ -568,6 +651,19 @@ trust_sankey <- make_sankey(
   trust_source_order, trust_target_order
 )
 residence_booking_birth_sankey <- make_three_stage_sankey(residence_booking_birth_flow)
+
+full_patient_flows$icb_sankey <- make_sankey(full_patient_flows$icb,
+  c(flow_icb_labels, Home = "Home birth", `No delivery` = "No recorded delivery"),
+  " (residence)", " (delivery)", icb_source_order,
+  c(icb_target_order, "Home", "No delivery"),
+  empty_message = "No supplied pregnancies assigned to this year.")
+full_patient_flows$trust_sankey <- make_sankey(full_patient_flows$trust,
+  full_flow_trust_labels(), " (booking)", " (delivery)",
+  sankey_category_order(trust_source_order, names(full_flow_trust_labels())),
+  sankey_category_order(trust_target_order, names(full_flow_trust_labels())),
+  empty_message = "No supplied pregnancies assigned to this year.")
+full_patient_flows$residence_booking_birth_sankey <- make_three_stage_sankey(
+  full_patient_flows$residence_booking_birth, all_pregnancies = TRUE)
 
 # 2.2 Patient flows by financial year (report section 2.2.5) ------------------
 # This bit repeats the two Sankeys for each year and makes their tables.
@@ -843,6 +939,12 @@ pathway_legend <- htmltools::div(
 
 make_pathway_sankey <- function(row, count_label = "Antenatal bookings", period = "2025/26") {
   organisation <- row$Organisation[[1]]
+  # Resolve by code where supplied; older pathway summaries contain the name.
+  code <- if ("Code" %in% names(row)) row$Code[[1]] else {
+    labels <- c(trust_labels, icb_labels, Cluster = cluster_label)
+    matched <- match(organisation, unname(labels))
+    if (is.na(matched)) organisation else names(labels)[matched]
+  }
   counts <- as.numeric(unlist(row[outcome_columns], use.names = FALSE))
   total <- dc_count(row$Starts[[1]])
   counts <- dc_count(counts)
@@ -851,11 +953,12 @@ make_pathway_sankey <- function(row, count_label = "Antenatal bookings", period 
   labels <- paste0(outcome_text, "<br>", count_text(counts), " (",
                    percent_text(shares), ")")
   chart <- plotly::plot_ly(type = "sankey", height = 170,
-    arrangement = "snap", orientation = "h",
+    arrangement = "fixed", orientation = "h",
     node = list(
       label = c(count_text(total), percent_text(shares)),
-      color = c(main_chart_colour, outcome_colours),
-      x = c(0.01, rep(0.99, 4)), y = c(0.5, 0.08, 0.35, 0.62, 0.89),
+      color = c(unname(identity_colours(code)), outcome_colours),
+      x = c(0.01, rep(0.99, 4)),
+      y = sankey_node_y(c(0.01, rep(0.99, 4)), rep(0L, 4), 1:4, counts, 130, 18),
       pad = 18, thickness = 18,
       customdata = paste0(c(organisation, outcome_text), "<br>", count_label, ": ", c(total, counts)),
       hovertemplate = "%{customdata}<extra></extra>"
@@ -1180,6 +1283,7 @@ booking_icb_delivery_over_time <- build_delivery_outcome_trends(booking_icb_deli
 # Save the exploration outputs; QA runs separately through R/QA.R.
 save_report_rds(
   list(icb_sankey = icb_sankey, trust_sankey = trust_sankey, by_year = by_year,
+       full_patient_flows = full_patient_flows,
        country_coverage = report_country_coverage(report_episodes),
        maternal_age_completeness = maternal_age_completeness,
        maternal_age_completeness_table = maternal_age_completeness_display,
@@ -1340,18 +1444,12 @@ build_delivery_geography <- function(years = delivery_years, age_bands = deliver
       LA %in% top_las ~ LA, TRUE ~ "All other feeder LAs")) |>
     dplyr::group_by(Origin, Destination_group) |>
     dplyr::summarise(N = sum(N), .groups = "drop")
-  origins <- sankey_links |>
-    dplyr::group_by(Origin) |>
-    dplyr::summarise(N = sum(N), .groups = "drop") |>
-    dplyr::arrange(dplyr::desc(N), Origin) |>
-    dplyr::pull(Origin)
+  origins <- sankey_category_order(cluster_las, sankey_links$Origin)
+  origins <- origins[origins %in% sankey_links$Origin]
   origin_labels <- la_names$Resident_LA[match(origins, la_names$LA)]
   origin_labels[origins %in% c("Unknown LA", "All other feeder LAs")] <- origins[origins %in% c("Unknown LA", "All other feeder LAs")]
-  destinations <- sankey_links |>
-    dplyr::group_by(Destination_group) |>
-    dplyr::summarise(N = sum(N), .groups = "drop") |>
-    dplyr::arrange(dplyr::desc(N), Destination_group) |>
-    dplyr::pull(Destination_group)
+  destinations <- sankey_category_order(trust_target_order, sankey_links$Destination_group)
+  destinations <- destinations[destinations %in% sankey_links$Destination_group]
   destination_labels <- destination_names$Delivery_destination[match(destinations, destination_names$Destination_group)]
   sankey_links <- sankey_links |>
     dplyr::group_by(Origin) |>
@@ -1363,12 +1461,16 @@ build_delivery_geography <- function(years = delivery_years, age_bands = deliver
     vapply(destinations, function(z) sum(sankey_links$N[sankey_links$Destination_group == z]), numeric(1))))
   raw_sankey_links <- sankey_links
   sankey_links <- dc_cells(sankey_links, c("N", "Origin_total"), list(Share = c("N", "Origin_total")))
-  palette <- grDevices::hcl.colors(length(origins), palette = delivery_palette)
-  sankey_chart <- plotly::plot_ly(type = "sankey", height = max(340, max(length(origins), length(destinations)) * 18),
-    arrangement = "snap", node = list(label = short_chart_name(c(origin_labels, destination_labels)), pad = 9, thickness = 12,
-      x = c(rep(0.01, length(origins)), rep(0.99, length(destinations))),
-      y = c(seq(0.02, 0.98, length.out = length(origins)), seq(0.02, 0.98, length.out = length(destinations))),
-      color = c(palette, rep("#727272", length(destinations))),
+  palette <- unname(identity_colours(origins))
+  sankey_height <- max(340, max(length(origins), length(destinations)) * 18)
+  node_x <- c(rep(0.01, length(origins)), rep(0.99, length(destinations)))
+  sankey_chart <- plotly::plot_ly(type = "sankey", height = sankey_height,
+    arrangement = "fixed", node = list(label = short_chart_name(c(origin_labels, destination_labels)), pad = 9, thickness = 12,
+      x = node_x,
+      y = sankey_node_y(node_x, match(sankey_links$Origin, origins) - 1L,
+        length(origins) + match(sankey_links$Destination_group, destinations) - 1L,
+        sankey_links$N, sankey_height - 20, 9),
+      color = c(palette, unname(identity_colours(destinations))),
       customdata = paste0(c(origin_labels, destination_labels), "<br>Deliveries: ", node_totals),
       hovertemplate = "%{customdata}<extra></extra>"),
     link = list(source = match(sankey_links$Origin, origins) - 1L,
@@ -1439,10 +1541,14 @@ build_delivery_geography <- function(years = delivery_years, age_bands = deliver
     all_destination_labels$Destination)
   all_destination_labels["All other trusts"] <- "All other trusts"
   all_origins <- c(sort(unique(raw_sankey_flows$LA)), "All other feeder LAs")
-  origin_colours <- stats::setNames(grDevices::hcl.colors(length(all_origins), palette = delivery_palette), all_origins)
+  origin_colours <- identity_colours(all_origins)
 
   # Short chart labels fit the compact panels; hover still gives the complete name.
   small_sankey <- function(links, origin_codes, destination_codes, percentage_label) {
+    origin_order <- sankey_category_order(cluster_las, names(all_origin_labels))
+    destination_order <- sankey_category_order(trust_target_order, names(all_destination_labels))
+    origin_codes <- origin_order[origin_order %in% origin_codes]
+    destination_codes <- destination_order[destination_order %in% destination_codes]
     source_names <- unname(all_origin_labels[origin_codes])
     target_names <- unname(all_destination_labels[destination_codes])
     source_counts <- vapply(origin_codes, function(code) sum(links$N[links$Origin == code]), numeric(1))
@@ -1452,21 +1558,18 @@ build_delivery_geography <- function(years = delivery_years, age_bands = deliver
     target_counts <- dc_count(target_counts)
     links$N <- dc_count(links$N)
     chart_height <- max(220, max(length(origin_codes), length(destination_codes)) * 21 + 40)
-    # Leave a gap between nodes, while keeping their heights proportional to delivery counts.
-    node_positions <- function(counts) {
-      gap <- 14 / (chart_height - 20)
-      0.02 + (cumsum(counts) - counts / 2) / sum(counts) * (0.96 - gap * (length(counts) - 1L)) +
-        gap * (seq_along(counts) - 1L)
-    }
+    node_x <- c(rep(0.02, length(origin_codes)), rep(0.98, length(destination_codes)))
     node_names <- c(source_names, target_names)
     node_counts <- c(source_counts, target_counts)
     plotly::plot_ly(type = "sankey", height = chart_height, arrangement = "fixed",
       node = list(
         label = short_chart_name(node_names),
         pad = 14, thickness = 12,
-        x = c(rep(0.02, length(origin_codes)), rep(0.98, length(destination_codes))),
-        y = c(node_positions(source_counts), node_positions(target_counts)),
-        color = c(unname(origin_colours[origin_codes]), rep("#727272", length(destination_codes))),
+        x = node_x,
+        y = sankey_node_y(node_x, match(links$Origin, origin_codes) - 1L,
+          length(origin_codes) + match(links$Destination_group, destination_codes) - 1L,
+          links$N, chart_height - 20, 14),
+        color = c(unname(origin_colours[origin_codes]), unname(identity_colours(destination_codes))),
         customdata = paste0(node_names, "<br>Recorded deliveries: ", scales::comma(node_counts, accuracy = 1)),
         hovertemplate = "%{customdata}<extra></extra>"),
       link = list(
@@ -1569,8 +1672,7 @@ build_delivery_geography <- function(years = delivery_years, age_bands = deliver
   }
   line_chart <- function(data, field, y_title, units = "percent", colours = NULL, show_legend = TRUE) {
     groups <- unique(data$Origin_group)
-    if (is.null(colours)) colours <- stats::setNames(
-      grDevices::hcl.colors(length(groups), palette = delivery_palette), groups)
+    if (is.null(colours)) colours <- identity_colours(groups)
     chart <- plotly::plot_ly(height = 260)
     for (j in seq_along(groups)) {
       line <- data[data$Origin_group == groups[j], , drop = FALSE]
@@ -1739,8 +1841,7 @@ build_delivery_geography <- function(years = delivery_years, age_bands = deliver
     list(data.frame(Origin_group = character(), Origin_name = character())),
     lapply(organisation_plots, function(x) x$trend_groups))) |>
     dplyr::distinct(Origin_group, Origin_name)
-  trend_colours <- stats::setNames(grDevices::hcl.colors(nrow(trend_key), palette = delivery_palette),
-    trend_key$Origin_group)
+  trend_colours <- identity_colours(trend_key$Origin_group)
   trend_specs <- list(
     count = list(field = "N", title = "Deliveries", units = "count"),
     contribution = list(field = "Share", title = "% from LA", units = "percent"),
@@ -3478,9 +3579,11 @@ build_projection_sankeys <- function(observed, projected, organisations,
   # Calculate change AFTER summing the displayed flow, not by averaging percentages.
   flows$Percent_change <- ifelse(flows$Projection_complete & flows$Observed > 0,
     flows$Projected / flows$Observed - 1, NA_real_)
-  origins <- unique(c(keep_las, "All other feeder LAs", "Unknown LA"))
+  # Selection uses volume; display follows the same LA order as geography charts.
+  origins <- sankey_category_order(main_las, c(keep_las, "All other feeder LAs", "Unknown LA"))
   origins <- origins[origins %in% flows$LA]
   trusts <- organisations$Code[organisations$Level == "Trust"]
+  trusts <- sankey_category_order(trust_target_order, trusts)
   trusts <- trusts[trusts %in% flows$Trust]
   la_labels <- projection_la_lookup$LA_name[match(origins, projection_la_lookup$LA)]
   la_labels[is.na(la_labels)] <- origins[is.na(la_labels)]
@@ -3528,9 +3631,15 @@ build_projection_sankeys <- function(observed, projected, organisations,
     visible <- flows[[field]] > 0
     if (!any(visible)) return(htmltools::p(if (field == "Projected" && any(!flows$Projection_complete))
       "No available projected delivery flows; allocation is incomplete." else "No deliveries in this panel."))
-    plotly::plot_ly(type = "sankey", arrangement = "snap",
-      height = max(540, 32 * length(origins)),
+    chart_height <- max(540, 32 * length(origins))
+    node_x <- c(rep(0.01, length(origins)), rep(0.99, length(trusts)))
+    plotly::plot_ly(type = "sankey", arrangement = "fixed",
+      height = chart_height,
       node = list(label = gsub("\n", "<br>", stringr::str_wrap(labels, 24)), pad = 16, thickness = 14,
+        x = node_x,
+        y = sankey_node_y(node_x, match(flows$LA[visible], origins) - 1L,
+          length(origins) + match(flows$Trust[visible], trusts) - 1L,
+          flows[[field]][visible], chart_height - 35, 16),
         color = if (field == "Observed") rep("#75A6CE", nrow(nodes)) else change_colour(nodes$Percent_change),
         line = list(color = "#666666", width = 0.4),
         customdata = paste0(labels, "<br>", observed_year, ": ", scales::comma(nodes$Observed),

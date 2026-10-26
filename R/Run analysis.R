@@ -2,7 +2,6 @@
 # Reuse loaded parquet objects -> analyse -> render -> open report.
 # Run with: source("R/Run analysis.R")
 # Refresh changed extracts explicitly: run_maternity_project(refresh_data = TRUE)
-# Run investigations separately: source("R/QA.R")
 
 run_maternity_project <- function(refresh_data = FALSE) {
   # GENERAL SETUP -------------------------------------------------------

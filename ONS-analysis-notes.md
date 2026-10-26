@@ -70,7 +70,7 @@ contribution cannot be estimated or allocated. Zero source contributions stay ze
 The LA source check covers configured cluster LAs and other LAs with recorded
 bookings or deliveries at cluster trusts, at ages 13–54. Areas appearing only in
 the wider totals file do not enter the model. The console summarises issues once;
-`la_source_matching` and `qa_details` retain the individual rows. Missing uplift
+`la_source_matching` retains the individual rows. Missing uplift
 evidence is counted by LA/age group, without repeating each projection year.
 
 Provider coverage uses supplied rows aged 13–54, including those without a usable LA
@@ -105,24 +105,20 @@ The detailed ONS growth tables compare source birth counts directly, taking the
 repeated source count once per LA/source age/year. An unavailable modifier at
 one split age does not remove the known source growth for another age.
 
-The optional local `R/check_projection_cohort.R` prints aggregate source checks
-from loaded parquet objects. It is excluded from Git and is not needed to run
-the report. Secure-data execution remains necessary to inspect the actual gaps.
-
 ## Source editions and checks
 
 The three registration workbooks (2023, 2024 and 2025) matched the ONS downloads
 checked on 6 October 2026. Table 5 supplies the stillbirth and multiplicity
-modifiers, and England Table 4 supplies the Private–NHS modifier. BBCS cohort
-deliveries and outside-LA resident totals supply age weights, and the cohort supplies the
-maternity pathway adjustment.
+modifiers, and England Table 4 supplies the Private–NHS modifier. Each LA's own
+expanded resident totals supply its age weights and maternity pathway adjustment.
+The pregnancy cohort supplies observed booking and delivery provider counts for allocation.
 
 The report reads the existing supplied `data/2022 SNPP Births persons.csv` directly.
 That file is unchanged and matches the persons entry byte-for-byte in the official
 2023-geography birth archive:
 [ONS 2023-geography birth projections ZIP](https://www.ons.gov.uk/file?uri=%2Fpeoplepopulationandcommunity%2Fpopulationandmigration%2Fpopulationprojections%2Fdatasets%2Fbirthsbyageofmotherz3%2F2022basedmigrationcategoryvarianton2023localauthoritygeographies%2F2022snppbirthsmigcat23.zip).
 
-The new, separately named female snapshot uses `2022 SNPP Population females.csv` from the matching
+The female-population snapshot uses `2022 SNPP Population females.csv` from the matching
 [ONS 2023-geography population projections ZIP](https://www.ons.gov.uk/file?uri=%2Fpeoplepopulationandcommunity%2Fpopulationandmigration%2Fpopulationprojections%2Fdatasets%2Flocalauthoritiesinenglandz1%2F2022basedmigrationcategoryvarianton2023localauthoritygeographies%2F2022snpppopulationsyoamigcat23.zip).
 Archive SHA-256:
 `c452e4e8d04747d4f05484efcdefe100e7d6117147c3d2b4051007a71e14ee82`.
@@ -132,9 +128,7 @@ authorities x 90 ages (0-89) x 25 years (2023-2047). Values are copied directly
 from ONS; metadata identifies female sex, the 2022 base year, April 2023 geography,
 migration-category variant and source archive. The five columns required by
 `read_female_population_single_age()` are retained, with direct ONS metadata instead
-of Nomis-specific fields. The maximum absolute difference from the older
-whole-person snapshot is 4.493 people, so the earlier within-0.5 QA applies only
-to the 2021-geography source, not this edition.
+of Nomis-specific fields. Published ONS population values retain their source precision.
 
 The historical birth snapshot is `data/ons_live_births_la_2013_2025.csv`, from
 Nomis dataset `NM_205_1` (`LEBIRTHSLA`). It includes total births (L) and published
@@ -145,12 +139,8 @@ refreshing this extract and the female-population extract with its GSS code.
 
 Run `source("R/Run analysis.R")` from the project root in the secure
 environment. The launcher reads Sarah's parquet inputs, prepares all outputs,
-runs QA and renders the report. See `README.md` for files and settings.
-Run `Rscript R/test_projection_scale.R` for the provider totals and comparison lines.
-Further arithmetic and chart checks can run with the optional local
-`R/test_report_consistency.R` and `R/check_projection_cohort.R` scripts, which are
-excluded from Git. They use small counted examples, not an alternative MSDS
-project dataset.
+renders the report and checks disclosure controls in the finished HTML. See
+`README.md` for files and settings.
 Full secure-data execution is still required to verify the actual cohort results.
 
 Provider coverage: available allocations remain visible when other records cannot
@@ -166,9 +156,7 @@ boundary approximation, without attempting to redistribute the transferred area.
 The report lists applied mappings and cites the ONS change list. Original source
 objects and ONS values are unchanged. Structural absent count
 categories within supported inputs are zero; missing source areas, explicit NAs
-and undefined zero-denominator rates remain unavailable. The HH scratch file is
-a collection of optional snippets to select and run against the parquet-backed
-objects; it is not a pipeline step and does not create a prescribed output.
+and undefined zero-denominator rates remain unavailable.
 
 The report calls the fifth modifier **Maternity pathway adjustment**. The existing
 `Bookings_uplift_modifier` column name is retained for compatibility; it still means
@@ -204,4 +192,4 @@ their published counts and the ratios calculated from them.
 `Private_NHS_rate` and `Private_NHS_factor` identify each master row's factor.
 `Maternities_before_private` and `Maternities_after_private` expose its effect.
 `National_conversion_factor` remains the Table 5 baby-to-maternity conversion.
-The total `Maternity_modifier` includes the new reduction and pathway uplift.
+The total `Maternity_modifier` includes the Private–NHS reduction and pathway uplift.

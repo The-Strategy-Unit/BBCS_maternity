@@ -7,6 +7,37 @@
   const context = canvas.getContext('2d');
   let pending = false;
 
+  // Same geometry as sankey_node_y() in R: preserve category order using only
+  // the controlled ribbon values already published in this chart.
+  function sankeyNodeY(trace, height) {
+    const x = trace.node.x;
+    const incoming = x.map(() => 0), outgoing = x.map(() => 0);
+    trace.link.value.forEach((value, i) => {
+      if (Number.isFinite(value) && value > 0) {
+        outgoing[trace.link.source[i]] += value;
+        incoming[trace.link.target[i]] += value;
+      }
+    });
+    const weights = x.map((_, i) => Math.max(incoming[i], outgoing[i]));
+    const layers = [...new Set(x)].map(stage => x.map((v, i) => i)
+      .filter(i => x[i] === stage && weights[i] > 0)).filter(ids => ids.length);
+    const y = x.map(() => 0.5);
+    if (!layers.length) return y;
+    const gap = Math.min(trace.node.pad, height / Math.max(1, ...layers.map(ids => ids.length - 1)));
+    const scale = Math.min(...layers.map(ids =>
+      (height - gap * (ids.length - 1)) / ids.reduce((sum, i) => sum + weights[i], 0)));
+    layers.forEach(ids => {
+      const used = ids.reduce((sum, i) => sum + weights[i] * scale, 0) + gap * (ids.length - 1);
+      let top = (height - used) / 2;
+      ids.forEach(i => {
+        const size = weights[i] * scale;
+        y[i] = (top + size / 2) / height;
+        top += size + gap;
+      });
+    });
+    return y;
+  }
+
   function wrap(text, width, size) {
     context.font = `${size}px Arial`;
     return String(text).split(/<br\s*\/?>/i).map(part => {
@@ -25,7 +56,9 @@
     if (!plot._fullLayout || !plot.clientWidth || !plot.getClientRects().length || state.busy) return;
     const width = Math.floor(plot.parentElement.getBoundingClientRect().width);
     if (width < 100) return; // Hidden tabs are measured when they become visible.
-    const height = Math.min(state.height, Math.max(320, window.innerHeight - 48));
+    // Sankey heights allow for every category. Compressing a long category list
+    // to the viewport can consume all available space with node padding alone.
+    const height = state.sankey ? state.height : Math.min(state.height, Math.max(320, window.innerHeight - 48));
     const key = `${width}:${height}`;
     if (state.key === key && Math.abs(plot._fullLayout.width - width) < 1 &&
         plot._fullLayout.height === height && plot.clientHeight === height) return;
@@ -91,6 +124,13 @@
       });
       plot.style.width = '100%';
       plot.style.height = `${height}px`;
+      for (let i = 0; i < plot.data.length; i++) {
+        const trace = plot.data[i];
+        if (trace.type === 'sankey' && trace.arrangement === 'fixed' && trace.node?.x?.length) {
+          const innerHeight = Math.max(1, height - (margin.t || 0) - (margin.b || 0));
+          await Plotly.restyle(plot, {'node.y': [sankeyNodeY(trace, innerHeight)]}, [i]);
+        }
+      }
       await Plotly.relayout(plot, update);
       state.key = key;
     } finally { state.busy = false; }
@@ -114,6 +154,7 @@
       if (!plot.layout) return;
       charts.set(plot, {
         height: Number(plot.layout.height) || plot.clientHeight || 480,
+        sankey: plot.data.some(trace => trace.type === 'sankey'),
         margin: {...plot.layout.margin},
         horizontal: plot.layout.legend?.orientation === 'h',
         names: plot.data.map(t => t.name || ''),

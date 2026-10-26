@@ -54,13 +54,15 @@ report_run <- read_completed_analysis()
 ons_exploration <- read_report_rds(".ons_exploration.rds", report_run$run_id)
 list2env(ons_exploration, envir = knitr::knit_global())
 patient_flows <- read_report_rds(".patient_flows.rds", report_run$run_id)
+if (is.null(patient_flows$full_patient_flows$residence_booking_birth_sankey))
+  stop("Regenerate the patient-flow charts with R/Run analysis.R before rendering section 2.2.4B.")
 if (is.null(patient_flows$country_coverage$tables))
   stop("Regenerate the cohort overview with R/Run analysis.R before rendering the country tables.")
 delivery_geography <- read_report_rds(".delivery_geography.rds", report_run$run_id)
 first_draft_projections <- read_report_rds(".projections.rds", report_run$run_id)
 demo_sankey_charts <- read_report_rds(".demo_sankeys.rds", report_run$run_id)
-if (!identical(demo_sankey_charts$version, "demographic-outcomes-v3-quintiles"))
-  stop("Regenerate the demographic charts with R/Run analysis.R before rendering section 4 with IMD quintiles.")
+if (!identical(demo_sankey_charts$version, "demographic-profile-v7"))
+  stop("Regenerate the demographic charts with R/Run analysis.R before rendering sections 4 and 5.")
 ```
 
 ```{r}
@@ -126,15 +128,45 @@ booking_icb_delivery_over_time <- patient_flows$booking_icb_delivery_over_time
 
 **How might demand for deliveries and bookings at BBCS trusts change in future?** The report explores ONS and MSDS, explains the agreed calculation, and presents projections by trust, ICB, combined cluster and age band.
 
-[The model converts ONS projected live-born babies into maternities using age-specific adjustments, then applies MSDS booking and delivery shares to estimate activity at each provider. The adjustments cover the local age distribution, stillbirths, multiple births and pregnancies without a recorded delivery. (LM edit)]{.lm-edit}
+The model converts ONS projected live-born babies into maternities using age-specific adjustments, then applies MSDS booking and delivery shares to estimate activity at each provider. The adjustments cover the local age distribution, stillbirths, multiple births and pregnancies without a recorded delivery.
 
 The Private–NHS modifier additionally reduces the projected total using pooled England non-NHS delivery-setting shares, with the same assumed age-band reduction for bookings and deliveries.
 
 ### Disclosure control {#disclosure-control}
 
-Final MSDS activity counts retain genuine zeros, show counts of 1–7 as 5, and round other counts to the nearest 5, following [NHS England’s MSDS publication suppression methodology (17 September 2026)](https://digital.nhs.uk/data-and-information/publications/statistical/maternity-services-monthly-statistics/final-june-2026-provisional-july-2026#publication-data-files-and-suppression-methodology). Percentages and rates use the controlled numerator and denominator; changes use controlled counts or rates. A zero denominator gives no percentage. Totals are aggregated from raw values and controlled independently, so displayed components and percentages may not sum exactly to totals or 100%.
+To protect confidentiality, final MSDS activity counts retain genuine zeros, show counts of **1–7 as 5**, and round other counts to the **nearest 5**. This follows [NHS England’s MSDS publication suppression methodology, published 17 September 2026](https://digital.nhs.uk/data-and-information/publications/statistical/maternity-services-monthly-statistics/final-june-2026-provisional-july-2026#publication-data-files-and-suppression-methodology), which also specifies that published activity rates use rounded numerators and denominators.
 
-All model calculations and intermediate aggregations use raw values. These controls apply throughout the report, only when preparing final MSDS-derived or combined MSDS/ONS outputs, including tables, chart values, hover text and embedded interactive data. Modelled counts receive the same controls, with positive fractional counts below 8 shown as 5. ONS-only figures remain as published. Missing or unavailable estimates remain missing.
+**Why displayed figures may not add up**
+
+Each category and its total are adjusted separately. The total is calculated from the original figures **before** suppression and rounding are applied; it is not calculated by adding the displayed categories. Adding the displayed categories can therefore give a number slightly higher or lower than the displayed total. This is an expected effect of disclosure control, rather than a counting error.
+
+For example, using invented numbers:
+
+| Original category counts | Displayed categories | Displayed total | Result |
+|---|---|---|---|
+| 12 + 12 = **24** | 10 + 10 = **20** | **25** | Categories add to **5 less** than the total |
+| 13 + 13 = **26** | 15 + 15 = **30** | **25** | Categories add to **5 more** than the total |
+
+Differences commonly occur in multiples of five and can be larger when several categories are combined. The same principle applies to table rows and columns, stacked charts and Sankey diagrams. **Use the stated total rather than recalculating it from displayed components.**
+
+**How percentages and rates are affected**
+
+Published activity percentages and rates are calculated after disclosure controls have been applied separately to the completed numerator and denominator. They can therefore differ from the underlying percentages and rates, and displayed percentages may not sum to exactly 100%.
+
+Using the first example above, suppose **12 of 24 antenatal bookings resulted in delivery at a cluster trust**. After disclosure control, these counts are displayed as **10 and 25**:
+
+| Measure | Original calculation | Published calculation |
+|---|---|---|
+| Percentage of bookings resulting in cluster delivery | 12 ÷ 24 × 100 = **50%** | 10 ÷ 25 × 100 = **40%** |
+| Cluster deliveries per 1,000 bookings | 12 ÷ 24 × 1,000 = **500** | 10 ÷ 25 × 1,000 = **400** |
+
+These examples use small counts to make the effect clear; differences can be particularly noticeable when denominators are small. Changes shown in the report use controlled counts or rates. Where the denominator is zero, no percentage or rate is shown.
+
+**What remains unchanged**
+
+All internal model calculations, allocation shares and adjustment factors use original, unrounded counts and proportions. **Disclosure adjustments affect the published figures only and do not feed back into the projection calculations.**
+
+Controls apply when preparing final MSDS-derived or combined MSDS/ONS outputs, including tables, chart values, hover text and embedded interactive data. In this report, modelled counts receive the same controls, with positive fractional counts below 8 shown as 5. ONS-only figures remain as published, and missing or unavailable estimates remain missing.
 
 ## 1.2 The BBCS cohort and cluster {#bbcs-cohort}
 
@@ -208,8 +240,8 @@ ONS source definitions follow the [birth statistics user guide](https://www.ons.
 | Term | Meaning here |
 |----|----|
 | **Recorded / observed / published count** | MSDS recorded activity or ONS registered events that have already happened. The source and counting unit are identified alongside the figure. |
-| **Projected live births** | [Future baby counts from the [ONS subnational population projection model](#method-1-ref-snpp-method), conditional on its assumptions. (LM edit)]{.lm-edit} |
-| **Estimated / projected maternities** | [Counts calculated from ONS projected live births after the local age split, an allowance for stillbirths and a multiplicity adjustment to account for multiple births. The maternity pathway adjustment then includes pregnancies without a recorded delivery, giving the project's wider maternity total. (LM edit)]{.lm-edit} The Private–NHS modifier is applied between multiplicity and the maternity pathway adjustment. |
+| **Projected live births** | Future baby counts from the [ONS subnational population projection model](#method-1-ref-snpp-method), conditional on its assumptions. |
+| **Estimated / projected maternities** | Counts calculated from ONS projected live births after the local age split, an allowance for stillbirths and a multiplicity adjustment to account for multiple births. The maternity pathway adjustment then includes pregnancies without a recorded delivery, giving the project's wider maternity total. The Private–NHS modifier is applied between multiplicity and the maternity pathway adjustment. |
 | **MSDS recorded resident deliveries** | Pregnancies with a recorded live birth or stillbirth among residents of an LA, including home deliveries and deliveries outside the cluster. These are recorded MSDS counts, not a complete population-wide delivery count. They provide the age shares and resident delivery counts used in the model. |
 | **Provider projection** | Adjusted ONS projection multiplied by the provider’s booking or delivery share for each resident LA and age, then added together. |
 | **Shared allocation denominator** | Recorded resident deliveries × maternity pathway adjustment. This estimates resident pregnancies with or without a recorded delivery. Both booking and delivery shares divide by this same total. |
@@ -223,7 +255,7 @@ ONS source definitions follow the [birth statistics user guide](https://www.ons.
 
 **The calculation:** ONS live births × age share × stillbirth factor × multiplicity factor × Private–NHS modifier × maternity pathway adjustment = adjusted maternities. The stillbirth and multiplicity factors use national Table 5 counts pooled across 2023–2025; the Private–NHS modifier uses England Table 4 counts pooled across the same years. [Section 3.1](#projection-modifications) describes each step.
 
-[The displayed birth rates provide demographic context and are not applied within this conversion; fertility assumptions already enter the ONS birth projection. (LM edit)]{.lm-edit}
+The displayed birth rates provide demographic context and are not applied within this conversion; fertility assumptions already enter the ONS birth projection.
 
 | Shorthand | Meaning here |
 |----|----|
@@ -259,7 +291,7 @@ The six authorities are Birmingham, Dudley, Sandwell, Solihull, Walsall and Wolv
 
 The following assumptions and differences affect how the series can be compared:
 
-- **ONS projection:** local fertility differentials use the five years 2018–2022 initially, then a rolling five-year approach, applied to national fertility assumptions. Projected local births are constrained to England totals. Fertility, mortality and migration assumptions describe a demographic scenario, not future service activity. [See the [ONS methodology](#method-1-ref-snpp-method) for more details. (LM edit)]{.lm-edit}
+- **ONS projection:** local fertility differentials use the five years 2018–2022 initially, then a rolling five-year approach, applied to national fertility assumptions. Projected local births are constrained to England totals. Fertility, mortality and migration assumptions describe a demographic scenario, not future service activity. See the [ONS methodology](#method-1-ref-snpp-method) for more details.
 - **Maternity conversion:** pool Table 5 counts across 2023–2025 at each published age, then calculate stillbirths/live births and maternities/births (L+S). Apply both at Age (SY), sharing only the published under-14 and 50+ factors at the extremes. National relationships remain fixed over future years.
 - **Private–NHS modifier:** pool England Table 4 counts across 2023–2025 by age band. Apply one minus the non-NHS-establishment share after multiplicity and before pathway uplift, assuming the same reduction for bookings and deliveries. This is a delivery-setting proxy for private care, held constant across modelled LAs and years.
 - **Model age range:** calculations use individual ages **13–54**. ONS births (L) for ≤15 are split across ages 13–15, and 44+ across ages 44–54, using the pooled local MSDS resident delivery age mix. Counts are zero where an LA has no recorded activity at an age. Final projections use seven reporting bands: Under 20 (13–19), 20–24, 25–29, 30–34, 35–39, 40–44 and 45+ (45–54). Background source charts retain their published age groups.
@@ -324,9 +356,9 @@ ons_year_table(historic_trends, live_births,
 
 #### Published maternities, 2023–2025 {#method-1-published-maternities-2023-2025}
 
-[Table 3 of the [ONS registration workbooks](#method-1-ref-registrations) reports maternities by the mother's usual place of residence. We report these published counts directly, without a conversion factor. They include pregnancies resulting only in stillbirth, but exclude pregnancies ending without a live birth or registrable stillbirth; they do not identify the provider of care. (LM edit)]{.lm-edit}
+Table 3 of the [ONS registration workbooks](#method-1-ref-registrations) reports maternities by the mother's usual place of residence. We report these published counts directly, without a conversion factor. They include pregnancies resulting only in stillbirth, but exclude pregnancies ending without a live birth or registrable stillbirth; they do not identify the provider of care.
 
-[Both the published counts and the complete stillbirth-and-multiplicity conversion include maternities involving stillbirths. The final modelled totals also include pregnancies without a recorded delivery through the maternity pathway adjustment, so they have a wider definition than published ONS maternities. National age-specific conversion factors are assumed to apply locally. (LM edit)]{.lm-edit}
+Both the published counts and the complete stillbirth-and-multiplicity conversion include maternities involving stillbirths. The final modelled totals also include pregnancies without a recorded delivery through the maternity pathway adjustment, so they have a wider definition than published ONS maternities. National age-specific conversion factors are assumed to apply locally.
 
 The workbooks use boundaries dated August 2024, May 2025 and February 2026. The six selected LA codes are unchanged; see the [LA geography](#main-la-geography-check).
 
@@ -454,9 +486,7 @@ Sources: [ONS methodology, section 4: Births](https://www.ons.gov.uk/peoplepopul
 
 ### 2.1.6 Birth rates: demographic context {#method-1-birth-rates-secondary-demographic-context}
 
-[LM: Are birth rates part of the ONS population model methodology? I think that's why I wanted to include some discussion of them because it was my assumption that they would be. So although we don't directly use them they are implicitly used within ONS methodology that produces the number of live births projection. Let's look into this to frame this section]{.lm-query}
-
-[For completeness, we also consider birth rates and how they change over time. Fertility rates already enter the [ONS birth projection](#ons-birth-projection-method): age-specific fertility rates are applied to the population of women of the corresponding ages. We then convert those projected live-birth counts into maternities. The GFR charts below provide context; their displayed rates are not a further input to that conversion. (LM edit)]{.lm-edit}
+For completeness, we also consider birth rates and how they change over time. Fertility rates already enter the [ONS birth projection](#ons-birth-projection-method): age-specific fertility rates are applied to the population of women of the corresponding ages. We then convert those projected live-birth counts into maternities. The GFR charts below provide context; their displayed rates are not a further input to that conversion.
 
 The general fertility rate (GFR) uses all live births as its numerator and women aged 15–44 as its denominator. The 2025 workbook also publishes a 15–49 rate; this report retains 15–44 for comparability. Solid lines show the published 15–44 GFR for 2023–2025. Dashed lines show projected births (L) ÷ projected women aged 15–44 × 1,000 for each year. Population values come directly from the matching 2023-geography ONS archive, retaining its published precision. No maternity conversion is applied to either rate.
 
@@ -1046,7 +1076,7 @@ htmltools::browsable(delivery_geography$chart_grids$share_change$ICB_Cluster)
 delivery_geography$all_changes_table
 ```
 
-### 2.2.4 Patient flows, 2025/26 {#patient-flow-counting-rules}
+### 2.2.4A Patient flows, 2025/26 {#patient-flow-counting-rules}
 
 These diagrams show **2025/26 recorded non-home deliveries** by the mother's residence ICB, booking trust and delivery provider. Use the tabs to compare the two-stage flows or view residence, antenatal booking and delivery together.
 
@@ -1087,9 +1117,51 @@ residence_booking_birth_sankey
 ```
 :::
 
+### 2.2.4B Patient flows including all booking and delivery statuses, 2025/26 {#patient-flows-all-statuses}
+
+These diagrams include **every supplied pregnancy assigned to 2025/26**, counting each row once regardless of whether a booking or delivery is recorded. They extend the three views in section 2.2.4A using the same booking and delivery categories as [section 4.2](#demographic-booking-delivery).
+
+**Home birth** and **No recorded delivery** are separate delivery endpoints. **No recorded booking** is a separate starting point in the booking-to-delivery view and a middle-stage category in the three-stage view. It means neither a booking provider nor a booking date was supplied; a supplied booking date with no usable provider remains **Unknown provider**. Pregnancies with neither event recorded are retained. Known organisations grouped as **Other** remain separate from unknown residence or provider codes.
+
+As in section 4.2, a recorded delivery with unknown home-birth status retains its supplied provider, or the unknown-provider category where the provider is unusable. Only a recorded home-birth flag places a delivery in **Home birth**. No recorded delivery does not establish that there was no birth. The assigned pregnancy year uses birth FY first, with EDD FY as the fallback; records without an assigned 2025/26 year are outside this annual view. Display counts use the report's disclosure controls, so rounded ribbons may not add exactly to rounded node totals.
+
+::: panel-tabset
+##### ICB of residence to delivery provider ICB or status
+
+```{r}
+#| label: patient-flow-full-icb
+#| fig-alt: "Sankey diagram for all pregnancies assigned to 2025/26, from residence ICB to delivery provider ICB, home birth or no recorded delivery, retaining other and unknown ICBs."
+#| out-width: "100%"
+
+patient_flows$full_patient_flows$icb_sankey
+```
+
+##### Booking trust or status to delivery trust or status
+
+```{r}
+#| label: patient-flow-full-trust
+#| fig-alt: "Sankey diagram for all pregnancies assigned to 2025/26, including no recorded booking, home birth, no recorded delivery, other trusts and unknown providers."
+#| out-width: "100%"
+
+patient_flows$full_patient_flows$trust_sankey
+```
+
+##### Residence, booking and delivery status
+
+The same pregnancies run from **residence ICB → booking trust or status → delivery trust or status**. Each link describes the flow between adjacent stages; the middle nodes combine pregnancies from different residence ICBs.
+
+```{r}
+#| label: patient-flow-full-residence-booking-birth
+#| fig-alt: "Three-stage Sankey diagram for all pregnancies assigned to 2025/26, from residence ICB through booking trust or no recorded booking to delivery trust, home birth or no recorded delivery, retaining other and unknown values."
+#| out-width: "100%"
+
+patient_flows$full_patient_flows$residence_booking_birth_sankey
+```
+:::
+
 ### 2.2.5 Patient flows across the three years {#patient-flows-by-year}
 
-Compare the same residence-to-delivery and booking-to-delivery flows across 2023/24, 2024/25 and 2025/26. Years are assigned pregnancy financial years, using the [section 2.2.4 counting rules](#patient-flow-counting-rules). The delivery ICB is taken from the provider, rather than the mother's residence. Providers outside the named groups and unknown providers remain distinct.
+Compare the same residence-to-delivery and booking-to-delivery flows across 2023/24, 2024/25 and 2025/26. Years are assigned pregnancy financial years, using the [section 2.2.4A counting rules](#patient-flow-counting-rules). The delivery ICB is taken from the provider, rather than the mother's residence. Providers outside the named groups and unknown providers remain distinct.
 
 #### ICB of residence to delivery provider ICB
 
@@ -1815,9 +1887,7 @@ At each published age, add the 2023–2025 Table 5 stillbirth counts and live-bi
 
 At the same published age, calculate **pooled maternities ÷ pooled births (live births + stillbirths)** from the same three years of Table 5 counts. Apply this factor after the stillbirth adjustment to convert babies into pregnancies reaching birth: twins or triplets count as one maternity. Both national factors remain fixed over future years. Table 5 groups ages under 14 and ages 50 and over, so each factor is shared across the individual ages within those published groups.
 
-[LM: not sure I fully follow this last paragraph, let's chat about it]{.lm-query}
-
-[**Assumptions and stillbirth coverage:** the national age-specific relationships are assumed to apply locally and remain constant over time. Both factors use matching Table 5 counts: the stillbirth allowance changes live-born babies to live-born plus stillborn babies, and the multiplicity factor converts those babies to pregnancies reaching birth. Together they include stillbirth-only maternities and multiple maternities with mixed live/stillbirth outcomes, without forecasting each outcome separately. All babies are counted directly in Table 5, including higher-order multiples. (LM edit)]{.lm-edit}
+**Assumptions and stillbirth coverage:** the national age-specific relationships are assumed to apply locally and remain constant over time. Both factors use matching Table 5 counts: the stillbirth allowance changes live-born babies to live-born plus stillborn babies, and the multiplicity factor converts those babies to pregnancies reaching birth. Together they include stillbirth-only maternities and multiple maternities with mixed live/stillbirth outcomes, without forecasting each outcome separately. All babies are counted directly in Table 5, including higher-order multiples.
 
 #### Private–NHS modifier {#private-nhs-modifier}
 
@@ -1825,7 +1895,7 @@ For each maternal age band, pool the **England-resident** maternity counts in **
 
 Use under 20, 20–24, 25–29, 30–34, 35–39, 40–44 and 45+. The 2025 groups 45–49 and 50+ are combined to match 45+ in 2023–2024. Each model age from 13 to 54 receives its band's factor; age 44 uses 40–44, and ages 45–54 use 45+. The derived unknown-age row reconciles the all-age total with the published bands and is retained for review, but is not assigned to known model ages. A source boundary with no local age split receives no assumed private-care rate or completed age-specific estimate.
 
-**Assumption:** non-NHS delivery settings are used as a proxy for private care. The same pooled age-band reduction is assumed to apply to both bookings and deliveries, in every modelled LA and future year. Table 4 measures delivery setting, not funding or antenatal care: it cannot identify private care within NHS establishments or partial private pathways. Home and elsewhere categories are not classified as private by this modifier. Recorded MSDS activity, the pathway ratio and both allocation denominators remain unchanged; the new factor reduces the shared projection once, so it is not applied again to the allocated booking or delivery totals.
+**Assumption:** non-NHS delivery settings are used as a proxy for private care. The same pooled age-band reduction is assumed to apply to both bookings and deliveries, in every modelled LA and future year. Table 4 measures delivery setting, not funding or antenatal care: it cannot identify private care within NHS establishments or partial private pathways. Home and elsewhere categories are not classified as private by this modifier. Recorded MSDS activity, the pathway ratio and both allocation denominators remain unchanged; the Private–NHS factor reduces the shared projection once, so it is not applied again to the allocated booking or delivery totals.
 
 Sources: [ONS birth-registration workbooks, Table 4](https://www.ons.gov.uk/peoplepopulationandcommunity/birthsdeathsandmarriages/livebirths/datasets/birthsinenglandandwalesbirthregistrations) and [ONS birth-statistics definitions](https://www.ons.gov.uk/peoplepopulationandcommunity/birthsdeathsandmarriages/livebirths/methodologies/userguidetobirthstatistics#place-of-birth-and-area-of-usual-residence).
 
@@ -2606,7 +2676,11 @@ htmltools::browsable(demo_sankey_charts$overview_booking$ICB_Cluster$ethnicity_d
 
 Each pregnancy appears once in this pooled booking-to-delivery flow. Explicit **No recorded booking** and **No recorded delivery** nodes retain pregnancies with only one recorded event; home births and unknown providers remain visible. Each demographic panel is scaled to its own flows, so compare ribbon widths within a panel and use the displayed total to compare its size.
 
-::: panel-tabset
+The three **by organisation** tabs split each booking-to-delivery ribbon by the selected demographic group. Ribbon colours and legends are consistent across panels; node colours still identify organisations. Hover over a ribbon for its demographic group, route and controlled pregnancy count.
+
+Each organisation panel includes pregnancies **booked there or delivered there**, counted once within that panel. Trust panels show booking and delivery trusts; ICB panels show booking and delivery ICBs. **Combined cluster** includes a booking or delivery in either Birmingham and Solihull ICB or Black Country ICB. Transfers can appear in more than one organisation panel, so panel totals must not be added together. The overall view retains the whole supplied cohort, including pregnancies with neither recorded event. Counts and percentages follow the disclosure rules; independently controlled demographic ribbons may not add exactly to controlled node totals or the unsplit flows.
+
+:::: panel-tabset
 ### 2023/24–2025/26 overall
 
 ```{r}
@@ -2635,7 +2709,85 @@ htmltools::browsable(demo_sankey_charts$imd)
 htmltools::browsable(demo_sankey_charts$age)
 ```
 
+### Ethnicity by organisation
+
+::: panel-tabset
+#### Overall
+
+```{r}
+#| label: demo-ribbons-ethnicity-overall
+htmltools::browsable(demo_sankey_charts$demographic_ribbons$ethnicity$overall)
+```
+
+#### Trust grid
+
+```{r}
+#| label: demo-ribbons-ethnicity-trust
+htmltools::browsable(demo_sankey_charts$demographic_ribbons$ethnicity$Trust)
+```
+
+#### ICB and cluster grid
+
+```{r}
+#| label: demo-ribbons-ethnicity-icb-cluster
+htmltools::browsable(demo_sankey_charts$demographic_ribbons$ethnicity$ICB_Cluster)
+```
+
 :::
+
+### Age band by organisation
+
+::: panel-tabset
+#### Overall
+
+```{r}
+#| label: demo-ribbons-age-overall
+htmltools::browsable(demo_sankey_charts$demographic_ribbons$age$overall)
+```
+
+#### Trust grid
+
+```{r}
+#| label: demo-ribbons-age-trust
+htmltools::browsable(demo_sankey_charts$demographic_ribbons$age$Trust)
+```
+
+#### ICB and cluster grid
+
+```{r}
+#| label: demo-ribbons-age-icb-cluster
+htmltools::browsable(demo_sankey_charts$demographic_ribbons$age$ICB_Cluster)
+```
+
+:::
+
+### IMD quintile by organisation
+
+::: panel-tabset
+#### Overall
+
+```{r}
+#| label: demo-ribbons-imd-overall
+htmltools::browsable(demo_sankey_charts$demographic_ribbons$imd$overall)
+```
+
+#### Trust grid
+
+```{r}
+#| label: demo-ribbons-imd-trust
+htmltools::browsable(demo_sankey_charts$demographic_ribbons$imd$Trust)
+```
+
+#### ICB and cluster grid
+
+```{r}
+#| label: demo-ribbons-imd-icb-cluster
+htmltools::browsable(demo_sankey_charts$demographic_ribbons$imd$ICB_Cluster)
+```
+
+:::
+
+::::
 
 ## 4.3 Recorded delivery outcomes {#demographic-booking-outcomes}
 
@@ -2826,6 +2978,117 @@ htmltools::browsable(demo_sankey_charts$booking_trust$age$proportions)
 ::::
 
 :::::
+
+# 5. Cohort demographics {#cohort-demographics}
+
+## 5.1 Overall cohort
+
+These charts describe the **whole supplied BBCS pregnancy cohort, pooled across 2023/24–2025/26**: **`r scales::comma(demo_sankey_charts$cohort_total)` pregnancies** after display rounding. Each pregnancy contributes once to each distribution, including pregnancies with no recorded booking or delivery. Separate pregnancies for the same woman remain separate. As in section 4, missing dates do not remove records from the supplied cohort.
+
+Bars show pregnancy counts; labels show the percentage of **all cohort pregnancies, including unknown demographic values**. Hover for both figures. Counts and percentages follow the [disclosure-control rules](#disclosure-control), so displayed categories may not sum exactly to the total or to 100%.
+
+::: panel-tabset
+### Age band
+
+Age uses the recorded age at birth, with age at booking used when birth age is missing. Pregnancies with missing age remain visible as **Unknown**; any other supplied age labels are retained as in section 4.
+
+```{r}
+#| label: cohort-profile-age
+htmltools::browsable(demo_sankey_charts$cohort_profile$age$chart)
+```
+
+### IMD quintile
+
+IMD describes deprivation in the mother's area of residence using English IMD 2019. **Quintile 1 is the most deprived** and **quintile 5 the least deprived**. Source deciles are combined in pairs before counting. Missing or unmatched residence information, including areas outside English IMD coverage, remains **Unknown**. The residence selection follows the same rules as section 4.
+
+```{r}
+#| label: cohort-profile-imd
+htmltools::browsable(demo_sankey_charts$cohort_profile$imd$chart)
+```
+
+### Ethnicity (broad)
+
+Ethnicity uses the same broad groups and agreed paired-code rules as section 4. **Not stated**, **Two conflicting** and **Unknown** remain separate so that the profile also shows the completeness of the demographic information.
+
+```{r}
+#| label: cohort-profile-ethnicity
+htmltools::browsable(demo_sankey_charts$cohort_profile$ethnicity$chart)
+```
+
+:::
+
+## 5.2 Booking and delivery profiles by trust
+
+These charts compare the demographic profile of pregnancies **booked at each trust** with those **delivered at that trust**, pooled across the same supplied cohort and period as section 5.1. Each panel shows **Booking in blue** and **Delivery in orange**, with paired bars for each category. All panels within a demographic tab use the same category order and count scale.
+
+A pregnancy booked and delivered at the same trust appears once in each series. A transfer appears under its booking trust in the Booking series and its delivery trust in the Delivery series. The two series overlap and should not be added together; their difference is not a direct measure of transfers or an outcome rate.
+
+The same age, IMD and ethnicity definitions apply to both series as in section 5.1, including age at birth with booking-age fallback; this is not a comparison of age at the two appointments. Unknown demographic values remain included. Hover shows the count and percentage of **that panel's booking or delivery pregnancies**, using separate denominators for the two series. Panel totals and bars are controlled independently under the [disclosure-control rules](#disclosure-control).
+
+**Other trusts** and **Unknown provider** appear after the named trusts. Home births and pregnancies with no recorded delivery are not assigned to a delivery-trust bar; pregnancies with no recorded booking are not assigned to a booking-trust bar. These pregnancies remain in the overall profile, and contribute to the other series where a trust is recorded. This is a pooled population comparison, not a time trend.
+
+::: panel-tabset
+### Age band
+
+```{r}
+#| label: cohort-trust-profile-age
+htmltools::browsable(demo_sankey_charts$cohort_trust_profiles$age$grid)
+```
+
+### IMD quintile
+
+```{r}
+#| label: cohort-trust-profile-imd
+htmltools::browsable(demo_sankey_charts$cohort_trust_profiles$imd$grid)
+```
+
+### Ethnicity (broad)
+
+```{r}
+#| label: cohort-trust-profile-ethnicity
+htmltools::browsable(demo_sankey_charts$cohort_trust_profiles$ethnicity$grid)
+```
+
+:::
+
+## 5.3 Same or different booking and delivery trust
+
+These charts compare pregnancies **booked and delivered at the same trust (green)** with those **booked and delivered at different trusts (purple)**, pooled across the supplied 2023/24–2025/26 cohort. Each demographic category has two adjacent bars. Counts show the size of each group; the percentage chart compares their demographic profiles, allowing for different group sizes. Each percentage uses **all pregnancies in its own same-trust or different-trust group**, including unknown demographic values. It is not the percentage of a demographic category that changed trust.
+
+This measures **recorded booking-to-delivery trust continuity**. Booking provider is a proxy for the initial intended delivery trust; a different delivery trust does not establish whether a woman changed her preference, was referred, or needed an unplanned transfer. Pregnancies are counted separately, including separate pregnancies for the same woman. Age, IMD and ethnicity definitions match section 5.1.
+
+Only pregnancies with a recorded booking, recorded delivery, two identifiable NHS trust codes and no recorded home birth enter the two comparison groups. The original trust codes are compared before grouping providers as **Other trusts**, so two different external trusts are not mistakenly treated as the same. Missing dates alone do not exclude otherwise comparable records.
+
+The coverage table below shows the comparison groups and pregnancies that cannot be compared. Missing both events is identified first, then missing booking, missing delivery, home birth, and missing/invalid trust codes; each pregnancy belongs to one row. Counts and percentages follow the [disclosure-control rules](#disclosure-control), so displayed totals and percentages may not add exactly.
+
+```{r}
+#| label: cohort-match-coverage
+demo_sankey_charts$cohort_match_profiles$coverage
+```
+
+::: panel-tabset
+### Age band
+
+```{r}
+#| label: cohort-match-age
+htmltools::browsable(demo_sankey_charts$cohort_match_profiles$profiles$age$charts)
+```
+
+### IMD quintile
+
+```{r}
+#| label: cohort-match-imd
+htmltools::browsable(demo_sankey_charts$cohort_match_profiles$profiles$imd$charts)
+```
+
+### Ethnicity (broad)
+
+```{r}
+#| label: cohort-match-ethnicity
+htmltools::browsable(demo_sankey_charts$cohort_match_profiles$profiles$ethnicity$charts)
+```
+
+:::
 
 # References {#method-1-references}
 

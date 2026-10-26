@@ -1,3 +1,15 @@
+# QUICK UNKNOWN AGES: all supplied pregnancies, after the model's birth/booking-age fallback.
+# Resident totals use count weights; the two files overlap and must not be added together.
+# Internal QA only: exact counts. This measures age completeness, not the percentage change in projections.
+source("R/report_cohort.R")
+dplyr::bind_rows(
+  final_cohort_2326 = prepare_report_cohort(final_cohort_2326) |>
+    dplyr::summarise(Total = dplyr::n(), Unknown_age = sum(is.na(Age))),
+  total_births_by_LA_2326 = prepare_la_records(total_births_by_LA_2326) |>
+    dplyr::summarise(Total = sum(count), Unknown_age = sum(count[is.na(Age)])),
+  .id = "MSDS_file") |>
+  dplyr::mutate(Unknown_pct = round(100 * Unknown_age / Total, 2)) |> print()
+
 # MSDS COUNTRY CONTRIBUTIONS: run this block or source this file --------
 # Internal QA: raw pregnancy counts, percentages of all countries.
 library(dplyr)

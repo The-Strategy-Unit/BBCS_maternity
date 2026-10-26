@@ -3,7 +3,7 @@
 *
 !/data/
 !/R/
-# Share the report's runtime scripts and Sarah's standalone matrix script.
+# Share runtime scripts, Heather's scratch file and Sarah's standalone matrix script.
 # Other R scripts (including local checks) stay local unless added here.
 !/R/Run analysis.R
 !/R/HH scratch area.R
@@ -11,22 +11,11 @@
 !/R/Maternity analysis.R
 !/R/Demo Sankeys.R
 !/R/demographics.R
-!/R/test_demographics.R
-!/R/test_country_coverage.R
-!/R/test_pregnancy_year.R
 !/R/ons_data.R
+!/R/report_colours.R
 !/R/disclosure.R
-!/R/test_disclosure.R
-!/R/test_demo_disclosure.R
-!/R/test_geography.R
 !/R/report_cohort.R
 !/R/age_boundary_review.R
-!/R/QA.R
-!/R/ONS to MSDS Matching QA.R
-!/R/Country matching overview.R
-!/R/test_projection_scale.R
-!/R/test_private_nhs.R
-!/R/test_age_fallback.R
 !/R/matrix of booking appts and births.R
 !/assets/
 !/config/
@@ -69,3 +58,15 @@
 /*_cache/
 /sankey data/
 /.patient_flows.rds
+
+# Local tests, console investigations and assistant/session material are never shared.
+/R/test*
+/R/check_*
+/R/QA.R
+/R/ONS to MSDS Matching QA.R
+/R/Country matching overview.R
+/assets/test*
+/qa_*
+/.codex/
+/.agents/
+/AGENTS.md

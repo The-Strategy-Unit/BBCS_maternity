@@ -1,6 +1,6 @@
-# Permanent categorical colours: SU branding plus NHS England colours.
+# SU/NHS categorical colours
 # SU: _brand.yml. NHS: https://service-manual.nhs.uk/design-system/styles/colour
-# Keys are identities, never their position, volume or presence in a chart.
+# Fixed colours by organisation code
 hybrid_palette <- c(
   su_blue = "#5881C1", orange = "#ED8B00", dark_green = "#006747",
   purple = "#330072", pink = "#AE2573", su_yellow = "#F9BD07",
@@ -10,13 +10,13 @@ hybrid_palette <- c(
   yellow = "#FAE100", charcoal = "#2C2825", grey = "#959595")
 
 organisation_colour_key <- c(
-  # Six main trusts: deliberately different hue families first.
+  # Main trusts
   RNA = "#5881C1", RXK = "#ED8B00", RBK = "#006747",
   RL4 = "#330072", RRK = "#AE2573", RQ3 = "#F9BD07",
-  # Other cluster providers retain their own colours in every subset.
+  # Other cluster providers
   RRJ = "#00A499", RXT = "#8A1538", RYW = "#41B6E6",
   RYA = "#78BE20", RYK = "#003087",
-  # ICBs have a separate categorical key; they are a different node layer.
+  # ICBs
   QHL = "#5881C1", QUA = "#ED8B00", QNC = "#006747",
   QWU = "#330072", QGH = "#AE2573", QOC = "#F9BD07", QJ2 = "#00A499",
   CLUSTER = "#2C2825")
@@ -29,10 +29,7 @@ local_authority_colour_key <- local({
   stats::setNames(toupper(areas$colour), toupper(areas$area_code))
 })
 
-# National feeder LAs/providers can exceed an 18-colour categorical palette.
-# Unlisted codes receive a repeatable shade derived from a hybrid anchor.
-# This fallback never reallocates existing colours when another code appears.
-# Explicit assignments above take priority; labels/order remain essential.
+# Repeatable fallback shades for unlisted codes
 extended_identity_colour <- function(key) {
   vapply(key, function(value) {
     hash <- 0
@@ -49,7 +46,7 @@ identity_colours <- function(codes) {
   original <- as.character(codes)
   key <- toupper(trimws(sub("^(trust|icb)-", "", original, ignore.case = TRUE)))
   colours <- unname(organisation_colour_key[key])
-  # LA colours share the configured ONS key across Sankeys and trend charts.
+  # Configured LA colours
   area_colours <- unname(local_authority_colour_key[key])
   colours[!is.na(area_colours)] <- area_colours[!is.na(area_colours)]
   status <- rep(NA_character_, length(key))

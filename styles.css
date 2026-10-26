@@ -82,6 +82,19 @@ thead {
 
 a { color: var(--su-blue); }
 
+/* LM review markup */
+.lm-edit, .lm-query, .lm-edit a, .lm-query a {
+  color: #b42318;
+}
+
+.lm-query {
+  display: block;
+  padding: 0.65rem 0.85rem;
+  border-left: 3px solid #b42318;
+  background: #fff;
+  font-style: italic;
+}
+
 /* Keep the worked example's steps and small tables together. */
 .projection-example-grid {
   display: grid;

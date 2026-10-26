@@ -1,6 +1,5 @@
-# QUICK UNKNOWN AGES: all supplied pregnancies, after the model's birth/booking-age fallback.
-# Resident totals use count weights; the two files overlap and must not be added together.
-# Internal QA only: exact counts. This measures age completeness, not the percentage change in projections.
+# UNKNOWN AGES: exact internal counts after birth/booking-age fallback
+# Count-weighted resident totals; overlapping files, not additive
 source("R/report_cohort.R")
 dplyr::bind_rows(
   final_cohort_2326 = prepare_report_cohort(final_cohort_2326) |>

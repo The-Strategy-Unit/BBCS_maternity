@@ -8,8 +8,7 @@ demo_provider_labels <- function() {
   full_flow_trust_labels()
 }
 
-# Compare the original normalised provider codes, before either is collapsed
-# into Other trusts. Missing events/providers and home births are not changes.
+# Same/different original trust codes; exclude missing events/providers and home births
 cohort_trust_comparison <- function(episodes) {
   booking <- episodes$Booking_provider_supplied | episodes$Booking_date_supplied
   valid <- grepl("^R[A-Z0-9]{2}$", episodes$Booking_Trust) &
@@ -122,7 +121,7 @@ demo_sankey_grid <- function(master, field) {
   htmltools::div(class = "demo-sankey-grid", panels)
 }
 
-# 2b. DEMOGRAPHIC RIBBONS, WITH BOOKING-OR-DELIVERY ORGANISATION PANELS ---
+# 2b. FLOWS BY DEMOGRAPHIC AND ORGANISATION -----------------------------
 demo_category_colours <- function(values, field) {
   levels <- switch(field, Age_band = report_age_bands, imd_quintile = as.character(1:5),
     ethnicity_broad = unname(demographic_ethnicity_groups),
@@ -150,9 +149,7 @@ demo_ribbon_key <- function(master, field) {
     })))
 }
 
-# The union is intentional: a same-organisation booking/delivery is counted once,
-# while a transfer appears in both relevant panels. Cluster is the union of the
-# two cluster ICBs at either event, not a sum of their overlapping panels.
+# Pregnancies booked or delivered at the organisation; counted once per panel
 demo_ribbon_org_rows <- function(master, group, code) {
   booking <- if (group == "Trust") master$Booking else master$Booking_ICB
   delivery <- if (group == "Trust") master$Delivery else master$Delivery_ICB
@@ -163,7 +160,7 @@ demo_ribbon_org_rows <- function(master, group, code) {
 demo_ribbon_org_codes <- function(master, group) {
   preferred <- if (group == "Trust") setdiff(trust_source_order, c("Other", "Unknown")) else cluster_icbs
   available <- if (group == "Trust") c(master$Booking, master$Delivery) else c(master$Booking_ICB, master$Delivery_ICB)
-  # Statuses remain endpoints; they are not organisations with their own panels.
+  # Organisation panels; exclude status-only endpoints
   available <- setdiff(unique(available), c("Home", "No booking", "No delivery", "Unknown"))
   codes <- sankey_category_order(preferred, union(preferred, available))
   if (group == "Trust") codes else c(codes, "Cluster")
@@ -179,9 +176,7 @@ demo_ribbon_sankey <- function(master, field, group = "Trust", compact = FALSE) 
   preferred <- if (group == "Trust") trust_source_order else icb_source_order
   order <- sankey_category_order(preferred, names(labels))
   categories <- demo_category_values(master, field)
-  # Aggregate once at the displayed source x destination x demographic level.
-  # make_sankey independently controls each ribbon, each raw node total and the
-  # panel total, before computing percentages and layout. No raw N is embedded.
+  # Counts by booking, delivery and demographic; disclosure control in make_sankey
   links <- master |>
     dplyr::group_by(source = .data[[booking_field]], target = .data[[delivery_field]],
       Category = as.character(.data[[field]])) |>
@@ -432,15 +427,12 @@ cohort_profile_counts <- function(master, field, categories = NULL) {
     ethnicity_broad = unname(demographic_ethnicity_groups),
     stop("Unsupported cohort profile field: ", field))
   category <- as.character(master[[field]])
-  # One unknown category for missing representations; Not stated and conflicting
-  # ethnicity are retained separately. The cleaned master normally has only NA
-  # for IMD/ethnicity and the explicit Unknown age band.
+  # Combine missing values; retain Not stated and Two conflicting
   category[is.na(category) | trimws(category) %in% c("", "Unknown", "NULL")] <- NA_character_
   if (is.null(categories)) categories <- sankey_category_order(preferred, unique(c(preferred, category)))
   n <- vapply(categories, function(value) sum(master$N[
     if (is.na(value)) is.na(category) else !is.na(category) & category == value]), numeric(1))
-  # Collapse every pathway/organisation dimension BEFORE disclosure control.
-  # The denominator includes unknowns and is controlled independently.
+  # Disclosure control after aggregation; whole-group denominator including unknowns
   data <- dc_cells(data.frame(Category = categories, N = unname(n), Total = sum(master$N)),
     c("N", "Total"), list(Share = c("N", "Total")))
   data$Label <- ifelse(is.na(categories), "Unknown", categories)
@@ -491,9 +483,7 @@ build_cohort_profile <- function(master) {
   })
 }
 
-# Paired bars use the organisation at each event, rather than the union of the
-# two populations used for the ribbon panels. A transfer contributes to its
-# booking trust's Booking bar and its delivery trust's Delivery bar.
+# Paired booking/delivery profiles by trust
 cohort_trust_profile_codes <- function(master) {
   available <- unique(c(trust_source_order, master$Booking, master$Delivery))
   available <- setdiff(available, c("Home", "No booking", "No delivery"))

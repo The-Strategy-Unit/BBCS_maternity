@@ -345,7 +345,7 @@ group_flow_code <- function(x, keep_codes) {
     ifelse(code == "OTHER" | grepl(code_pattern, code), "Other", "Unknown")))
 }
 
-# Shared with section 4.2: retain pregnancies with either or neither event.
+# Booking/delivery stages, including missing events
 flow_stage_icb <- function(provider, stage) {
   icb <- unname(provider_icb[provider])
   icb[is.na(icb)] <- ifelse(grepl("^R[A-Z0-9]{2}$", provider[is.na(icb)]), "Other", "Unknown")
@@ -426,7 +426,7 @@ make_residence_booking_birth_flow <- function(cohort, all_pregnancies = FALSE) {
 residence_booking_birth_flow <- make_residence_booking_birth_flow(report_episodes |>
   dplyr::filter(Delivery_year == latest_year, Birth_recorded, Home == 0))
 
-# Section 2.2.4B: same assigned year, with no booking/delivery/home filter.
+# Section 2.2.4B: all pregnancies in the assigned year
 make_full_cohort_year_flows <- function(start_year, episodes = report_episodes) {
   cohort <- episodes |> dplyr::filter(Pregnancy_year == start_year)
   stages <- classify_patient_flow_stages(cohort)
@@ -462,8 +462,7 @@ flow_coverage_table <- gt::gt(dc_counts(flow_coverage, setdiff(names(flow_covera
 
 # Sankey charts
 
-# Keep catch-all, non-hospital and missing-event categories below named categories.
-# Use a shared domain, not counts, so filtering a year or demographic cannot reorder it.
+# Fixed category order; other, home and missing categories last
 sankey_category_order <- function(preferred, available = preferred) {
   available <- unique(as.character(available))
   ordered <- unique(c(preferred, sort(setdiff(available[!is.na(available)], preferred))))
@@ -471,8 +470,7 @@ sankey_category_order <- function(preferred, available = preferred) {
   key <- tolower(trimws(ordered))
   last <- !nzchar(key) | key %in% c("na", "n/a", "null", "<na>", "none", "blank") |
     grepl("^(other($| trust| provider| icb| ethnic)|all other |home($| birth| delivery)|no (recorded |booking|delivery)|unknown|missing|not (stated|known|recorded)|two conflicting|l999)", key)
-  # The tail must also be comparable across chart families, whose input lists
-  # can append Home/No booking/No delivery after an existing Unknown category.
+  # Shared order for trailing categories
   tail_rank <- rep(5L, length(key))
   tail_rank[grepl("^(other($| trust| provider| icb| ethnic)|all other )", key)] <- 1L
   tail_rank[grepl("^home($| birth| delivery)", key)] <- 2L
@@ -481,9 +479,7 @@ sankey_category_order <- function(preferred, available = preferred) {
   c(ordered[!last], ordered[last][order(tail_rank[last])], if (anyNA(available)) NA_character_)
 }
 
-# Node arrays define the top-to-bottom order within each stage. Position centres
-# using displayed ribbon widths only: raw counts must not leak through geometry.
-# Mirror this calculation in assets/report-charts.html when the chart is resized.
+# Node positions from controlled ribbon widths; matched in assets/report-charts.html
 sankey_node_y <- function(x, source, target, value, height, pad) {
   incoming <- outgoing <- numeric(length(x))
   for (i in seq_along(value)) if (is.finite(value[i]) && value[i] > 0) {
@@ -939,7 +935,7 @@ pathway_legend <- htmltools::div(
 
 make_pathway_sankey <- function(row, count_label = "Antenatal bookings", period = "2025/26") {
   organisation <- row$Organisation[[1]]
-  # Resolve by code where supplied; older pathway summaries contain the name.
+  # Provider code/name lookup
   code <- if ("Code" %in% names(row)) row$Code[[1]] else {
     labels <- c(trust_labels, icb_labels, Cluster = cluster_label)
     matched <- match(organisation, unname(labels))
@@ -3579,7 +3575,7 @@ build_projection_sankeys <- function(observed, projected, organisations,
   # Calculate change AFTER summing the displayed flow, not by averaging percentages.
   flows$Percent_change <- ifelse(flows$Projection_complete & flows$Observed > 0,
     flows$Projected / flows$Observed - 1, NA_real_)
-  # Selection uses volume; display follows the same LA order as geography charts.
+  # Largest flows; fixed LA display order
   origins <- sankey_category_order(main_las, c(keep_las, "All other feeder LAs", "Unknown LA"))
   origins <- origins[origins %in% flows$LA]
   trusts <- organisations$Code[organisations$Level == "Trust"]

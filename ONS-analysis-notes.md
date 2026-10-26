@@ -129,6 +129,9 @@ from ONS; metadata identifies female sex, the 2022 base year, April 2023 geograp
 migration-category variant and source archive. The five columns required by
 `read_female_population_single_age()` are retained, with direct ONS metadata instead
 of Nomis-specific fields. Published ONS population values retain their source precision.
+The maximum absolute difference from the older whole-person snapshot is 4.493
+people, so the earlier within-0.5 QA applies only to the 2021-geography source,
+not this edition.
 
 The historical birth snapshot is `data/ons_live_births_la_2013_2025.csv`, from
 Nomis dataset `NM_205_1` (`LEBIRTHSLA`). It includes total births (L) and published

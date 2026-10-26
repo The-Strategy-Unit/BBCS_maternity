@@ -7,8 +7,7 @@
   const context = canvas.getContext('2d');
   let pending = false;
 
-  // Same geometry as sankey_node_y() in R: preserve category order using only
-  // the controlled ribbon values already published in this chart.
+  // Fixed node order from controlled ribbon widths; matches sankey_node_y()
   function sankeyNodeY(trace, height) {
     const x = trace.node.x;
     const incoming = x.map(() => 0), outgoing = x.map(() => 0);
@@ -56,8 +55,7 @@
     if (!plot._fullLayout || !plot.clientWidth || !plot.getClientRects().length || state.busy) return;
     const width = Math.floor(plot.parentElement.getBoundingClientRect().width);
     if (width < 100) return; // Hidden tabs are measured when they become visible.
-    // Sankey heights allow for every category. Compressing a long category list
-    // to the viewport can consume all available space with node padding alone.
+    // Preserve Sankey height for all categories
     const height = state.sankey ? state.height : Math.min(state.height, Math.max(320, window.innerHeight - 48));
     const key = `${width}:${height}`;
     if (state.key === key && Math.abs(plot._fullLayout.width - width) < 1 &&

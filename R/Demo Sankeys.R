@@ -571,7 +571,7 @@ cohort_match_counts <- function(master, field) {
 cohort_match_chart <- function(data, field, proportions = FALSE) {
   horizontal <- field == "ethnicity_broad"
   labels <- data$Label[data$Group == "Same trust"]
-  colours <- c("Same trust" = "#006747", "Different trusts" = "#AE2573")
+  colours <- c("Same trust" = "#006747", "Different trusts" = "#330072")
   chart <- plotly::plot_ly(height = if (horizontal) max(480, 48 * length(labels) + 120) else 440)
   for (group in names(colours)) {
     rows <- data[data$Group == group, ]
@@ -622,7 +622,7 @@ build_cohort_match_profiles <- function(master) {
     gt::fmt_number(columns = N, decimals = 0) |>
     gt::fmt_percent(columns = Share, decimals = 1) |>
     gt::sub_missing(missing_text = "Unavailable") |>
-    gt::tab_source_note("Counts and percentages are disclosure controlled. Reasons are mutually exclusive; categories need not sum exactly to the independently controlled whole-cohort total.")
+    gt::tab_source_note("Reasons are mutually exclusive.")
   fields <- c(age = "Age_band", imd = "imd_quintile", ethnicity = "ethnicity_broad")
   profiles <- lapply(fields, function(field) {
     data <- cohort_match_counts(master, field)

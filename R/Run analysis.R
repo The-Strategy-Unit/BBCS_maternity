@@ -14,7 +14,7 @@ run_maternity_project <- function(refresh_data = FALSE) {
   # Clear previous inspection objects before preparing this run's results.
   inspection_names <- c("projection_master", "projection_master_backtest",
     "projection_master_dictionary", "delivery_proportions", "booking_proportions",
-    "ons_modifications", "private_nhs_modifications", "booking_modifications")
+    "ons_modifications", "booking_modifications")
   present <- intersect(inspection_names, ls(envir = .GlobalEnv))
   if (length(present)) rm(list = present, envir = .GlobalEnv)
 
@@ -59,8 +59,44 @@ run_maternity_project <- function(refresh_data = FALSE) {
   suppressPackageStartupMessages(source("R/Maternity analysis.R", local = .GlobalEnv))
   source("R/Demo Sankeys.R", local = .GlobalEnv)
 
-  # 3. MAKE THE COMPLETED ANALYSIS AVAILABLE -----------------------------
-  # Inspection objects before rendering
+  # 3. MARK THE SAVED ANALYSIS READY -------------------------------------
+  # save_report_rds attaches run metadata during the original write.
+  run_info$status <- "prepared"
+  saveRDS(run_info, ".analysis_run.rds")
+  prepared <- TRUE
+
+  # 4. RENDER THE REPORT -------------------------------------------------
+  # Build in a temporary folder and report is put in  _site.
+  quarto <- Sys.which("quarto")
+  if (!nzchar(quarto)) stop("Quarto was not found. Install/configure Quarto before running.")
+  render_folder <- tempfile("maternity-report-")
+  dir.create(render_folder)
+  render_folder <- normalizePath(render_folder, winslash = "/", mustWork = TRUE)
+  temporary_root <- normalizePath(tempdir(), winslash = "/", mustWork = TRUE)
+  if (!startsWith(tolower(render_folder), paste0(tolower(temporary_root), "/")))
+    stop("Unexpected temporary report folder.")
+  on.exit(unlink(render_folder, recursive = TRUE), add = TRUE)
+  render_inputs <- c("index.qmd", "_quarto.yml", "_brand.yml", "styles.css",
+    "R", "data", "config", "assets", output_files, ".analysis_run.rds")
+  if (!all(file.copy(render_inputs, render_folder, recursive = TRUE)))
+    stop("Could not copy the report inputs into the temporary folder.")
+  saveRDS(run_info, file.path(render_folder, ".analysis_run.rds"))
+  message("Rendering report...")
+  setwd(render_folder)
+  status <- tryCatch(system2(quarto, c("render", "index.qmd")),
+    finally = setwd(project_root))
+  rendered_site <- file.path(render_folder, "_site")
+  if (status != 0L || !file.exists(file.path(rendered_site, "index.html"))) {
+    stop('Report rendering failed; see the console output above. Prepared results are saved. ',
+      'To retry rendering only, run system2(Sys.which("quarto"), c("render", "index.qmd")).',
+      call. = FALSE)
+  }
+  audit_disclosure_html(file.path(rendered_site, "index.html"))
+  if (!file.copy(rendered_site, project_root, recursive = TRUE) ||
+      !file.exists("_site/index.html")) stop("Could not save the finished report.")
+  saveRDS(run_info, ".analysis_run.rds")
+
+  # 5. SHOW THE COMPLETED OBJECTS IN RSTUDIO ------------------------------
   projections <- get("first_draft_projections", envir = .GlobalEnv)
   projection_master <<- projections$master
   projection_master_backtest <<- projections$backtest$baseline$master
@@ -70,29 +106,9 @@ run_maternity_project <- function(refresh_data = FALSE) {
   ons_modifications <<- projections$ons_modifications
   private_nhs_modifications <<- projections$private_nhs$pooled
   booking_modifications <<- projections$allocation_tables$calibration
-  message("Analysis complete. Results are available in the RStudio Environment.")
-
-  # Completed run status
-  run_info$status <- "prepared"
-  saveRDS(run_info, ".analysis_run.rds")
-  prepared <- TRUE
-
-  # 4. RENDER THE REPORT -------------------------------------------------
-  # HTML output: _site/index.html
-  quarto <- Sys.which("quarto")
-  if (!nzchar(quarto)) stop("Quarto was not found. Install/configure Quarto before running.")
-  message("Rendering report...")
-  status <- system2(quarto, c("render", "index.qmd"))
-  if (status != 0L || !file.exists("_site/index.html")) {
-    stop('Report rendering failed; see the console output above. Prepared results are saved. ',
-      'To retry rendering only, run system2(Sys.which("quarto"), c("render", "index.qmd")).',
-      call. = FALSE)
-  }
-  audit_disclosure_html("_site/index.html")
-
   message("Report ready: _site/index.html")
 
-  # 5. OPEN THE FINISHED REPORT ------------------------------------------
+  # 6. OPEN THE FINISHED REPORT ------------------------------------------
   # Use the current RStudio / default browser setting 
   report_file <- normalizePath("_site/index.html", winslash = "/", mustWork = TRUE)
   tryCatch(

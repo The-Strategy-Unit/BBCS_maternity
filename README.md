@@ -12,6 +12,8 @@ source("R/Run analysis.R")
 
 This reuses loaded data where available, prepares the analysis, checks disclosure controls, and opens the finished report at `_site/index.html`.
 
+If an input is missing, it reads the parquets once using the existing Azure setup.
+
 To reload changed source data after loading the run script:
 
 ```r
@@ -59,6 +61,7 @@ variant on 2023 LA geography.
 | `index.qmd` | Report text, sections and tabs |
 | `R/Run analysis.R` | Run the analysis and render the report |
 | `R/Read parquet files from azure.R` | Load the secure inputs |
+| `R/matrix of booking appts and births.R` | Sarah's standalone matrix tables, retained for separate use |
 | `R/Maternity analysis.R` | Main calculations, tables and charts |
 | `R/Demo Sankeys.R` | Demographic flows and cohort profiles |
 | `R/demographics.R` | Demographic cleaning and lookups |

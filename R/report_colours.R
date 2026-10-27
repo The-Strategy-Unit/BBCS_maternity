@@ -86,3 +86,61 @@ identity_colours <- function(codes, priority = character()) {
 }
 
 organisation_line_colours <- function(keys) identity_colours(keys)
+
+# Ordered demographic colours: retain the same meaning across every view.
+imd_quintile_colours <- function(values) {
+  key <- stats::setNames(c("#08306B", "#2171B5", "#4292C6", "#6BAED6", "#C6DBEF"), 1:5)
+  colours <- unname(key[as.character(values)])
+  colours[is.na(colours)] <- "#959595"
+  colours
+}
+
+age_band_colours <- function(values) {
+  key <- stats::setNames(c("#08306B", "#08519C", "#2171B5", "#4292C6", "#6BAED6", "#9ECAE1", "#C6DBEF"),
+    c("Under 20", "20-24", "25-29", "30-34", "35-39", "40-44", "45+"))
+  colours <- unname(key[as.character(values)])
+  colours[is.na(colours)] <- "#959595"
+  colours
+}
+
+# Detailed older-age reviews use a finer set of ordered ages than the main bands.
+age_series_colours <- function(values) {
+  labels <- unique(as.character(values))
+  if (all(labels %in% c("Under 20", "20-24", "25-29", "30-34", "35-39", "40-44", "45+")))
+    return(stats::setNames(age_band_colours(labels), labels))
+  lower <- suppressWarnings(as.numeric(sub("^([0-9]+).*$", "\\1", labels)))
+  lower[grepl("^Under", labels)] <- 0
+  ordered <- labels[order(lower, labels, na.last = TRUE)]
+  stats::setNames(grDevices::colorRampPalette(c("#08306B", "#C6DBEF"), space = "Lab")(length(ordered)), ordered)
+}
+
+residence_ribbon_colours <- function(values) {
+  ifelse(values %in% "QUA", "#F9BD07", ifelse(values %in% "QHL", "#5881C1", "#959595"))
+}
+
+source_line_key_grob <- function() {
+  grid::grobTree(
+    grid::rectGrob(gp = grid::gpar(fill = "white", col = "#777777", lwd = .8)),
+    grid::segmentsGrob(x0 = .06, x1 = .30, y0 = .70, y1 = .70,
+      gp = grid::gpar(col = "black", lwd = 3, lty = "solid")),
+    grid::segmentsGrob(x0 = .06, x1 = .30, y0 = .30, y1 = .30,
+      gp = grid::gpar(col = "black", lwd = 3, lty = "44")),
+    grid::textGrob(c("MSDS / modelled", "ONS"), x = .35, y = c(.70, .30), just = "left",
+      gp = grid::gpar(col = "black", fontsize = 12, fontfamily = "sans")))
+}
+
+plotly_source_line_key <- function() {
+  # Fixed-pixel key in reserved top margin: never covers the data area.
+  line <- function(y, dash) list(type = "line", xref = "paper", yref = "paper",
+    xsizemode = "pixel", ysizemode = "pixel", xanchor = 1, yanchor = 1,
+    x0 = -235, x1 = -175, y0 = y, y1 = y, line = list(color = "black", width = 3.5, dash = dash))
+  label <- function(y, text) list(x = 1, y = 1, xref = "paper", yref = "paper",
+    xshift = -165, yshift = y, xanchor = "left", yanchor = "middle",
+    text = text, showarrow = FALSE, font = list(size = 14, color = "black"))
+  list(shapes = list(
+    list(type = "rect", xref = "paper", yref = "paper", xsizemode = "pixel", ysizemode = "pixel",
+      xanchor = 1, yanchor = 1, x0 = -250, x1 = 0, y0 = 50, y1 = 115,
+      fillcolor = "white", line = list(color = "#777777", width = 1)),
+    line(95, "solid"), line(70, "dash")),
+    annotations = list(label(95, "MSDS / modelled"), label(70, "ONS base")))
+}

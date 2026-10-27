@@ -123,7 +123,7 @@ projection_reference_year <- as.integer(substr(projection_baseline, 1, 4))
 projection_end_year <- NULL # NULL uses all years in the ONS file.
 projection_history_years <- c("2023/24", "2024/25", "2025/26")
 projection_age_bands <- report_age_bands
-projection_age_colours <- c("#005EB8", "#00856A", "#D55E00", "#8E5EA2", "#B07300", "#727272", "#C44E52")
+projection_age_colours <- age_band_colours(projection_age_bands)
 projection_other_feeders <- 10L
 projection_chart_height <- 480
 projection_age_grid_height <- 280
@@ -248,7 +248,7 @@ maternal_age_completeness_table <- function(counts) {
   dc_cells(counts, c("N", "Denominator"), list(Percent = c("N", "Denominator"))) |>
     dplyr::select(Measure, N, Percent, Percentage_of) |>
     gt::gt() |>
-    gt::tab_header(title = "Maternal age completeness in the supplied cohort") |>
+    gt::tab_header(title = "Maternal age source fields and assignment") |>
     gt::cols_label(Measure = "Measure", N = "Pregnancies (n)", Percent = "%",
       Percentage_of = "Percentage of") |>
     gt::fmt_number(columns = N, decimals = 0) |>
@@ -269,13 +269,13 @@ booking_age_fallback_outputs <- function(counts) {
   chart <- plotly::plot_ly(chart_data, x = ~Age_band, y = ~Share, type = "bar",
     height = 380, marker = list(color = "#0072B2"),
     text = ~paste0("Booking age: ", Age_band,
-      "<br>Birth age missing: ", scales::comma(Birth_age_missing, accuracy = 1),
+      "<br>Birth-age field missing: ", scales::comma(Birth_age_missing, accuracy = 1),
       "<br>Records in this booking-age group: ", scales::comma(Booking_age_known, accuracy = 1),
-      "<br>Missing birth age: ", ifelse(is.na(Share), "Not available", scales::percent(Share, accuracy = 0.1))),
+      "<br>Birth-age field missing: ", ifelse(is.na(Share), "Not available", scales::percent(Share, accuracy = 0.1))),
     textposition = "none", hovertemplate = "%{text}<extra></extra>") |>
     plotly::layout(xaxis = list(title = "Age at booking", categoryorder = "array",
       categoryarray = counts$Age_band),
-      yaxis = list(title = "Birth age missing (%)", tickformat = ".0%", rangemode = "tozero"),
+      yaxis = list(title = "Birth-age field missing (%)", tickformat = ".0%", rangemode = "tozero"),
       margin = list(l = 75, r = 20, t = 20, b = 60), showlegend = FALSE) |>
     plotly::config(responsive = TRUE, displaylogo = FALSE)
   if (all(is.na(shown$Share))) chart <- plotly::layout(chart,
@@ -285,7 +285,7 @@ booking_age_fallback_outputs <- function(counts) {
   table <- shown |>
     gt::gt() |>
     gt::cols_label(Age_band = "Age at booking", Booking_age_known = "Records in age group (n)",
-      Birth_age_missing = "Birth age missing (n)", Share = "% with birth age missing") |>
+      Birth_age_missing = "Birth-age field missing (n)", Share = "% with birth-age field missing") |>
     gt::fmt_number(columns = c(Booking_age_known, Birth_age_missing), decimals = 0) |>
     gt::fmt_percent(columns = Share, decimals = 1) |>
     gt::sub_missing(columns = Share, missing_text = "Not available") |>
@@ -563,7 +563,7 @@ make_sankey <- function(flow, labels, source_suffix, target_suffix,
 }
 
 # Three distinct node layers: the same trust at booking and birth has different IDs.
-make_three_stage_sankey <- function(flow, all_pregnancies = FALSE) {
+make_three_stage_sankey <- function(flow, all_pregnancies = FALSE, colour_by_residence = all_pregnancies) {
   total <- sum(flow$paths$n)
   if (!nrow(flow$paths)) return(htmltools::div(if (all_pregnancies)
     "No supplied pregnancies assigned to this year." else "No recorded non-home deliveries in this year."))
@@ -592,6 +592,16 @@ make_three_stage_sankey <- function(flow, all_pregnancies = FALSE) {
 
   first <- flow$residence_booking
   second <- flow$booking_birth
+  if (colour_by_residence) {
+    first$Residence <- ifelse(first$source %in% c("QUA", "QHL"), first$source, "Other")
+    # Split the second leg by residence before disclosure control so a colour
+    # keeps its origin through the booking nodes, including status endpoints.
+    second <- flow$paths |>
+      dplyr::mutate(Residence = ifelse(residence %in% c("QUA", "QHL"), residence, "Other")) |>
+      dplyr::group_by(Residence, source = booking, target = birth) |>
+      dplyr::summarise(n = sum(n), .groups = "drop")
+    node_colours[] <- "#959595"
+  }
   from_id <- c(match(first$source, residence) - 1L,
                length(residence) + match(second$source, booking) - 1L)
   to_id <- c(length(residence) + match(first$target, booking) - 1L,
@@ -612,9 +622,17 @@ make_three_stage_sankey <- function(flow, all_pregnancies = FALSE) {
     "<br>", scales::percent(counts / node_totals[from_id + 1L], accuracy = 0.1),
     " of ", count_noun, " from this origin at this stage",
     "<br>", scales::percent(counts / total, accuracy = 0.1), " of all included ", count_noun)
+  ribbon_colours <- node_colours[from_id + 1L]
+  if (colour_by_residence) {
+    origins <- c(first$Residence, second$Residence)
+    ribbon_colours <- residence_ribbon_colours(origins)
+    origin_labels <- c(QUA = "Black Country", QHL = "Birmingham and Solihull", Other = "All other / unknown ICBs")
+    hover <- paste0("Residence ICB: ", unname(origin_labels[origins]), "<br>", hover)
+  }
 
   plotly::plot_ly(type = "sankey", height = chart_height,
     orientation = "h", arrangement = "fixed",
+    meta = if (colour_by_residence) list(ribbon_colour_field = "residence_icb") else NULL,
     node = list(label = short_labels, color = node_colours, pad = 22, thickness = 18,
       x = node_x, y = sankey_node_y(node_x, from_id, to_id, counts, chart_height - 54, 22),
       line = list(color = "rgba(44,40,37,0.35)", width = 0.5),
@@ -622,7 +640,7 @@ make_three_stage_sankey <- function(flow, all_pregnancies = FALSE) {
         scales::percent(node_totals / total, accuracy = 0.1), " of all included ", count_noun),
       hovertemplate = "%{customdata}<extra></extra>"),
     link = list(source = from_id, target = to_id, value = counts,
-      color = grDevices::adjustcolor(node_colours[from_id + 1L], alpha.f = 0.42),
+      color = grDevices::adjustcolor(ribbon_colours, alpha.f = if (colour_by_residence) 0.65 else 0.42),
       customdata = hover, hovertemplate = "%{customdata}<extra></extra>")) |>
     plotly::layout(font = list(family = "Arial", size = 11, color = "#2c2825"),
       margin = list(l = 12, r = 12, t = 42, b = 12),
@@ -1150,7 +1168,7 @@ build_delivery_outcome_trends <- function(starts, trend_outcomes, trend_labels, 
     style = "display: flex; flex-wrap: wrap; gap: 12px 24px; margin-bottom: 20px; font-size: 14px;",
     htmltools::tagList(lapply(seq_along(trend_labels), function(i) {
       htmltools::span(style = "display: inline-flex; align-items: center; gap: 6px;",
-        htmltools::span(style = paste0("display: inline-block; width: 18px; height: 3px; background: ",
+        htmltools::span(style = paste0("display: inline-block; width: 32px; height: 5px; background: ",
                                        trend_colours[i], ";"), `aria-hidden` = "true"),
         trend_labels[i])
     }))
@@ -1699,7 +1717,7 @@ build_delivery_geography <- function(years = delivery_years, age_bands = deliver
       plotly::config(displayModeBar = FALSE, responsive = TRUE)
   }
   # Step 7: make the organisation charts and resident-geography tables.
-  age_colours <- grDevices::hcl.colors(length(age_bands), palette = delivery_palette)
+  age_colours <- age_band_colours(age_bands)
   organisation_plots <- stats::setNames(lapply(seq_len(nrow(organisations)), function(i) {
     org <- organisations[i, , drop = FALSE]
     ages <- hospital_mapping[hospital_mapping$Key == org$Key & hospital_mapping$Year == "2025/26", , drop = FALSE]
@@ -2347,12 +2365,14 @@ build_resident_comparison <- function(resident_totals, observed, projected,
   shown <- data |> dplyr::filter(!Source %in% c("Adjusted maternity projections", "ONS projected live-birth base") |
     Year > latest_recorded) |>
     dplyr::mutate(Line_type = ifelse(grepl("^ONS", Source), "ONS", "MSDS / modelled"))
+  source_max <- max(shown$maternities, na.rm = TRUE)
+  source_span <- max(diff(range(shown$maternities, na.rm = TRUE)), 1)
 
   chart <- ggplot2::ggplot(shown, ggplot2::aes(Year, maternities, colour = area_name,
       group = interaction(area_name, Source), linetype = Line_type)) +
     ggplot2::annotate("rect", xmin = start - 0.25, xmax = boundary, ymin = -Inf, ymax = Inf,
       fill = "#ECEFF2") +
-    ggplot2::geom_line(linewidth = 1) +
+    ggplot2::geom_line(linewidth = 1.2) +
     ggplot2::geom_vline(xintercept = boundary, colour = "#66717E", linewidth = 0.5) +
     ggplot2::annotate("text", x = (start + boundary) / 2, y = Inf,
       label = "Historical", vjust = 1.3, size = 3.5) +
@@ -2363,15 +2383,19 @@ build_resident_comparison <- function(resident_totals, observed, projected,
     ggplot2::scale_x_continuous(breaks = sort(unique(c(start, latest_recorded, seq(start, finish, by = 2)))),
       expand = ggplot2::expansion(mult = c(0.025, 0.015))) +
     ggplot2::scale_y_continuous(labels = scales::label_comma(),
-      expand = ggplot2::expansion(mult = c(0.02, 0.16))) +
+      expand = ggplot2::expansion(mult = c(0.02, 0.30))) +
+    ggplot2::annotation_custom(source_line_key_grob(),
+      xmin = finish - .29 * (finish - start), xmax = finish,
+      ymin = source_max + source_span * .04,
+      ymax = source_max + source_span * .24) +
     ggplot2::labs(x = "Year", y = "Resident maternities / ONS live-birth base", colour = "LA(R)", linetype = NULL) +
     ons_plot_theme() +
     ggplot2::guides(colour = ggplot2::guide_legend(order = 1, nrow = 1,
-      override.aes = list(linetype = "solid")),
-      linetype = ggplot2::guide_legend(order = 2, nrow = 1)) +
-    ggplot2::theme(legend.box = "vertical")
+      override.aes = list(linetype = "solid", linewidth = 2.5)), linetype = "none") +
+    ggplot2::theme(legend.box = "vertical", legend.key.width = grid::unit(1.4, "cm"),
+      legend.text = ggplot2::element_text(size = 12), legend.title = ggplot2::element_text(size = 12))
   list(data = data, display_data = shown, msds = msds, latest_recorded_year = latest_recorded,
-    chart = chart, comparison_style_version = "organisation-lines-v1")
+    chart = chart, comparison_style_version = "organisation-lines-v2")
 }
 ons_exploration <- c(ons_exploration, resident_outputs)
 ons_exploration$ons_modifications <- ons_modifications
@@ -2501,12 +2525,10 @@ provider_total_chart <- function(data, title) {
   left <- min(years) - 0.25
   right <- max(years) + 0.25
   ticks <- sort(unique(c(min(years), latest_recorded, years[years %% 5 == 0], max(years))))
+  source_key <- plotly_source_line_key()
   notes <- list(
     list(text = "Historical", x = (left + boundary) / 2, y = 1.06, xref = "x", yref = "paper", showarrow = FALSE),
-    list(text = "Future projections", x = (boundary + right) / 2, y = 1.06, xref = "x", yref = "paper", showarrow = FALSE),
-    list(text = "Solid: MSDS / modelled activity     Dashed: ONS base",
-      x = 0, y = -0.18, xref = "paper", yref = "paper", xanchor = "left", showarrow = FALSE,
-      font = list(size = 11)))
+    list(text = "Future projections", x = (boundary + right) / 2, y = 1.06, xref = "x", yref = "paper", showarrow = FALSE))
   if (any(grepl("^Partial", data$Coverage_note))) notes <- c(notes, list(list(
     text = "Partial projections show available allocations; recorded totals retain all activity.",
     x = 0, y = 1.14, xref = "paper", yref = "paper", showarrow = FALSE, xanchor = "left", font = list(size = 10))))
@@ -2514,14 +2536,15 @@ provider_total_chart <- function(data, title) {
     xaxis = list(title = "Year (MSDS financial year starts)", tickvals = ticks,
       ticktext = as.character(ticks), range = c(left, right)),
     yaxis = list(title = title, tickformat = ",.0f", rangemode = "tozero"),
-    shapes = list(
+    shapes = c(list(
       list(type = "rect", xref = "x", yref = "paper", x0 = left, x1 = boundary,
         y0 = 0, y1 = 1, fillcolor = "#ECEFF2", line = list(width = 0), layer = "below"),
       list(type = "line", xref = "x", yref = "paper", x0 = boundary, x1 = boundary,
-        y0 = 0, y1 = 1, line = list(color = "#66717E", width = 1.3))),
-    annotations = notes,
-    legend = list(orientation = "h", x = 0, y = -0.29, font = list(size = 11), groupclick = "togglegroup"),
-    margin = list(l = 75, r = 20, t = 65, b = if (combined) 165 else 115),
+        y0 = 0, y1 = 1, line = list(color = "#66717E", width = 1.3))), source_key$shapes),
+    annotations = c(notes, source_key$annotations),
+    legend = list(orientation = "h", x = 0, y = -0.29, font = list(size = 13),
+      itemwidth = 50, groupclick = "togglegroup"),
+    margin = list(l = 75, r = 20, t = 145, b = if (combined) 130 else 115),
     font = list(family = "Arial")) |>
     plotly::config(displayModeBar = FALSE, responsive = TRUE)
 }
@@ -2907,7 +2930,7 @@ build_first_draft_projections <- function(baseline_fy = projection_baseline,
   result$total_comparison <- list(
     Delivery = build_provider_total_comparison(wide_master, cohort, organisations, maternity_projections, "Delivery", history_master = history_master),
     Booking = build_provider_total_comparison(wide_master, cohort, organisations, booking_total_projections, "Booking", history_master = history_master))
-  result$comparison_style_version <- "organisation-lines-v1"
+  result$comparison_style_version <- "organisation-lines-v2"
   review_las <- union(cluster_las, attr(wide_master, "allocation_tables")$cohort_counts$LA)
   result$booking_calibration <- attr(wide_master, "allocation_tables")$calibration |>
     dplyr::filter(LA %in% review_las) |>
@@ -3306,7 +3329,7 @@ build_first_draft_projections <- function(baseline_fy = projection_baseline,
       style = "display: flex; flex-wrap: wrap; gap: 12px 24px; margin-bottom: 20px; font-size: 14px;",
       htmltools::tagList(lapply(seq_along(bands), function(i) {
         htmltools::span(style = "display: inline-flex; align-items: center; gap: 6px;",
-          htmltools::span(style = paste0("display: inline-block; width: 18px; height: 3px; background: ",
+          htmltools::span(style = paste0("display: inline-block; width: 32px; height: 5px; background: ",
             colours[i], ";"), `aria-hidden` = "true"),
           if (bands[i] == "Unknown") "Unknown age" else bands[i])
       })))
@@ -3537,6 +3560,10 @@ build_first_draft_projections <- function(baseline_fy = projection_baseline,
   result$sankey_comparison <- build_projection_sankeys(
     target_episodes, completed, organisations, baseline_fy, max(projection_years),
     unavailable_flows = delivery_gaps |> dplyr::filter(Level == "Trust") |> dplyr::distinct(LA, Trust))
+  result$sankey_comparison_cluster_las <- build_projection_sankeys(
+    target_episodes, completed, organisations, baseline_fy, max(projection_years),
+    main_las = cluster_las, other_las = 0L, cluster_only = TRUE,
+    unavailable_flows = delivery_gaps |> dplyr::filter(Level == "Trust") |> dplyr::distinct(LA, Trust))
   result
 }
 
@@ -3544,7 +3571,7 @@ build_first_draft_projections <- function(baseline_fy = projection_baseline,
 # CONTEXT_ONLY: sum completed counts; these charts do not change the model.
 build_projection_sankeys <- function(observed, projected, organisations,
     observed_year, final_year, main_las = projection_catchment_las,
-    other_las = projection_other_feeders, unavailable_flows = NULL) {
+    other_las = projection_other_feeders, unavailable_flows = NULL, cluster_only = FALSE) {
   # Keep every recorded non-home delivery, including an unknown resident LA.
   actual <- observed |> dplyr::count(LA, Trust, name = "Observed")
   future <- projected |> dplyr::filter(Year == final_year) |>
@@ -3569,10 +3596,12 @@ build_projection_sankeys <- function(observed, projected, organisations,
   ranking <- raw_flows |> dplyr::group_by(LA) |>
     dplyr::summarise(Volume = sum(Observed + Projected), .groups = "drop") |>
     dplyr::arrange(dplyr::desc(Volume), LA)
-  keep_las <- unique(c(main_las, head(ranking$LA[
+  keep_las <- if (cluster_only) main_las else unique(c(main_las, head(ranking$LA[
     !ranking$LA %in% c(main_las, "Unknown LA")], other_las)))
+  other_label <- if (cluster_only) "All other LA" else "All other feeder LAs"
+  separate_unknown <- if (cluster_only) character() else "Unknown LA"
   flows <- raw_flows |>
-    dplyr::mutate(LA = ifelse(LA %in% c(keep_las, "Unknown LA"), LA, "All other feeder LAs")) |>
+    dplyr::mutate(LA = ifelse(LA %in% c(keep_las, separate_unknown), LA, other_label)) |>
     dplyr::group_by(LA, Trust) |>
     dplyr::summarise(Observed = sum(Observed), Projected = sum(Projected),
       Projection_complete = all(Projection_complete), .groups = "drop") |>
@@ -3581,7 +3610,7 @@ build_projection_sankeys <- function(observed, projected, organisations,
   flows$Percent_change <- ifelse(flows$Projection_complete & flows$Observed > 0,
     flows$Projected / flows$Observed - 1, NA_real_)
   # Largest flows; fixed LA display order
-  origins <- sankey_category_order(main_las, c(keep_las, "All other feeder LAs", "Unknown LA"))
+  origins <- sankey_category_order(main_las, c(keep_las, other_label, separate_unknown))
   origins <- origins[origins %in% flows$LA]
   trusts <- organisations$Code[organisations$Level == "Trust"]
   trusts <- sankey_category_order(trust_target_order, trusts)
@@ -3898,7 +3927,7 @@ build_projection_backtest <- function() {
     style = "display: flex; flex-wrap: wrap; gap: 12px 24px; margin-bottom: 20px; font-size: 14px;",
     htmltools::tagList(lapply(names(projection_history_colours), function(series) {
       htmltools::span(style = "display: inline-flex; align-items: center; gap: 6px;",
-        htmltools::span(style = paste0("display: inline-block; width: 18px; height: 3px; background: ",
+        htmltools::span(style = paste0("display: inline-block; width: 32px; height: 5px; background: ",
           projection_history_colours[[series]], ";"), `aria-hidden` = "true"), series)
     })))
   comparison_grid <- function(rows) {

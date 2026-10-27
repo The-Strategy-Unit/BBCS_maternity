@@ -142,6 +142,15 @@ report_static_plot <- function(plot) {
 }
 
 # Ordered demographic colours: retain the same meaning across every view.
+imd_quintile_labels <- function(values, prefix = "Quintile", unknown = "Unknown") {
+  values <- as.character(values)
+  labels <- paste(prefix, values)
+  labels[is.na(values) | !nzchar(trimws(values))] <- unknown
+  labels[values %in% "1"] <- paste(prefix, "1 (most deprived)")
+  labels[values %in% "5"] <- paste(prefix, "5 (least deprived)")
+  labels
+}
+
 imd_quintile_colours <- function(values) {
   key <- stats::setNames(c("#08306B", "#2171B5", "#4292C6", "#6BAED6", "#C6DBEF"), 1:5)
   colours <- unname(key[as.character(values)])

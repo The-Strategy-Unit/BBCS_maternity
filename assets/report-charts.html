@@ -119,8 +119,9 @@
     if (!plot._fullLayout || !plot.clientWidth || !plot.getClientRects().length || state.busy) return;
     const width = Math.floor(plot.parentElement.getBoundingClientRect().width);
     if (width < 100) return; // Hidden tabs are measured when they become visible.
-    // Preserve Sankey height for all categories
-    let height = state.sankey || state.compactPopulation || state.overviewBar ? state.height : Math.min(state.height, Math.max(320, window.innerHeight - 48));
+    // Category charts need their row spacing even in a short browser window.
+    // Let the page scroll instead of squeezing paired bars and axis labels.
+    let height = state.sankey || state.compactPopulation || state.compactProfile || state.overviewBar ? state.height : Math.min(state.height, Math.max(320, window.innerHeight - 48));
     const key = `${width}:${height}`;
     if (state.key === key && Math.abs(plot._fullLayout.width - width) < 1 &&
         plot._fullLayout.height === height && plot.clientHeight === height) return;

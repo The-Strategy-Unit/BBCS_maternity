@@ -27,6 +27,7 @@
 
 # GENERAL SETUP =========================================================
 # Libraries -------------------------------------------------------------
+message("Loading analysis packages and shared functions...")
 library(dplyr)
 library(tidyr)
 library(readr)
@@ -138,6 +139,7 @@ if (length(absent)) stop("Missing inputs: ", paste(absent, collapse = ", "),
   ". Use Run analysis.R.", call. = FALSE)
 
 # 1. ONS DATA EXPLORATION ================================================
+message("Reading ONS inputs and preparing population charts...")
 # 1.1 Source definitions and inputs -------------------------------------
 # Shared public inputs for the ONS exploration and resident comparison.
 
@@ -226,6 +228,7 @@ ons_exploration <- list(
 )
 
 # 2. MSDS DATA EXPLORATION ===============================================
+message("Preparing recorded activity and patient-flow charts...")
 # MODEL_INPUT: MSDS_DELIVERIES
 # final_cohort_2326: one supplied pregnancy row, with LA(R), Age (SY), Trust(B/D)
 # MODEL_INPUT: MSDS_BOOKINGS
@@ -1783,20 +1786,25 @@ build_delivery_geography <- function(years = delivery_years, age_bands = deliver
         dplyr::ungroup() |>
         dplyr::arrange(match(LA, chart_origin$LA), match(Age_band, age_bands))
       raw_plot_ages <- plot_ages
-      plot_ages <- dc_cells(plot_ages, c("N", "LA_total"), list(Age_share = c("N", "LA_total")))
+      # A composition must use the same protected cells above and below the
+      # fraction; independently protecting the raw total can produce 200-300%.
+      plot_ages <- dc_counts(plot_ages, "N") |>
+        dplyr::group_by(LA) |>
+        dplyr::mutate(LA_total = sum(N), Age_share = dc_divide(N, LA_total)) |>
+        dplyr::ungroup()
       age_chart <- plotly::plot_ly(height = bar_chart_height(nrow(chart_origin)))
       for (j in seq_along(age_bands)) {
         band <- plot_ages[plot_ages$Age_band == age_bands[j], , drop = FALSE]
         age_chart <- plotly::add_trace(age_chart, x = band$Age_share, y = band$LA,
           type = "bar", orientation = "h", name = age_bands[j], marker = list(color = age_colours[j]),
           hovertext = paste0(band$Resident_LA, "<br>Age: ", age_bands[j], "<br>Deliveries: ", scales::comma(band$N),
-            "<br>All deliveries from this LA here: ", scales::comma(band$LA_total),
+            "<br>Sum of displayed age-group counts for this LA: ", scales::comma(band$LA_total),
             "<br>% within this LA: ", scales::percent(band$Age_share, accuracy = 0.1)),
           hovertemplate = "%{hovertext}<extra></extra>")
       }
       age_chart <- age_chart |>
         plotly::layout(barmode = "stack", xaxis = list(title = "% of this LA's deliveries here", tickformat = ".0%",
-          range = c(0, max(1, tapply(plot_ages$Age_share, plot_ages$LA, sum), na.rm = TRUE))),
+          range = c(0, 1)),
           yaxis = list(title = "", autorange = "reversed", categoryorder = "array", categoryarray = chart_origin$LA,
             tickmode = "array", tickvals = chart_origin$LA, ticktext = chart_origin$Resident_LA, automargin = TRUE),
           showlegend = FALSE,
@@ -1904,7 +1912,8 @@ build_delivery_geography <- function(years = delivery_years, age_bands = deliver
         organisation_plots[[mapping_table_rows$Key[i]]][[field]])
     }))
   }), c("table", "age_table"))
-  list(organisations = organisations, episodes = delivery_episodes,
+  list(age_mix_denominator = "sum-disclosed-age-counts-v1",
+    organisations = organisations, episodes = delivery_episodes,
     matrix_data = destination_matrix, matrix_episodes = matrix_episodes, matrix_table = matrix_table,
     grouped_matrix = grouped_matrix, visible_las = top_las, visible_other_trusts = other_trusts,
     la_lookup = la_lookup, trust_lookup = trust_lookup,
@@ -1922,10 +1931,12 @@ build_delivery_geography <- function(years = delivery_years, age_bands = deliver
 
 # Save the finished charts and tables for index.qmd.
 # Errors stop here; the previous saved output was removed before preparation.
+message("Preparing delivery geography charts...")
 delivery_geography <- build_delivery_geography()
 save_report_rds(delivery_geography, ".delivery_geography.rds")
 
 # 3. COMBINED PROJECTION MODEL ===========================================
+message("Calculating projections and resident comparisons...")
 # Read the steps in order. Local shares retain LA(R) and Age (SY).
 # National conversion factors vary by age and apply across all LAs.
 
@@ -4013,6 +4024,7 @@ build_projection_backtest <- function() {
 
 # 3.11 Prepare and save the model report outputs -------------------------
 # Save only after forward projections and the retrospective comparison finish.
+message("Preparing projection charts and retrospective comparisons...")
 first_draft_projections <- build_first_draft_projections(history_master = projection_master_all_years)
 projection_backtest <- build_projection_backtest()
 first_draft_projections$backtest <- projection_backtest

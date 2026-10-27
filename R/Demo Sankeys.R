@@ -8,6 +8,13 @@ demo_provider_labels <- function() {
   full_flow_trust_labels()
 }
 
+# Fixed organisation panels; outside organisations can still be flow endpoints.
+demo_bbcs_org_codes <- function(group, include_other = FALSE) {
+  if (group == "Trust") c(intersect(setdiff(names(trust_labels), "Other"), cluster_trusts),
+    if (include_other) "Other") else
+    c(cluster_icbs, "Cluster")
+}
+
 # Same/different original trust codes; exclude missing events/providers and home births
 cohort_trust_comparison <- function(episodes) {
   booking <- episodes$Booking_provider_supplied | episodes$Booking_date_supplied
@@ -102,8 +109,8 @@ demo_category_values <- function(master, field) {
 
 demo_category_label <- function(value, field) {
   label <- if (is.na(value)) "Unknown (NA)" else if (value == "") "Blank" else value
-  if (field == "imd_quintile" && !is.na(value) && nzchar(value))
-    label <- paste("IMD quintile", label)
+  if (field == "imd_quintile")
+    label <- imd_quintile_labels(value, prefix = "IMD quintile", unknown = label)
   label
 }
 
@@ -164,12 +171,7 @@ demo_ribbon_org_rows <- function(master, group, code) {
 }
 
 demo_ribbon_org_codes <- function(master, group) {
-  preferred <- if (group == "Trust") setdiff(trust_source_order, c("Other", "Unknown")) else cluster_icbs
-  available <- if (group == "Trust") c(master$Booking, master$Delivery) else c(master$Booking_ICB, master$Delivery_ICB)
-  # Organisation panels; exclude status-only endpoints
-  available <- setdiff(unique(available), c("Home", "No booking", "No delivery", "Unknown"))
-  codes <- sankey_category_order(preferred, union(preferred, available))
-  if (group == "Trust") codes else c(codes, "Cluster")
+  demo_bbcs_org_codes(group)
 }
 
 demo_ribbon_sankey <- function(master, field, group = "Trust", compact = FALSE) {
@@ -243,30 +245,33 @@ demo_ribbon_views <- function(master, field) {
 }
 
 # 3. ORGANISATION GROUPS AND RECORDED DELIVERY OUTCOMES -----------------
-demo_org_codes <- function(master, mode, group) {
-  if (group == "Trust") unique(c(setdiff(names(trust_labels), "Other"), master[[mode]])) else
-    unique(c(cluster_icbs, master[[paste0(mode, "_ICB")]], "Cluster"))
+demo_org_codes <- function(master, mode, group, whole_cohort = FALSE) {
+  codes <- demo_bbcs_org_codes(group)
+  if (whole_cohort && group != "Trust") codes[codes == "Cluster"] <- "Cohort"
+  codes
 }
 
 demo_org_rows <- function(master, mode, group, code) {
-  if (group != "Trust" && code == "Cluster") return(master)
+  if (group != "Trust" && code == "Cohort") return(master)
   field <- if (group == "Trust") mode else paste0(mode, "_ICB")
-  master[master[[field]] %in% code, , drop = FALSE]
+  codes <- if (group != "Trust" && code == "Cluster") cluster_icbs else code
+  master[master[[field]] %in% codes, , drop = FALSE]
 }
 
 demo_org_label <- function(code, group) {
   labels <- if (group == "Trust") demo_provider_labels() else
     c(icb_labels, Unknown = "Unknown ICB", `No booking` = "No recorded booking",
-      `No delivery` = "No recorded delivery", Home = "Home birth", Cluster = "Whole BBCS cohort")
+      `No delivery` = "No recorded delivery", Home = "Home birth",
+      Cluster = "Combined BBCS cluster", Cohort = "Whole BBCS cohort")
   label <- unname(labels[code])
   if (is.na(label)) code else label
 }
 
 demo_pathway_summary <- function(master, group, codes = NULL) {
-  if (is.null(codes)) codes <- demo_org_codes(master, "Booking", group)
+  if (is.null(codes)) codes <- demo_bbcs_org_codes(group)
   dplyr::bind_rows(lapply(codes, function(code) {
-    rows <- demo_org_rows(master, "Booking", group, code)
-    organisation <- demo_org_label(code, group)
+    rows <- cohort_profile_org_rows(master, "Booking", group, code)
+    organisation <- cohort_profile_org_label(code, group)
     data.frame(Code = code, Organisation = organisation, Starts = sum(rows$N),
       Within = sum(rows$N[rows$Outcome == "Within cluster"]),
       Outside = sum(rows$N[rows$Outcome == "Outside cluster"]),
@@ -353,7 +358,7 @@ demo_outcome_sankey <- function(rows, field, proportions = FALSE) {
 demo_pathway_grid <- function(master, group, field = NULL, proportions = FALSE) {
   summary <- demo_pathway_summary(master, group)
   panels <- lapply(seq_len(nrow(summary)), function(i) {
-    rows <- demo_org_rows(master, "Booking", group, summary$Code[i])
+    rows <- cohort_profile_org_rows(master, "Booking", group, summary$Code[i])
     htmltools::div(class = "demo-sankey-panel",
       htmltools::tags$h5(summary$Organisation[i]),
       htmltools::tags$p(paste0(scales::comma(dc_count(summary$Starts[i])), " pregnancies")),
@@ -395,7 +400,7 @@ demo_overview_bar <- function(rows, field) {
   short_labels <- sub("Any other", "any other", short_labels, fixed = TRUE)
   tick_labels <- vapply(short_labels, function(label) paste(strwrap(label, width = 22), collapse = "<br>"), character(1))
   label_lines <- lengths(strsplit(tick_labels, "<br>", fixed = TRUE))
-  left_margin <- switch(field, Age_band = 64, imd_quintile = 82, 148)
+  left_margin <- switch(field, Age_band = 64, imd_quintile = 150, 148)
   counts <- rows |>
     dplyr::group_by(Category = as.character(.data[[field]]), Pathway) |>
     dplyr::summarise(N = sum(N), .groups = "drop") |>
@@ -438,7 +443,8 @@ demo_overview_bar <- function(rows, field) {
 }
 
 demo_overview_grid <- function(master, mode, group, field) {
-  codes <- demo_org_codes(master, mode, group)
+  # 4.1.2 explicitly includes a whole-cohort recording-status summary.
+  codes <- demo_org_codes(master, mode, group, whole_cohort = TRUE)
   legend <- htmltools::div(class = "demo-ribbon-key", style = "margin-bottom:16px;",
     lapply(names(demo_pathway_colours), function(label) htmltools::span(
       htmltools::span(style = paste0("display:inline-block; width:12px; height:12px; margin-right:6px; background:",
@@ -453,7 +459,13 @@ demo_overview_grid <- function(master, mode, group, field) {
     })))
 }
 
-demo_overview_tabs <- function(master, mode) {
+demo_overview_tabs <- function(master, mode, delivery_profiles = NULL) {
+  # 4.1.1 uses 2.2.7.1's booking cohort and five delivery outcomes.
+  # Selecting recorded deliveries first would remove booking-only pregnancies.
+  if (mode == "Delivery") {
+    if (is.null(delivery_profiles)) delivery_profiles <- build_delivery_pattern_profiles(master)
+    return(lapply(delivery_profiles, function(fields) lapply(fields, function(field) field$grid)))
+  }
   master <- cohort_comparison_ethnicity(master)
   stats::setNames(lapply(c("Trust", "ICB_Cluster"), function(group) {
     lapply(demo_profile_fields(), function(field) demo_overview_grid(master, mode, group, field))
@@ -491,11 +503,7 @@ cohort_profile_counts <- function(master, field, categories = NULL) {
   data <- dc_cells(data.frame(Category = categories, N = unname(n), Total = sum(master$N)),
     c("N", "Total"), list(Share = c("N", "Total")))
   data$Label <- ifelse(is.na(categories), "Unknown", categories)
-  if (field == "imd_quintile") {
-    data$Label[!is.na(categories)] <- paste("Quintile", categories[!is.na(categories)])
-    data$Label[categories %in% "1"] <- "Quintile 1 (most deprived)"
-    data$Label[categories %in% "5"] <- "Quintile 5 (least deprived)"
-  }
+  if (field == "imd_quintile") data$Label <- imd_quintile_labels(categories)
   data$Colour <- if (field %in% c("Age_band", "ethnicity_broad", "ethnicity_profile"))
     rep("#005EB8", length(categories)) else demo_category_colours(categories, field)
   data
@@ -551,13 +559,15 @@ build_cohort_profile <- function(master) {
 
 # Paired booking/delivery profiles by trust
 cohort_trust_profile_codes <- function(master) {
-  available <- unique(c(trust_source_order, master$Booking, master$Delivery))
-  available <- setdiff(available, c("Home", "No booking", "No delivery"))
-  sankey_category_order(trust_source_order, available)
+  demo_bbcs_org_codes("Trust", include_other = TRUE)
 }
 
 cohort_profile_org_rows <- function(master, stage, group, code) {
   column <- if (group == "Trust") stage else paste0(stage, "_ICB")
+  if (group == "Trust" && code == "Other") {
+    known <- master[[column]] == "Other" | grepl("^R[A-Z0-9]{2}$", master[[column]])
+    return(master[known & !master[[column]] %in% demo_bbcs_org_codes("Trust"), , drop = FALSE])
+  }
   codes <- if (group == "ICB_Cluster" && code == "Cluster") cluster_icbs else code
   master[master[[column]] %in% codes, , drop = FALSE]
 }
@@ -578,8 +588,15 @@ cohort_trust_profile_counts <- function(master, field, code, categories, group =
 cohort_trust_profile_chart <- function(data, field, code, count_max, group = "Trust") {
   horizontal <- field %in% c("ethnicity_broad", "ethnicity_profile")
   labels <- data$Label[data$Stage == "Booking"]
+  axis_labels <- labels
+  short_ethnicity <- c("Asian or Asian British" = "Asian / Asian British",
+    "Black or Black British" = "Black / Black British",
+    "Other ethnic groups - Chinese" = "Other: Chinese",
+    "Other ethnic groups - Any other" = "Other: any other")
+  matched <- axis_labels %in% names(short_ethnicity)
+  axis_labels[matched] <- unname(short_ethnicity[axis_labels[matched]])
   colours <- c(Booking = "#005EB8", Delivery = "#ED8B00")
-  chart <- plotly::plot_ly(height = if (horizontal) max(240, 24 * length(labels) + 60) else 220)
+  chart <- plotly::plot_ly(height = if (horizontal) max(270, 36 * length(labels) + 95) else 250)
   for (stage in names(colours)) {
     rows <- data[data$Stage == stage, ]
     share <- ifelse(is.na(rows$Share), "Percentage unavailable (no pregnancies at this stage)",
@@ -590,15 +607,18 @@ cohort_trust_profile_chart <- function(data, field, code, count_max, group = "Tr
       x = if (horizontal) rows$N else rows$Label,
       y = if (horizontal) rows$Label else rows$N,
       marker = list(color = colours[[stage]]), offsetgroup = stage, legendgroup = stage,
+      text = ifelse(rows$N > 0, scales::comma(rows$N, accuracy = 1), ""),
+      textposition = "outside", textangle = 0, cliponaxis = FALSE,
+      textfont = list(size = 13, color = "#2C2825"), constraintext = "none",
       customdata = hover, hovertemplate = "%{customdata}<extra></extra>",
       meta = list(cohort_trust_profile_field = field, trust = code, stage = stage, organisation_group = group))
   }
-  count_axis <- list(title = "Pregnancies", range = c(0, max(5, count_max) * 1.1),
+  count_axis <- list(title = "Pregnancies", range = c(0, max(5, count_max) * 1.18),
     rangemode = "tozero", tickformat = ",.0f")
   category_axis <- list(title = "", type = "category", categoryorder = "array",
     categoryarray = if (horizontal) rev(labels) else labels,
     tickmode = "array", tickvals = labels,
-    ticktext = vapply(labels, function(label)
+    ticktext = vapply(axis_labels, function(label)
       paste(strwrap(label, width = if (horizontal) 26 else 12), collapse = "<br>"), character(1)),
     automargin = TRUE)
   chart |>
@@ -608,7 +628,7 @@ cohort_trust_profile_chart <- function(data, field, code, count_max, group = "Tr
         font = list(size = 15)),
       xaxis = if (horizontal) count_axis else category_axis,
       yaxis = if (horizontal) category_axis else count_axis,
-      margin = list(l = if (horizontal) 120 else 70, r = 20, t = 38,
+      margin = list(l = if (horizontal) 120 else 70, r = if (horizontal) 65 else 20, t = 38,
         b = if (horizontal) 55 else if (field == "imd_quintile") 82 else 65),
       font = list(family = "Arial", size = 15), hoverlabel = list(font = list(size = 15)),
       paper_bgcolor = "white", plot_bgcolor = "white") |>
@@ -623,10 +643,9 @@ build_cohort_trust_profiles <- function(master, group = "Trust") {
     categories <- cohort_profile_counts(master, field)$Category
     counts <- stats::setNames(lapply(codes, function(code)
       cohort_trust_profile_counts(master, field, code, categories, group)), codes)
-    count_max <- max(vapply(counts, function(data) max(data$N), numeric(1)))
     panels <- lapply(codes, function(code) {
       data <- counts[[code]]
-      chart <- cohort_trust_profile_chart(data, field, code, count_max, group)
+      chart <- cohort_trust_profile_chart(data, field, code, max(data$N), group)
       total <- vapply(c("Booking", "Delivery"), function(stage)
         unique(data$Total[data$Stage == stage]), numeric(1))
       htmltools::div(class = "demo-sankey-panel",
@@ -730,7 +749,7 @@ cohort_match_panels <- function(data, field, title = "Whole BBCS cohort") {
 
 cohort_match_org_profiles <- function(master, field, group, categories) {
   eligible <- master[master$Trust_comparison %in% c("Same trust", "Different trusts"), , drop = FALSE]
-  codes <- if (group == "Trust") demo_org_codes(eligible, "Booking", group) else c(cluster_icbs, "Cluster")
+  codes <- demo_bbcs_org_codes(group, include_other = TRUE)
   codes <- setdiff(codes, c("Unknown", "No booking", "No delivery", "Home"))
   counts <- stats::setNames(lapply(codes, function(code)
     cohort_match_counts(cohort_profile_org_rows(eligible, "Booking", group, code), field, categories)), codes)
@@ -760,9 +779,7 @@ build_cohort_match_profiles <- function(master) {
   profiles <- lapply(demo_profile_fields(), function(field) {
     data <- cohort_match_counts(master, field)
     categories <- data$Category[data$Group == "Same trust"]
-    list(data = data, charts = htmltools::tagList(
-      report_colour_key(c("Same trust" = "#006747", "Different trusts" = "#AE2573"), "cohort-match-key"),
-      cohort_match_panels(data, field)),
+    list(data = data,
       Trust = cohort_match_org_profiles(master, field, "Trust", categories),
       ICB_Cluster = cohort_match_org_profiles(master, field, "ICB_Cluster", categories))
   })
@@ -797,7 +814,6 @@ delivery_pattern_chart <- function(data, field, code, group) {
   ticks <- sub("Asian or Asian British", "Asian / Asian British", labels, fixed = TRUE)
   ticks <- sub("Black or Black British", "Black / Black British", ticks, fixed = TRUE)
   ticks <- sub("Other ethnic groups - ", "Other: ", ticks, fixed = TRUE)
-  if (field == "imd_quintile") ticks <- sub(" \\(.*\\)$", "", ticks)
   ticks <- vapply(ticks, function(x) paste(strwrap(x, 19), collapse = "<br>"), character(1))
   label_lines <- lengths(strsplit(ticks, "<br>", fixed = TRUE))
   chart <- plotly::plot_ly(height = max(285, sum(pmax(35, label_lines * 17 + 8)) + 65))
@@ -822,26 +838,24 @@ delivery_pattern_chart <- function(data, field, code, group) {
     xaxis = list(title = "% within demographic group", range = c(0, 1), dtick = .25, tickformat = ".0%"),
     yaxis = list(title = "", categoryorder = "array", categoryarray = rev(labels),
       tickmode = "array", tickvals = labels, ticktext = ticks, automargin = FALSE),
-    margin = list(l = if (field == "ethnicity_broad") 135 else if (field == "imd_quintile") 85 else 70,
+    margin = list(l = if (field == "ethnicity_broad") 135 else if (field == "imd_quintile") 150 else 70,
       r = 12, t = 12, b = 55), font = list(family = "Arial", size = 14)) |>
     plotly::config(displayModeBar = FALSE, responsive = TRUE) |> dc_widget()
 }
 
-build_delivery_pattern_profiles <- function(master) {
+build_delivery_pattern_profiles <- function(master, include_other = FALSE) {
   master <- cohort_comparison_ethnicity(master)
   # Booking providers define panels. Projection residence exclusions do not apply.
-  master <- master[master$Booking %in% cluster_trusts, ]
+  if (!include_other) master <- master[master$Booking %in% cluster_trusts, ]
   key <- delivery_pattern_key()
   fields <- c(age = "Age_band", imd = "imd_quintile",
     ethnicity_four = "ethnicity_profile", ethnicity = "ethnicity_broad")
   stats::setNames(lapply(c("Trust", "ICB_Cluster"), function(group) {
-    codes <- if (group == "Trust") unique(c(intersect(names(trust_labels), cluster_trusts),
-      intersect(cluster_trusts, master$Booking))) else c(cluster_icbs, "Cluster")
+    codes <- demo_bbcs_org_codes(group, include_other = include_other)
     lapply(fields, function(field) {
       categories <- cohort_profile_counts(master, field)$Category
       counts <- stats::setNames(lapply(codes, function(code) {
-        rows <- if (group == "Trust") master[master$Booking == code, ] else
-          if (code == "Cluster") master else master[master$Booking_ICB == code, ]
+        rows <- cohort_profile_org_rows(master, "Booking", group, code)
         delivery_pattern_counts(rows, field, categories)
       }), codes)
       panels <- lapply(codes, function(code) {
@@ -854,7 +868,7 @@ build_delivery_pattern_profiles <- function(master) {
         htmltools::div(class = "demo-sankey-grid delivery-pattern-grid", panels),
         htmltools::p(class = "cohort-overview-note",
           "Each non-empty demographic category totals 100%. Hover for percentages and controlled counts, including small segments. Empty categories have no bar.",
-          if (field == "imd_quintile") " IMD 1 is most deprived; 5 is least deprived. Colour represents delivery outcome.")))
+          if (field == "imd_quintile") " IMD quintile 1 (most deprived); quintile 5 (least deprived). Colour represents delivery outcome.")))
     })
   }), c("Trust", "ICB_Cluster"))
 }
@@ -864,15 +878,17 @@ build_delivery_pattern_profiles <- function(master) {
 demographics_cleaned <- prepare_demographics(demographics)
 `Demo Sankeys` <- cohort_comparison_ethnicity(
   build_demo_sankeys(final_cohort_2326, demographics_cleaned, report_episodes))
+# Section 5 also includes a pooled Other trusts card.
+demo_delivery_profiles <- build_delivery_pattern_profiles(get("Demo Sankeys"))
 demo_sankey_charts <- list(
-  version = "demographic-profile-v19",
+  version = "demographic-profile-v26",
   cohort_total = dc_count(sum(`Demo Sankeys`$N)),
   cohort_profile = build_cohort_profile(`Demo Sankeys`),
   cohort_trust_profiles = build_cohort_trust_profiles(`Demo Sankeys`),
   cohort_icb_profiles = build_cohort_trust_profiles(`Demo Sankeys`, "ICB_Cluster"),
   cohort_match_profiles = build_cohort_match_profiles(`Demo Sankeys`),
-  delivery_pattern_profiles = build_delivery_pattern_profiles(`Demo Sankeys`),
-  overview_delivery = demo_overview_tabs(`Demo Sankeys`, "Delivery"),
+  delivery_pattern_profiles = build_delivery_pattern_profiles(get("Demo Sankeys"), include_other = TRUE),
+  overview_delivery = demo_overview_tabs(get("Demo Sankeys"), "Delivery", demo_delivery_profiles),
   overview_booking = demo_overview_tabs(`Demo Sankeys`, "Booking"),
   overall = demo_sankey_chart(`Demo Sankeys`),
   ethnicity = demo_sankey_grid(`Demo Sankeys`, "ethnicity_broad"),

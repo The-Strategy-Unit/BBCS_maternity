@@ -1,10 +1,19 @@
 # RUN THE ANALYSIS ======================================================
 # Reuse loaded parquet objects -> analyse -> render -> open report.
-# Run with: source("R/Run analysis.R")
+# Use RStudio's Source button, or run this single command at the > prompt:
+# source("R/Run analysis.R", encoding = "UTF-8")
+# If the console shows +, press Esc first to cancel the unfinished command.
 # Refresh changed extracts explicitly: run_maternity_project(refresh_data = TRUE)
 # Run investigations separately: source("R/QA.R")
 
 run_maternity_project <- function(refresh_data = FALSE) {
+  run_started <- proc.time()[["elapsed"]]
+  progress <- function(text) {
+    message(sprintf("[%s | %.0fs] %s", format(Sys.time(), "%H:%M:%S"),
+      proc.time()[["elapsed"]] - run_started, text))
+    flush.console()
+  }
+  progress("Starting maternity report...")
   # GENERAL SETUP -------------------------------------------------------
   if (!file.exists("R/Maternity analysis.R") || !file.exists("index.qmd"))
     stop("Open BBCS_maternity and run from the project root.")
@@ -19,11 +28,13 @@ run_maternity_project <- function(refresh_data = FALSE) {
   present <- intersect(inspection_names, ls(envir = .GlobalEnv))
   if (length(present)) rm(list = present, envir = .GlobalEnv)
 
-  # Replace saved outputs so failed runs don't break things
+  # Clear prepared data, keeping the last HTML until its replacement is ready.
+  progress("Preparing output files...")
   output_files <- c(".ons_exploration.rds", ".patient_flows.rds",
     ".delivery_geography.rds", ".projections.rds", ".demo_sankeys.rds")
-  generated_paths <- c(output_files, ".analysis_run.rds", "_site")
-  for (item in generated_paths[file.exists(generated_paths)]) {
+  generated_paths <- c(output_files, ".analysis_run.rds")
+  checked_paths <- c(generated_paths, "_site")
+  for (item in checked_paths[file.exists(checked_paths)]) {
     resolved <- normalizePath(item, winslash = "/", mustWork = TRUE)
     if (!startsWith(tolower(resolved), paste0(tolower(project_root), "/")))
       stop("Generated output is outside the project: ", item)
@@ -43,22 +54,24 @@ run_maternity_project <- function(refresh_data = FALSE) {
   saveRDS(run_info, ".analysis_run.rds")
 
   # 1. LOAD PARQUETS ONCE PER SESSION, OR WHEN EXPLICITLY REFRESHED --------
-  parquet_objects <- c("final_cohort_2326", "total_births_by_LA_2326",
-    "trust_matrix_data", "icb_matrix_data", "demographics")
+  # These are the inputs used by the report; standalone matrix tables are not.
+  parquet_objects <- c("final_cohort_2326", "total_births_by_LA_2326", "demographics")
   inputs_loaded <- all(vapply(parquet_objects, exists, logical(1),
     envir = .GlobalEnv, inherits = FALSE))
   if (refresh_data || !inputs_loaded) {
-    message("Reading Sarah's parquet files...")
+    progress("Reading Sarah's parquet files...")
     source("R/Read parquet files from azure.R", local = .GlobalEnv)
   } else {
-    message("Using parquet objects already loaded in this R session.")
+    progress("Using parquet objects already loaded in this R session.")
   }
 
   # 2. PREPARE THE ANALYSIS ----------------------------------------------
   # ONS / MSDS exploration, projections, charts and tables.
-  message("Preparing analysis, charts and tables...")
+  progress("Preparing analysis, charts and tables...")
   suppressPackageStartupMessages(source("R/Maternity analysis.R", local = .GlobalEnv, encoding = "UTF-8"))
+  progress("Preparing demographic charts...")
   source("R/Demo Sankeys.R", local = .GlobalEnv, encoding = "UTF-8")
+  progress("Analysis and demographic charts prepared.")
 
   # 3. MARK THE SAVED ANALYSIS READY -------------------------------------
   # save_report_rds attaches run metadata during the original write.
@@ -77,12 +90,13 @@ run_maternity_project <- function(refresh_data = FALSE) {
   if (!startsWith(tolower(render_folder), paste0(tolower(temporary_root), "/")))
     stop("Unexpected temporary report folder.")
   on.exit(unlink(render_folder, recursive = TRUE), add = TRUE)
+  progress("Copying inputs for rendering...")
   render_inputs <- c("index.qmd", "_quarto.yml", "_brand.yml", "styles.css",
     "R", "data", "config", "assets", output_files, ".analysis_run.rds")
   if (!all(file.copy(render_inputs, render_folder, recursive = TRUE)))
     stop("Could not copy the report inputs into the temporary folder.")
   saveRDS(run_info, file.path(render_folder, ".analysis_run.rds"))
-  message("Rendering report...")
+  progress("Rendering report...")
   # Stream Quarto output to the console; a locked project log must not prevent
   # rendering or mask the original error when reporting a failed render.
   setwd(render_folder)
@@ -97,8 +111,10 @@ run_maternity_project <- function(refresh_data = FALSE) {
       'To retry rendering only, run system2(Sys.which("quarto"), c("render", "index.qmd")).',
       call. = FALSE)
   }
+  progress("Checking the rendered report's disclosure controls...")
   audit_disclosure_html(file.path(rendered_site, "index.html"))
-  if (!file.copy(rendered_site, project_root, recursive = TRUE) ||
+  progress("Saving the finished HTML site...")
+  if (!file.copy(rendered_site, project_root, recursive = TRUE, overwrite = TRUE) ||
       !file.exists("_site/index.html")) stop("Could not save the finished report.")
   saveRDS(run_info, ".analysis_run.rds")
 
@@ -112,7 +128,7 @@ run_maternity_project <- function(refresh_data = FALSE) {
   ons_modifications <<- projections$ons_modifications
   private_nhs_modifications <<- projections$private_nhs$pooled
   booking_modifications <<- projections$allocation_tables$calibration
-  message("Report ready: _site/index.html")
+  progress("Report ready: _site/index.html; opening in your browser...")
 
   # 6. OPEN THE FINISHED REPORT ------------------------------------------
   # Use the current RStudio / default browser setting 

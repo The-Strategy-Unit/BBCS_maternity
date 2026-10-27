@@ -7,10 +7,16 @@ This project produces the BBCS maternity report, covering recorded bookings and 
 Open the project in RStudio with the project root as the working directory. R, Quarto, the required R packages and access to the MSDS data must be available in the secure environment.
 
 ```r
-source("R/Run analysis.R")
+source("R/Run analysis.R", encoding = "UTF-8")
 ```
 
 This reuses loaded data where available, prepares the analysis, checks disclosure controls, and opens the finished report at `_site/index.html`.
+
+Use the single command above or RStudio's **Source** button. If the console shows
+`+` instead of `>`, press **Esc** before running it: R is waiting for an unfinished
+command, so the analysis has not started. The runner prints “Starting maternity
+report” immediately, then reports each stage with its elapsed time. The previous
+HTML remains available until the new report has rendered and passed disclosure checks.
 
 If an input is missing, it reads the parquets once using the existing Azure setup.
 

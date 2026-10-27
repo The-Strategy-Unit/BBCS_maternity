@@ -64,7 +64,7 @@ first_draft_projections <- read_report_rds(".projections.rds", report_run$run_id
 if (is.null(first_draft_projections$sankey_comparison_cluster_las))
   stop("Regenerate the projection charts with R/Run analysis.R for the grouped LA flow view.")
 demo_sankey_charts <- read_report_rds(".demo_sankeys.rds", report_run$run_id)
-if (!identical(demo_sankey_charts$version, "demographic-profile-v14"))
+if (!identical(demo_sankey_charts$version, "demographic-profile-v15"))
   stop("Regenerate the demographic charts with R/Run analysis.R before rendering sections 4 and 5.")
 ```
 
@@ -2285,7 +2285,7 @@ A booking is recorded when a booking provider or appointment date is supplied; a
 
 ## 4.1 Demographic overview {#demographic-overview}
 
-The pooled cohort contains **`r scales::comma(demo_sankey_charts$cohort_total)` pregnancies** after display rounding. Bars show demographic counts, stacked by recorded booking/delivery status. The delivery and antenatal-booking views each cover the whole pool and must not be added together.
+The pooled cohort contains **`r scales::comma(demo_sankey_charts$cohort_total)` pregnancies** after display rounding. Bars show each demographic group's percentage of the panel's total pregnancies, stacked by recorded booking/delivery status, on a common 0–100% scale. The denominator includes all demographic categories, including unknowns; for the whole-cohort panel it is the whole cohort. Segment labels show percentages to one decimal place, with counts available on hover. Percentages use disclosure-controlled counts and may not sum to exactly 100%. The delivery and antenatal-booking views each cover the whole pool and must not be added together.
 
 Trusts and ICBs are grouped by the provider for the selected event. No provider from the other event is substituted. No recorded event, unknown provider, home birth and other providers remain separate where applicable. The whole-cohort panel includes every group; it is a total, not an additional group to sum with the ICBs.
 

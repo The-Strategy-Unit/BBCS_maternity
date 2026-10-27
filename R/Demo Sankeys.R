@@ -377,7 +377,10 @@ demo_pathway_colours <- c(
   "Neither event recorded" = "#959595")
 
 demo_overview_bar <- function(rows, field) {
-  if (!nrow(rows)) return(htmltools::div("No pregnancies in this group."))
+  if (!nrow(rows) || sum(rows$N) <= 0) return(htmltools::div("No pregnancies in this group."))
+  # All demographic categories, including unknowns, share the panel's denominator.
+  # Control the raw organisation total independently of the displayed cells.
+  organisation_total <- dc_count(sum(rows$N))
   categories <- demo_category_values(rows, field)
   labels <- vapply(categories, demo_category_label, character(1), field = field)
   short_labels <- labels
@@ -396,16 +399,20 @@ demo_overview_bar <- function(rows, field) {
     dplyr::mutate(Category = factor(labels[match(Category, categories)], levels = labels),
       Pathway = factor(Pathway, levels = names(demo_pathway_colours)),
       N = dc_count(N),
-      Hover = paste0(Category, "<br>", Pathway, "<br>Pregnancies: ", scales::comma(N)))
-  plotly::plot_ly(counts, x = ~N, y = ~Category, color = ~Pathway,
+      Share = dc_divide(N, organisation_total),
+      Hover = paste0(Category, "<br>", Pathway, "<br>",
+        scales::percent(Share, accuracy = 0.1), " of panel total",
+        "<br>Pregnancies: ", scales::comma(N)))
+  plotly::plot_ly(counts, x = ~Share, y = ~Category, color = ~Pathway,
     colors = demo_pathway_colours, type = "bar", orientation = "h",
-    text = ~scales::comma(N), textposition = "inside", insidetextanchor = "middle",
+    text = ~scales::percent(Share, accuracy = 0.1), textposition = "inside", insidetextanchor = "middle",
     textfont = list(size = 13, color = "white"), constraintext = "inside",
     customdata = ~Hover, hovertemplate = "%{customdata}<extra></extra>",
     height = max(320, sum(pmax(34, label_lines * 17 + 10)) + 70)) |>
     plotly::layout(barmode = "stack", showlegend = FALSE,
       meta = list(demographic_overview_field = field), uniformtext = list(minsize = 12, mode = "hide"),
-      xaxis = list(title = "Pregnancies", rangemode = "tozero"),
+      xaxis = list(title = "% of panel total", range = c(0, 1),
+        tickformat = ".0%", dtick = 0.25),
       yaxis = list(title = "", categoryorder = "array", categoryarray = rev(labels),
         tickmode = "array", tickvals = labels,
         ticktext = tick_labels, automargin = FALSE),
@@ -736,7 +743,7 @@ build_cohort_match_profiles <- function(master) {
 demographics_cleaned <- prepare_demographics(demographics)
 `Demo Sankeys` <- build_demo_sankeys(final_cohort_2326, demographics_cleaned, report_episodes)
 demo_sankey_charts <- list(
-  version = "demographic-profile-v14",
+  version = "demographic-profile-v15",
   cohort_total = dc_count(sum(`Demo Sankeys`$N)),
   cohort_profile = build_cohort_profile(`Demo Sankeys`),
   cohort_trust_profiles = build_cohort_trust_profiles(`Demo Sankeys`),

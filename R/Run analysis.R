@@ -83,15 +83,17 @@ run_maternity_project <- function(refresh_data = FALSE) {
     stop("Could not copy the report inputs into the temporary folder.")
   saveRDS(run_info, file.path(render_folder, ".analysis_run.rds"))
   message("Rendering report...")
-  render_log <- file.path(project_root, "render.log")
+  # Stream Quarto output to the console; a locked project log must not prevent
+  # rendering or mask the original error when reporting a failed render.
   setwd(render_folder)
   status <- tryCatch(system2(quarto, c("render", "index.qmd"),
-    stdout = render_log, stderr = render_log),
+    stdout = "", stderr = "", wait = TRUE),
+    error = function(e) stop("Could not run Quarto: ", conditionMessage(e),
+      ". Prepared results are saved.", call. = FALSE),
     finally = setwd(project_root))
   rendered_site <- file.path(render_folder, "_site")
   if (status != 0L || !file.exists(file.path(rendered_site, "index.html"))) {
-    message(paste(tail(readLines(render_log, warn = FALSE), 30), collapse = "\n"))
-    stop('Report rendering failed; see render.log. Prepared results are saved. ',
+    stop('Report rendering failed; see the Quarto messages above in the console. Prepared results are saved. ',
       'To retry rendering only, run system2(Sys.which("quarto"), c("render", "index.qmd")).',
       call. = FALSE)
   }

@@ -15,7 +15,7 @@ run_maternity_project <- function(refresh_data = FALSE) {
   # Clear previous inspection objects before preparing this run's results.
   inspection_names <- c("projection_master", "projection_master_backtest",
     "projection_master_dictionary", "delivery_proportions", "booking_proportions",
-    "ons_modifications", "booking_modifications")
+    "ons_modifications", "private_nhs_modifications", "booking_modifications")
   present <- intersect(inspection_names, ls(envir = .GlobalEnv))
   if (length(present)) rm(list = present, envir = .GlobalEnv)
 
@@ -57,8 +57,8 @@ run_maternity_project <- function(refresh_data = FALSE) {
   # 2. PREPARE THE ANALYSIS ----------------------------------------------
   # ONS / MSDS exploration, projections, charts and tables.
   message("Preparing analysis, charts and tables...")
-  suppressPackageStartupMessages(source("R/Maternity analysis.R", local = .GlobalEnv))
-  source("R/Demo Sankeys.R", local = .GlobalEnv)
+  suppressPackageStartupMessages(source("R/Maternity analysis.R", local = .GlobalEnv, encoding = "UTF-8"))
+  source("R/Demo Sankeys.R", local = .GlobalEnv, encoding = "UTF-8")
 
   # 3. MARK THE SAVED ANALYSIS READY -------------------------------------
   # save_report_rds attaches run metadata during the original write.

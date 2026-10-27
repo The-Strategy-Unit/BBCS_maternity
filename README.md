@@ -20,7 +20,7 @@ To reload changed source data after loading the run script:
 run_maternity_project(refresh_data = TRUE)
 ```
 
-Rerun the analysis after changing data or chart calculations. Rendering alone uses the previously saved results. Rendering progress is saved in `render.log`; rendering failures also show the final log lines in the R console.
+Rerun the analysis after changing data or chart calculations. Rendering alone uses the previously saved results. Rendering progress and errors appear directly in the R console; the runner does not read or write `render.log`. After a successful render and disclosure check, it saves `_site/index.html` and opens it in your browser.
 
 ## Requirements and inputs
 

@@ -22,7 +22,8 @@ matrix <-trust_matrix_data |>
   mutate(booking=factor(booking, levels=c("Walsall", "Wolverhampton", "Dudley", "Women's", "UH Birmingham", "Sandwell", "Other")))|>
   mutate(birth=factor(birth, levels=c("Walsall", "Wolverhampton", "Dudley", "Women's", "UH Birmingham", "Sandwell", "Other")))|>
   select(-birth_provider_grouped, -booking_provider_grouped)|>
-  pivot_wider(names_from = birth, values_from = n, values_fill = 0, names_expand = TRUE) |> 
+  pivot_wider(names_from = birth, values_from = n, values_fill = 0, names_expand = TRUE,
+    id_expand = TRUE, values_fn = sum) |>
   arrange(booking)|>
   as_tabyl()
 
@@ -90,7 +91,8 @@ icb_matrix <-icb_matrix_data |>
   mutate(birth=factor(birth, levels=c("Birmingham & Solihull", "Black Country", "Coventry & Warwickshire", 
                                       "Derby & Derbyshire", "Herefordshire & Worcestershire ", "Shropshire, Telford & Wrekin", "Staffordshire & Stoke-on-Trent", "Other")))|>
   select(-resident_icb_interest, -birth_icb_interest)|>
-  pivot_wider(names_from = birth, values_from = n, values_fill = 0, names_expand = TRUE) |> 
+  pivot_wider(names_from = birth, values_from = n, values_fill = 0, names_expand = TRUE,
+    id_expand = TRUE, values_fn = sum) |>
   arrange(resident)|>
   as_tabyl()
 
@@ -149,7 +151,8 @@ matrix <-trust_matrix_data |>
   mutate(booking=factor(booking, levels=c("Walsall", "Wolverhampton", "Dudley", "Women's", "UH Birmingham", "Sandwell", "Other")))|>
   mutate(birth=factor(birth, levels=c("Walsall", "Wolverhampton", "Dudley", "Women's", "UH Birmingham", "Sandwell", "Other")))|>
   select(-birth_provider_grouped, -booking_provider_grouped)|>
-  pivot_wider(names_from = birth, values_from = n, values_fill = 0, names_expand = TRUE) |> 
+  pivot_wider(names_from = birth, values_from = n, values_fill = 0, names_expand = TRUE,
+    id_expand = TRUE, values_fn = sum) |>
   arrange(booking)|>
   as_tabyl()
 
@@ -232,7 +235,7 @@ for(col in target_cols) {
       "\n",
       # Bottom Line: Column Percent 
       colorize(
-        as_chunk(grid_pct_col[[col]][1:7], formatter = function(x) sprintf("(▼%.1f%%)", x * 100)),
+        as_chunk(grid_pct_col[[col]][1:7], formatter = function(x) sprintf("(\u25bc%.1f%%)", x * 100)),
         color = "#686f73" # Change "gray" to "red", "#888888", etc.
       )
       

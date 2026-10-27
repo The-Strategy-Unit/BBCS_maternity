@@ -37,12 +37,12 @@
 <text x="1050.0" y="135" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="17">Pooled 2023–2025</text>
 <rect x="20" y="380" width="600" height="140" rx="3" fill="#19627d"/>
 <text x="320.0" y="410" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="19" font-weight="bold">MSDS cohort and resident totals</text>
-<text x="320.0" y="439" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="17">Supplied cohort, ages 13–54, by resident LA</text>
+<text x="320.0" y="439" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="17">MSDS pregnancies and deliveries by LA, ages 13–54</text>
 <text x="320.0" y="462" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="17">(LA deliveries + antenatal-only) / LA deliveries</text>
 <text x="320.0" y="485" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="17">Own LA/age counts; zero denominator gives zero factor</text>
 <rect x="710" y="380" width="470" height="140" rx="3" fill="#19627d"/>
 <text x="945.0" y="410" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="19" font-weight="bold">5. Maternity pathway adjustment</text>
-<text x="945.0" y="439" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="17">All cohort pregnancies / recorded cohort deliveries</text>
+<text x="945.0" y="439" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="17">(Deliveries + antenatal-only) / deliveries</text>
 <text x="945.0" y="462" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="17">Includes pregnancies without a recorded delivery</text>
 <text x="945.0" y="485" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="17">Home and unknown-location deliveries included</text>
 <rect x="20" y="597" width="360" height="103" rx="3" fill="#19627d"/>

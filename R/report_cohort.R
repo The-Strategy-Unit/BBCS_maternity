@@ -62,6 +62,77 @@ report_la_country <- function(x) {
   result
 }
 
+# Projection scope only: descriptive preparation deliberately retains every row.
+# Cache the saved ONS domain for standalone model calls; builders with an ONS
+# input pass that input's codes explicitly. Reconcile MSDS codes before matching.
+projection_english_las <- local({
+  saved <- NULL
+  function(ons_las = NULL) {
+    if (is.null(ons_las)) {
+      if (is.null(saved)) saved <<- readr::read_csv("data/2022 SNPP Births persons.csv",
+        col_select = "AREA_CODE", show_col_types = FALSE)$AREA_CODE
+      ons_las <- saved
+    }
+    codes <- report_code(ons_las)
+    sort(unique(codes[grepl("^E0[6789][0-9]{6}$", codes)]))
+  }
+})
+
+projection_la_scope <- function(codes, ons_las = projection_english_las()) {
+  la <- report_la_code(codes)
+  country <- report_la_country(la)
+  reason <- dplyr::case_when(
+    country %in% c("Wales", "Scotland", "Northern Ireland") ~ "Outside England",
+    country != "England" ~ "Unknown or invalid resident LA",
+    !la %in% projection_english_las(ons_las) ~ "English code without an ONS LA match",
+    TRUE ~ "Included in projection geography")
+  data.frame(LA = la, Included = reason == "Included in projection geography", Reason = reason)
+}
+
+projection_filter_records <- function(records, ons_las = projection_english_las()) {
+  records[projection_la_scope(records$la_of_mother, ons_las)$Included, , drop = FALSE]
+}
+
+projection_geography_summary <- function(cohort, ons_las) {
+  scope <- projection_la_scope(cohort$la_of_mother, ons_las)
+  reasons <- c("Outside England", "Unknown or invalid resident LA",
+    "English code without an ONS LA match")
+  counts <- data.frame(Reason = c(reasons, "Total excluded from projections",
+    "Included in projection geography", "Original BBCS cohort"),
+    N = c(vapply(reasons, function(reason) sum(scope$Reason == reason), integer(1)),
+      sum(!scope$Included), sum(scope$Included), nrow(scope)), Denominator = nrow(scope))
+  shown <- dc_cells(counts, c("N", "Denominator"), list(Share = c("N", "Denominator")))
+  table <- shown |> dplyr::select(Reason, N, Share) |> gt::gt() |>
+    gt::tab_header(title = "BBCS cohort: residence exclusions from projections") |>
+    gt::cols_label(Reason = "Residence scope", N = "Pregnancies", Share = "% of original cohort") |>
+    gt::fmt_number(columns = "N", decimals = 0) |>
+    gt::fmt_percent(columns = "Share", decimals = 1) |>
+    gt::sub_missing(missing_text = "Unavailable") |>
+    gt::tab_source_note("Each pregnancy is counted once within the three exclusion reasons. Total rows overlap those reasons. Counts and percentages are disclosure controlled. This is a geography check only; the model age range and calibration checks still apply. Descriptive sections retain the full cohort.") |>
+    gt::tab_options(table.width = gt::pct(100))
+  list(version = "english-ons-la-v1", eligible_las = projection_english_las(ons_las),
+    counts = counts, display = shown, table = table)
+}
+
+print_projection_scope_check <- function(projections) {
+  scope <- projections$projection_geography
+  if (!identical(scope$version, "english-ons-la-v1"))
+    stop("Rerun the analysis to apply the projection-only English LA rule.")
+  cat("\nPROJECTION-ONLY RESIDENCE SCOPE (exact internal counts)\n")
+  print(scope$counts[c("Reason", "N")], row.names = FALSE)
+  gaps <- projections$provider_projection_gaps |>
+    dplyr::filter(Level == "Trust") |>
+    dplyr::group_by(Reason) |>
+    dplyr::summarise(Bookings = sum(Cohort_rows[Allocation == "Booking"]),
+      Deliveries = sum(Cohort_rows[Allocation == "Delivery"]),
+      LA_age_cells = nrow(dplyr::distinct(dplyr::pick(LA, Age))), .groups = "drop")
+  cat("\nREMAINING ISSUES AMONG INCLUDED ENGLISH RESIDENTS\n")
+  if (nrow(gaps)) print(as.data.frame(gaps), row.names = FALSE) else
+    cat("None: no cohort/provider LA-age contributions are flagged as unavailable.\n")
+  cat("Bookings and deliveries can overlap; do not add them. Descriptive sections retain all residents.\n")
+  invisible(gaps)
+}
+
 report_country_coverage <- function(episodes) {
   countries <- c("England", "Wales", "Scotland", "Northern Ireland", "Unknown/other code")
   records <- episodes |>

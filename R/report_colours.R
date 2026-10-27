@@ -87,6 +87,60 @@ identity_colours <- function(codes, priority = character()) {
 
 organisation_line_colours <- function(keys) identity_colours(keys)
 
+# One accessible colour key per chart grid; individual charts retain hover data.
+# Tab-top keys belong above the chart/card headings, never inside plot margins.
+report_colour_key <- function(colours, class = NULL, lines = FALSE) {
+  htmltools::div(class = paste(c("demo-ribbon-key", class), collapse = " "),
+    lapply(seq_along(colours), function(i) htmltools::span(class = "demo-ribbon-key-item",
+      htmltools::span(class = "demo-ribbon-swatch", `aria-hidden` = "true",
+        style = paste0("background:", colours[i], ";",
+          if (lines) "width:32px;height:5px;border:0;" else "")), names(colours)[i])))
+}
+
+booking_delivery_palette <- function() c(
+  "Same trust" = "#006747", "Different cluster trust" = "#AE2573",
+  "Outside cluster" = "#ED8B00", "No recorded delivery" = "#2C2825",
+  "Unknown location" = "#959595")
+
+# Standalone organisation comparisons use the same tab-top keys as chart grids.
+# Keep the black source-style inset inside the chart; it encodes a different field.
+report_line_chart <- function(chart) {
+  built <- plotly::plotly_build(chart)
+  traces <- Filter(function(trace) !identical(trace$showlegend, FALSE) &&
+    length(trace$name) == 1L && length(trace$line$color) == 1L, built$x$data)
+  colours <- stats::setNames(vapply(traces, function(x) x$line$color, character(1)),
+    vapply(traces, function(x) x$name, character(1)))
+  colours <- colours[!duplicated(names(colours))]
+  built$x$layout$showlegend <- FALSE
+  built$x$layout$margin$b <- 65
+  htmltools::tagList(report_colour_key(colours, "organisation-comparison-key", lines = TRUE), built)
+}
+
+# Static figures also put their key before their title, not between title and axes.
+report_plot_grob <- function(plot) {
+  position <- if (identical(plot$theme$legend.position, "none")) "none" else "top"
+  plot <- plot + ggplot2::theme(legend.position = position, legend.location = "plot",
+    legend.justification = "left", legend.box.just = "left",
+    legend.text = ggplot2::element_text(size = 12))
+  grob <- ggplot2::ggplotGrob(plot)
+  positions <- match(c("title", "subtitle", "guide-box-top"), grob$layout$name)
+  if (all(!is.na(positions))) {
+    rows <- grob$layout$t[positions]
+    if (length(unique(rows)) == 3L) {
+      heights <- grob$heights[rows]
+      grob$heights[rows] <- heights[c(3, 1, 2)]
+      grob$layout$t[positions] <- grob$layout$b[positions] <- rows[c(2, 3, 1)]
+    }
+  }
+  grob
+}
+
+report_static_plot <- function(plot) {
+  grid::grid.newpage()
+  grid::grid.draw(report_plot_grob(plot))
+  invisible(NULL)
+}
+
 # Ordered demographic colours: retain the same meaning across every view.
 imd_quintile_colours <- function(values) {
   key <- stats::setNames(c("#08306B", "#2171B5", "#4292C6", "#6BAED6", "#C6DBEF"), 1:5)

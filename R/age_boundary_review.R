@@ -29,7 +29,7 @@ review_line <- function(data, value, title, y, caption, facet = NULL, index = FA
     ggplot2::theme(legend.position = "bottom", legend.text = ggplot2::element_text(size = 10),
       plot.title = ggplot2::element_text(size = 13, face = "bold"),
       plot.caption = ggplot2::element_text(hjust = 0, size = 9), panel.grid.minor = ggplot2::element_blank()) +
-    ggplot2::guides(colour = ggplot2::guide_legend(nrow = 2, byrow = TRUE,
+    ggplot2::guides(colour = ggplot2::guide_legend(ncol = 4, byrow = TRUE,
       override.aes = list(linewidth = 2)))
   if (length(unique(data$year)) > 1) p <- p + ggplot2::geom_line(linewidth = 0.85, na.rm = TRUE)
   if (index) p <- p + ggplot2::geom_hline(yintercept = 100, colour = "grey55", linetype = 2)
@@ -230,7 +230,8 @@ build_msds_age_review <- function(cohort, projections, historical, trust_labels,
   model_ages <- seq(parameters[["minimum_maternal_age"]], parameters[["maximum_maternal_age"]])
   orgs <- projections$organisations |> dplyr::filter(Level == "Trust", Code %in% cluster_trusts) |>
     dplyr::select(Key, Trust = Code, Organisation)
-  # Match section 3's hospital-location population, including unmatched LA rows.
+  # Descriptive age profiles retain all resident LAs. Only model comparisons
+  # below use the projection residence scope.
   eligible <- prepare_report_cohort(cohort) |>
     dplyr::filter(Year %in% years, Birth_recorded, Home == 0, Trust %in% cluster_trusts)
   observed <- eligible |> dplyr::count(Trust, Year, Age, name = "Observed") |>
@@ -246,7 +247,7 @@ build_msds_age_review <- function(cohort, projections, historical, trust_labels,
   share <- exact |> dplyr::group_by(Key, Organisation, year) |>
     dplyr::summarise(Known_age = sum(Observed), Older = sum(Observed[Age >= 44]), .groups = "drop") |>
     dplyr::mutate(Share = ifelse(Known_age > 0, Older / Known_age * 100, NA_real_))
-  # Reuse the retrospective model with full-cohort proportions.
+  # Reuse the retrospective model with projection-eligible cohort proportions.
   # The observed comparison years are included in calibration; not held-out validation.
   model <- historical$single_age_projections |> dplyr::filter(Key %in% orgs$Key, !is.na(Age)) |>
     dplyr::transmute(Key, Year, Age, Modelled = Projected, Coverage_status,
@@ -258,7 +259,14 @@ build_msds_age_review <- function(cohort, projections, historical, trust_labels,
     dplyr::count(Trust, Year, Age, name = "Observed_matched") |>
     dplyr::left_join(orgs, by = "Trust") |>
     dplyr::select(Key, Year, Age, Observed_matched)
-  exact_model <- exact |>
+  projection_observed <- eligible[
+    projection_la_scope(eligible$LA, projections$projection_geography$eligible_las)$Included, ] |>
+    dplyr::count(Trust, Year, Age, name = "Observed") |>
+    dplyr::left_join(orgs, by = "Trust") |>
+    dplyr::select(Key, Year, Age, Observed)
+  exact_model <- exact |> dplyr::select(-Observed) |>
+    dplyr::left_join(projection_observed, by = c("Key", "Year", "Age")) |>
+    dplyr::mutate(Observed = dplyr::coalesce(Observed, 0L)) |>
     dplyr::left_join(matched, by = c("Key", "Year", "Age")) |>
     dplyr::left_join(model, by = c("Key", "year" = "Year", "Age")) |>
     dplyr::mutate(Observed_matched = dplyr::coalesce(Observed_matched, 0L),
@@ -312,7 +320,7 @@ build_msds_age_review <- function(cohort, projections, historical, trust_labels,
     ggplot2::geom_line() + ggplot2::geom_point() + ggplot2::scale_x_continuous(breaks = model_ages[model_ages >= 40]) +
     ggplot2::labs(title = "Deliveries by age: modelled 2025 and recorded 2025/26", x = "Exact maternal age",
       y = "Recorded / modelled non-home deliveries", colour = NULL,
-      caption = "Cluster trusts combined. ONS counts use all five modifiers and full-cohort allocation proportions.\nPartial model counts retain available allocations; recorded counts retain all activity. See provider coverage.") +
+      caption = "Cluster trusts combined. Modelled counts use all five modifiers and English-resident allocation proportions.\nRecorded and modelled activity use the same projection residence scope.") +
     ggplot2::theme_minimal(base_family = "sans") + ggplot2::theme(legend.position = "bottom")
   age_mix <- counts |> dplyr::filter(series != "40-43") |> dplyr::group_by(year) |>
     dplyr::mutate(denominator = sum(Observed), share = ifelse(denominator > 0, Observed / denominator * 100, NA_real_)) |>
@@ -342,9 +350,9 @@ build_msds_age_review <- function(cohort, projections, historical, trust_labels,
     change = review_line(counts, "index", "MSDS age trends compared on a common scale", "Deliveries: 2023/24 = 100",
       "A zero reference count has no index. Differences can reflect case mix, provider flows or recording, not just demography.", index = TRUE),
     backtest = review_line(long, "value", "Modelled and recorded deliveries by age", "Deliveries",
-      "ONS 2023 to 2025 projections with the model's adjustments and provider shares.\nPartial model counts retain available allocations; MSDS retains all recorded activity in each financial year.", "age_group"),
+      "ONS 2023 to 2025 projections with the model's adjustments and provider shares.", "age_group"),
     trust_backtest = review_line(by_trust, "value", "Modelled and recorded deliveries at each trust: ages 44+", "Deliveries",
-      "Recorded MSDS deliveries compared with available ONS-based allocations; see provider coverage.", "Organisation"))
+      "Recorded MSDS deliveries compared with ONS-based modelled deliveries.", "Organisation"))
   list(version = "age-review-counts-v5", plots = plots, exact = exact, bands = bands, share = share,
     comparison = comparison, exact_comparison = exact_model, coverage = coverage, readout = readout, age_mix = age_mix)
 }
@@ -353,5 +361,5 @@ show_msds_age_review <- function(review, plot) {
   if (is.null(review) || !identical(review$version, "age-review-counts-v5")) {
     htmltools::div(class = "callout callout-note",
       "MSDS evidence is not available in this render. Run Run analysis.R again in the secure environment. ")
-  } else review$plots[[plot]]
+  } else report_static_plot(review$plots[[plot]])
 }

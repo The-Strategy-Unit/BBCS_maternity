@@ -82,9 +82,9 @@ configured_age_band <- function(age, parameters = read_analysis_parameters()) {
 ons_source_files <- function(data_dir = ons_data_dir()) {
   tibble::tribble(
     ~source_id, ~file_name, ~source_name, ~source_type, ~period, ~current_use,
-    "snpp_2022", "2022 SNPP Births persons.csv", "ONS 2022-based subnational population projections: births by age of mother", "Projection", "2023–2047", "Existing supplied migration-category variant on 2023 geography; projected rates and estimated maternities.",
-    "snpp_female_population_2022", "ons_2022_based_female_population_projections_2023_geography.csv", "ONS 2022-based subnational population projections: female population by single year of age", "Projection", "2023–2047", "Direct ONS migration-category population on matching 2023 geography: denominator for the projected ratio and female-population context.",
-    "historic_live_births", "ons_live_births_la_2013_2025.csv", "ONS live births in England and Wales down to local authority area, via Nomis", "Observed", "2013–2025", "Show registered births (L) directly; no conversion of historical age-band counts.",
+    "snpp_2022", "2022 SNPP Births persons.csv", "ONS 2022-based subnational population projections: births by age of mother", "Projection", "2023\u20132047", "Existing supplied migration-category variant on 2023 geography; projected rates and estimated maternities.",
+    "snpp_female_population_2022", "ons_2022_based_female_population_projections_2023_geography.csv", "ONS 2022-based subnational population projections: female population by single year of age", "Projection", "2023\u20132047", "Direct ONS migration-category population on matching 2023 geography: denominator for the projected ratio and female-population context.",
+    "historic_live_births", "ons_live_births_la_2013_2025.csv", "ONS live births in England and Wales down to local authority area, via Nomis", "Observed", "2013\u20132025", "Show registered births (L) directly; no conversion of historical age-band counts.",
     "registrations_2023", "2023birthregistrations.xlsx", "ONS Births in England and Wales: birth registrations", "Observed", "2023", "Table 1: published GFR; Table 3: maternities; Table 4: England Private-NHS age-band modifier; Table 5: individual-age conversion counts; Table 7: multiplicity context.",
     "registrations_2024", "2024birthregistrations.xlsx", "ONS Births in England and Wales: birth registrations", "Observed", "2024", "Table 1: published GFR; Table 3: maternities; Table 4: England Private-NHS age-band modifier; Table 5: individual-age conversion counts; Table 7: multiplicity context.",
     "registrations_2025", "2025birthregistrations.xlsx", "ONS Births in England and Wales: birth registrations", "Observed", "2025", "Table 1: published GFR; Table 3: maternities; Table 4: England Private-NHS age-band modifier; Table 5: individual-age conversion counts; Table 7: multiplicity context."
@@ -552,9 +552,18 @@ ons_plot_theme <- function(plot_margin = ggplot2::margin(8, 12, 8, 8)) {
       panel.grid.minor = ggplot2::element_blank(),
       panel.grid.major.x = ggplot2::element_blank(),
       axis.title.y = ggplot2::element_text(face = "bold"),
-      legend.position = "bottom", legend.text = ggplot2::element_text(size = 9),
+      legend.position = "bottom", legend.text = ggplot2::element_text(size = 11),
+      legend.key.width = grid::unit(2.4, "cm"),
       plot.caption = ggplot2::element_text(colour = "#5f5b58", hjust = 0),
       plot.margin = plot_margin)
+}
+
+ons_line_guides <- function() {
+  ggplot2::guides(
+    colour = ggplot2::guide_legend(order = 1,
+      override.aes = list(linewidth = 2.5, linetype = "solid", shape = NA)),
+    linetype = ggplot2::guide_legend(title = NULL, order = 2,
+      override.aes = list(colour = "black", linewidth = 1.4, shape = NA)))
 }
 
 ons_table_style <- function(table) {
@@ -571,6 +580,7 @@ projection_plot <- function(data, caption, colours) {
                               expand = ggplot2::expansion(mult = c(0.02, 0.08))) +
     ggplot2::scale_colour_manual(values = colours) +
     ggplot2::labs(x = NULL, y = "Adjusted resident maternities", colour = NULL, caption = caption) +
+    ons_line_guides() +
     ons_plot_theme()
 }
 
@@ -635,7 +645,7 @@ projection_age_grid <- function(data, colours) {
   })
   htmltools::tagList(key, htmltools::div(class = "population-age-grid", charts),
     htmltools::p(class = "chart-grid-note",
-      "ONS 2022-based projected live births on 2023 geography, with local splits of the youngest and oldest ONS age groups, then stillbirth, multiplicity, Private–NHS and maternity pathway adjustments. Estimates are calculated before allocation to providers; Under 20 covers ages 13–19 and 45+ covers ages 45–54."))
+      "ONS 2022-based projected live births on 2023 geography, with local splits of the youngest and oldest ONS age groups, then stillbirth, multiplicity, Private\u2013NHS and maternity pathway adjustments. Estimates are calculated before allocation to providers; Under 20 covers ages 13\u201319 and 45+ covers ages 45\u201354."))
 }
 
 population_plot <- function(data, caption, colours) {
@@ -647,6 +657,7 @@ population_plot <- function(data, caption, colours) {
                               expand = ggplot2::expansion(mult = c(0.02, 0.08))) +
     ggplot2::scale_colour_manual(values = colours) +
     ggplot2::labs(x = NULL, y = "Projected female population", colour = NULL, caption = caption) +
+    ons_line_guides() +
     ons_plot_theme()
 }
 
@@ -659,6 +670,7 @@ historic_trend_plot <- function(data, value, y_label, caption, colours) {
                               expand = ggplot2::expansion(mult = c(0.02, 0.08))) +
     ggplot2::scale_colour_manual(values = colours) +
     ggplot2::labs(x = NULL, y = y_label, colour = NULL, caption = caption) +
+    ons_line_guides() +
     ons_plot_theme()
 }
 
@@ -672,6 +684,7 @@ published_maternities_plot <- function(data, colours) {
     ggplot2::scale_colour_manual(values = colours) +
     ggplot2::labs(x = NULL, y = "Number of maternities", colour = NULL,
       caption = "Source: ONS Births in England and Wales: birth registrations, Table 3.") +
+    ons_line_guides() +
     ons_plot_theme()
 }
 
@@ -679,30 +692,37 @@ maternity_trajectory_plot <- function(observed, projected, caption, colours) {
   projected <- dc_counts(projected, "maternities")
   ggplot2::ggplot() +
     ggplot2::geom_line(data = observed,
-      ggplot2::aes(year, maternities, colour = area_name, group = area_name), linewidth = 1.2) +
+      ggplot2::aes(year, maternities, colour = area_name, group = area_name,
+        linetype = "ONS recorded"), linewidth = 1.2) +
     ggplot2::geom_point(data = observed,
-      ggplot2::aes(year, maternities, colour = area_name), size = 2.7) +
+      ggplot2::aes(year, maternities, colour = area_name), size = 2.7, show.legend = FALSE) +
     ggplot2::geom_line(data = projected,
-      ggplot2::aes(year, maternities, colour = area_name, group = area_name),
-      linewidth = 1.05, linetype = "22") +
+      ggplot2::aes(year, maternities, colour = area_name, group = area_name,
+        linetype = "ONS projected"), linewidth = 1.05) +
+    ggplot2::scale_linetype_manual(values = c("ONS recorded" = "solid", "ONS projected" = "44"),
+      breaks = c("ONS recorded", "ONS projected")) +
     ggplot2::scale_x_continuous(breaks = c(2023:2026, seq(2030, 2047, by = 4), 2047),
                               expand = ggplot2::expansion(add = c(0.4, 0.4))) +
     ggplot2::scale_y_continuous(labels = scales::label_comma(),
                               expand = ggplot2::expansion(mult = c(0.02, 0.1))) +
     ggplot2::scale_colour_manual(values = colours) +
     ggplot2::labs(x = NULL, y = "Maternities", colour = NULL, caption = caption) +
+    ons_line_guides() +
     ons_plot_theme(ggplot2::margin(12, 14, 10, 10))
 }
 
 birth_rate_plot <- function(observed, projected, colours) {
   ggplot2::ggplot() +
     ggplot2::geom_line(data = projected,
-      ggplot2::aes(year, general_fertility_rate, colour = area_name, group = area_name),
-      linewidth = 1.05, linetype = "22") +
+      ggplot2::aes(year, general_fertility_rate, colour = area_name, group = area_name,
+        linetype = "ONS projected"), linewidth = 1.05) +
     ggplot2::geom_line(data = observed,
-      ggplot2::aes(year, general_fertility_rate, colour = area_name, group = area_name), linewidth = 1.25) +
+      ggplot2::aes(year, general_fertility_rate, colour = area_name, group = area_name,
+        linetype = "ONS recorded"), linewidth = 1.25) +
     ggplot2::geom_point(data = observed,
-      ggplot2::aes(year, general_fertility_rate, colour = area_name), size = 2.7) +
+      ggplot2::aes(year, general_fertility_rate, colour = area_name), size = 2.7, show.legend = FALSE) +
+    ggplot2::scale_linetype_manual(values = c("ONS recorded" = "solid", "ONS projected" = "44"),
+      breaks = c("ONS recorded", "ONS projected")) +
     ggplot2::scale_x_continuous(breaks = c(2023:2027, seq(2031, 2047, by = 4))) +
     ggplot2::scale_y_continuous(labels = scales::label_number(accuracy = 1),
                               expand = ggplot2::expansion(mult = c(0.02, 0.08))) +
@@ -710,6 +730,7 @@ birth_rate_plot <- function(observed, projected, colours) {
     ggplot2::labs(x = NULL, y = "Live births per 1,000 women aged 15-44", colour = NULL,
       caption = paste("Solid: observed ONS general fertility rate, 2023-2025.",
         "Dashed: projected births per 1,000 women, 2023-2047.")) +
+    ons_line_guides() +
     ons_plot_theme()
 }
 

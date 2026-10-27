@@ -1,7 +1,7 @@
 # DEMOGRAPHIC SANKEYS ===================================================
 # Run after Maternity analysis.R; Run analysis.R does this automatically.
 # The master is an aggregate table: no mother or pregnancy IDs are retained.
-source("R/demographics.R")
+source("R/demographics.R", encoding = "UTF-8")
 demo_period <- "2023/24\u20132025/26"
 
 demo_provider_labels <- function() {
@@ -45,11 +45,13 @@ build_demo_sankeys <- function(cohort, demographics, episodes = prepare_report_c
         Has_booking ~ "Booking without recorded delivery",
         TRUE ~ "Neither event recorded"),
       Outcome = classify_pathway_outcome(data.frame(birth_recorded = Birth_recorded,
-        home_birth = Home, birth_code = Trust))) |>
+        home_birth = Home, birth_code = Trust)),
+      Delivery_pattern = classify_booking_delivery_outcome(data.frame(birth_recorded = Birth_recorded,
+        home_birth = Home, birth_code = Trust, booking_code = Booking_Trust))) |>
     dplyr::left_join(lookup, by = "person_id_mother", na_matches = "never",
       relationship = "many-to-one")
   records |>
-    dplyr::count(Booking, Delivery, Booking_ICB, Delivery_ICB, Pathway, Outcome, Trust_comparison,
+    dplyr::count(Booking, Delivery, Booking_ICB, Delivery_ICB, Pathway, Outcome, Trust_comparison, Delivery_pattern,
       ethnicity_broad, ethnicity_description, imd_quintile, Age_band,
       name = "N", .drop = FALSE)
 }
@@ -310,9 +312,12 @@ demo_outcome_sankey <- function(rows, field, proportions = FALSE) {
     "<br>", percentages)
   links <- links[links$N > 0 & !is.na(links$N), , drop = FALSE]
   values <- links$N
+  category_share <- links$Category_share
   metadata <- NULL
   if (proportions) {
     values <- 100 * links$N / ave(links$N, links$Source, FUN = sum)
+    # Tooltip and ribbon must use the same protected within-category denominator.
+    category_share <- values / 100
     node_labels <- c(paste0(vapply(category_labels, function(label)
       paste(strwrap(label, 25), collapse = "<br>"), character(1)), "<br>100%"),
       vapply(outcome_labels, function(label) paste(strwrap(label, 25), collapse = "<br>"), character(1)))
@@ -336,7 +341,7 @@ demo_outcome_sankey <- function(rows, field, proportions = FALSE) {
       customdata = paste0(category_labels[links$Source + 1L], " \u2192 ",
         outcome_labels[match(links$Outcome, outcomes)],
         "<br>Pregnancies: ", scales::comma(links$N),
-        "<br>", scales::percent(links$Category_share, accuracy = 0.1), " of this demographic category",
+        "<br>", scales::percent(category_share, accuracy = 0.1), " of this demographic category",
         "<br>", scales::percent(links$Organisation_share, accuracy = 0.1), " of organisation pregnancies"),
       hovertemplate = "%{customdata}<extra></extra>")) |>
     plotly::layout(font = list(family = "Arial", size = 12),
@@ -360,11 +365,12 @@ demo_pathway_grid <- function(master, group, field = NULL, proportions = FALSE) 
 }
 
 demo_pathway_tabs <- function(master, group) {
+  master <- cohort_comparison_ethnicity(master)
   versions <- function(field) list(counts = demo_pathway_grid(master, group, field),
     proportions = demo_pathway_grid(master, group, field, proportions = TRUE))
   list(overall = demo_pathway_grid(master, group),
     ethnicity = versions("ethnicity_broad"),
-    ethnicity_description = versions("ethnicity_description"),
+    ethnicity_four = versions("ethnicity_profile"),
     imd = versions("imd_quintile"),
     age = versions("Age_band"))
 }
@@ -378,9 +384,6 @@ demo_pathway_colours <- c(
 
 demo_overview_bar <- function(rows, field) {
   if (!nrow(rows) || sum(rows$N) <= 0) return(htmltools::div("No pregnancies in this group."))
-  # All demographic categories, including unknowns, share the panel's denominator.
-  # Control the raw organisation total independently of the displayed cells.
-  organisation_total <- dc_count(sum(rows$N))
   categories <- demo_category_values(rows, field)
   labels <- vapply(categories, demo_category_label, character(1), field = field)
   short_labels <- labels
@@ -398,20 +401,26 @@ demo_overview_bar <- function(rows, field) {
     dplyr::summarise(N = sum(N), .groups = "drop") |>
     dplyr::mutate(Category = factor(labels[match(Category, categories)], levels = labels),
       Pathway = factor(Pathway, levels = names(demo_pathway_colours)),
-      N = dc_count(N),
-      Share = dc_divide(N, organisation_total),
+      N = dc_count(N)) |>
+    # Normalise protected status counts within each demographic category so
+    # every non-empty bar totals 100%; unknown categories stay separate.
+    dplyr::group_by(Category) |>
+    dplyr::mutate(Category_total = sum(N),
+      Share = dplyr::coalesce(dc_divide(N, Category_total), 0)) |>
+    dplyr::ungroup() |>
+    dplyr::mutate(
       Hover = paste0(Category, "<br>", Pathway, "<br>",
-        scales::percent(Share, accuracy = 0.1), " of panel total",
+        scales::percent(Share, accuracy = 0.1), " within this demographic group",
         "<br>Pregnancies: ", scales::comma(N)))
-  plotly::plot_ly(counts, x = ~Share, y = ~Category, color = ~Pathway,
+  chart <- plotly::plot_ly(counts, x = ~Share, y = ~Category, color = ~Pathway,
     colors = demo_pathway_colours, type = "bar", orientation = "h",
     text = ~scales::percent(Share, accuracy = 0.1), textposition = "inside", insidetextanchor = "middle",
-    textfont = list(size = 13, color = "white"), constraintext = "inside",
+    textfont = list(size = 13, color = "white"), textangle = 0, constraintext = "inside",
     customdata = ~Hover, hovertemplate = "%{customdata}<extra></extra>",
     height = max(320, sum(pmax(34, label_lines * 17 + 10)) + 70)) |>
     plotly::layout(barmode = "stack", showlegend = FALSE,
       meta = list(demographic_overview_field = field), uniformtext = list(minsize = 12, mode = "hide"),
-      xaxis = list(title = "% of panel total", range = c(0, 1),
+      xaxis = list(title = "% within demographic group", range = c(0, 1),
         tickformat = ".0%", dtick = 0.25),
       yaxis = list(title = "", categoryorder = "array", categoryarray = rev(labels),
         tickmode = "array", tickvals = labels,
@@ -419,6 +428,13 @@ demo_overview_bar <- function(rows, field) {
       margin = list(l = left_margin, r = 12, t = 12, b = 50),
       font = list(family = "Arial", size = 13)) |>
     plotly::config(displayModeBar = FALSE, responsive = TRUE)
+  chart <- plotly::plotly_build(chart)
+  for (i in seq_along(chart$x$data)) {
+    light_segment <- chart$x$data[[i]]$name %in%
+      c("Booking without recorded delivery", "Neither event recorded")
+    chart$x$data[[i]]$textfont$color <- if (light_segment) "#111111" else "white"
+  }
+  chart
 }
 
 demo_overview_grid <- function(master, mode, group, field) {
@@ -438,24 +454,26 @@ demo_overview_grid <- function(master, mode, group, field) {
 }
 
 demo_overview_tabs <- function(master, mode) {
-  if (mode == "Booking") master <- cohort_comparison_ethnicity(master)
+  master <- cohort_comparison_ethnicity(master)
   stats::setNames(lapply(c("Trust", "ICB_Cluster"), function(group) {
-    fields <- c(age = "Age_band", imd = "imd_quintile", ethnicity = "ethnicity_broad",
-      ethnicity_description = "ethnicity_description")
-    if (mode == "Booking") fields <- c(fields[1:3], ethnicity_four = "ethnicity_profile")
-    lapply(fields, function(field) demo_overview_grid(master, mode, group, field))
+    lapply(demo_profile_fields(), function(field) demo_overview_grid(master, mode, group, field))
   }), c("Trust", "ICB_Cluster"))
 }
 
 # 5. WHOLE-COHORT POPULATION PROFILE -----------------------------------
 cohort_comparison_ethnicity <- function(master) {
-  # Collapse only sections 5.2/5.3, before aggregation and disclosure control.
+  # Shared four-category view, always collapsed before aggregation/disclosure control.
   master$ethnicity_profile <- dplyr::case_when(
     master$ethnicity_broad %in% "White" ~ "White",
     master$ethnicity_broad %in% "Asian or Asian British" ~ "Asian",
     master$ethnicity_broad %in% "Black or Black British" ~ "Black",
     TRUE ~ "All other")
   master
+}
+
+demo_profile_fields <- function() {
+  c(age = "Age_band", imd = "imd_quintile", ethnicity = "ethnicity_broad",
+    ethnicity_four = "ethnicity_profile")
 }
 
 cohort_profile_counts <- function(master, field, categories = NULL) {
@@ -478,7 +496,7 @@ cohort_profile_counts <- function(master, field, categories = NULL) {
     data$Label[categories %in% "1"] <- "Quintile 1 (most deprived)"
     data$Label[categories %in% "5"] <- "Quintile 5 (least deprived)"
   }
-  data$Colour <- if (field %in% c("Age_band", "ethnicity_broad"))
+  data$Colour <- if (field %in% c("Age_band", "ethnicity_broad", "ethnicity_profile"))
     rep("#005EB8", length(categories)) else demo_category_colours(categories, field)
   data
 }
@@ -524,8 +542,8 @@ cohort_profile_chart <- function(data, field) {
 }
 
 build_cohort_profile <- function(master) {
-  fields <- c(age = "Age_band", imd = "imd_quintile", ethnicity = "ethnicity_broad")
-  lapply(fields, function(field) {
+  master <- cohort_comparison_ethnicity(master)
+  lapply(demo_profile_fields(), function(field) {
     data <- cohort_profile_counts(master, field)
     list(data = data, chart = cohort_profile_chart(data, field))
   })
@@ -584,7 +602,7 @@ cohort_trust_profile_chart <- function(data, field, code, count_max, group = "Tr
       paste(strwrap(label, width = if (horizontal) 26 else 12), collapse = "<br>"), character(1)),
     automargin = TRUE)
   chart |>
-    plotly::layout(barmode = "group", bargap = .3,
+    plotly::layout(barmode = "group", bargap = .3, showlegend = FALSE,
       meta = list(compact_cohort_profile = TRUE),
       legend = list(orientation = "h", x = 0, y = 1.04, yanchor = "bottom", traceorder = "normal",
         font = list(size = 15)),
@@ -600,13 +618,8 @@ cohort_trust_profile_chart <- function(data, field, code, count_max, group = "Tr
 
 build_cohort_trust_profiles <- function(master, group = "Trust") {
   master <- cohort_comparison_ethnicity(master)
-  codes <- if (group == "Trust") cohort_trust_profile_codes(master) else {
-    available <- unique(c(cluster_icbs, master$Booking_ICB, master$Delivery_ICB))
-    available <- setdiff(available, c("Home", "No booking", "No delivery", NA_character_))
-    c(sankey_category_order(icb_source_order, available), "Cluster")
-  }
-  fields <- c(age = "Age_band", imd = "imd_quintile", ethnicity = "ethnicity_profile")
-  lapply(fields, function(field) {
+  codes <- if (group == "Trust") cohort_trust_profile_codes(master) else c(cluster_icbs, "Cluster")
+  lapply(demo_profile_fields(), function(field) {
     categories <- cohort_profile_counts(master, field)$Category
     counts <- stats::setNames(lapply(codes, function(code)
       cohort_trust_profile_counts(master, field, code, categories, group)), codes)
@@ -621,7 +634,9 @@ build_cohort_trust_profiles <- function(master, group = "Trust") {
         htmltools::tags$p(paste0("Booking: ", scales::comma(total[1]),
           " | Delivery: ", scales::comma(total[2]), " pregnancies")), chart)
     })
-    list(data = counts, grid = htmltools::div(class = "demo-outcome-grid", panels))
+    list(data = counts, grid = htmltools::tagList(
+      report_colour_key(c(Booking = "#005EB8", Delivery = "#ED8B00"), "cohort-stage-key"),
+      htmltools::div(class = "demo-outcome-grid", panels)))
   })
 }
 
@@ -645,6 +660,16 @@ cohort_match_chart <- function(data, field, proportions = FALSE) {
   horizontal <- field %in% c("ethnicity_broad", "ethnicity_profile")
   labels <- data$Label[data$Group == "Same trust"]
   colours <- c("Same trust" = "#006747", "Different trusts" = "#AE2573")
+  # Keep percentage labels readable even when one status occupies a thin sliver.
+  small <- if (proportions) data[!is.na(data$Share) & data$N > 0 & data$Share < .08, ] else data[0, ]
+  small_labels <- lapply(seq_len(nrow(small)), function(i) {
+    label <- list(text = scales::percent(small$Share[i], accuracy = .1), showarrow = FALSE,
+      font = list(size = 15, color = unname(colours[small$Group[i]])))
+    if (horizontal) c(label, list(x = 1, xref = "paper", xshift = 8, xanchor = "left",
+      y = small$Label[i], yref = "y")) else
+      c(label, list(x = small$Label[i], xref = "x", y = 1, yref = "paper",
+        yshift = 6, yanchor = "bottom"))
+  })
   chart <- plotly::plot_ly(height = if (horizontal) max(330, 36 * length(labels) + 130) else 330)
   for (group in names(colours)) {
     rows <- data[data$Group == group, ]
@@ -657,10 +682,10 @@ cohort_match_chart <- function(data, field, proportions = FALSE) {
       x = if (horizontal) value else rows$Label, y = if (horizontal) rows$Label else value,
       marker = list(color = colours[[group]]),
       offsetgroup = if (proportions) "category" else group, legendgroup = group,
-      text = if (proportions) ifelse(is.na(rows$Share) | rows$N == 0, "",
+      text = if (proportions) ifelse(is.na(rows$Share) | rows$N == 0 | rows$Share < .08, "",
         scales::percent(rows$Share, accuracy = .1)) else NULL,
       textposition = if (proportions) "inside" else "none",
-      insidetextanchor = "middle", textfont = list(color = "white", size = 15),
+      insidetextanchor = "middle", textfont = list(color = "white", size = 15), textangle = 0,
       constraintext = "none",
       customdata = hover, hovertemplate = "%{customdata}<extra></extra>",
       meta = list(cohort_match_field = field, group = group, measure = if (proportions) "share" else "count"))
@@ -676,7 +701,8 @@ cohort_match_chart <- function(data, field, proportions = FALSE) {
       paste(strwrap(label, width = if (horizontal) 26 else 12), collapse = "<br>"), character(1)),
     automargin = TRUE)
   chart |>
-    plotly::layout(barmode = if (proportions) "stack" else "group", bargap = .3,
+    plotly::layout(barmode = if (proportions) "stack" else "group", bargap = .3, showlegend = FALSE,
+      annotations = small_labels,
       meta = list(compact_cohort_profile = TRUE),
       title = list(text = if (proportions) "Within-category percentages" else "Pregnancy counts", x = 0,
         font = list(size = 18)),
@@ -684,7 +710,9 @@ cohort_match_chart <- function(data, field, proportions = FALSE) {
         font = list(size = 15)),
       xaxis = if (horizontal) value_axis else category_axis,
       yaxis = if (horizontal) category_axis else value_axis,
-      margin = list(l = if (horizontal) 120 else 75, r = 20, t = 80,
+      margin = list(l = if (horizontal) 120 else 75,
+        r = if (horizontal && nrow(small)) 80 else 20,
+        t = if (!horizontal && nrow(small)) 75 else 55,
         b = if (horizontal) 60 else if (field == "imd_quintile") 85 else 65),
       font = list(family = "Arial", size = 15), hoverlabel = list(font = list(size = 15)),
       paper_bgcolor = "white", plot_bgcolor = "white") |>
@@ -702,13 +730,15 @@ cohort_match_panels <- function(data, field, title = "Whole BBCS cohort") {
 
 cohort_match_org_profiles <- function(master, field, group, categories) {
   eligible <- master[master$Trust_comparison %in% c("Same trust", "Different trusts"), , drop = FALSE]
-  codes <- demo_org_codes(eligible, "Booking", group)
+  codes <- if (group == "Trust") demo_org_codes(eligible, "Booking", group) else c(cluster_icbs, "Cluster")
   codes <- setdiff(codes, c("Unknown", "No booking", "No delivery", "Home"))
   counts <- stats::setNames(lapply(codes, function(code)
     cohort_match_counts(cohort_profile_org_rows(eligible, "Booking", group, code), field, categories)), codes)
   panels <- lapply(codes, function(code)
     cohort_match_panels(counts[[code]], field, cohort_profile_org_label(code, group)))
-  list(data = counts, charts = htmltools::div(class = "cohort-match-cards", panels))
+  list(data = counts, charts = htmltools::tagList(
+    report_colour_key(c("Same trust" = "#006747", "Different trusts" = "#AE2573"), "cohort-match-key"),
+    htmltools::div(class = "cohort-match-cards", panels)))
 }
 
 build_cohort_match_profiles <- function(master) {
@@ -727,36 +757,131 @@ build_cohort_match_profiles <- function(master) {
     gt::fmt_percent(columns = Share, decimals = 1) |>
     gt::sub_missing(missing_text = "Unavailable") |>
     gt::tab_source_note("Reasons are mutually exclusive.")
-  fields <- c(age = "Age_band", imd = "imd_quintile", ethnicity = "ethnicity_profile")
-  profiles <- lapply(fields, function(field) {
+  profiles <- lapply(demo_profile_fields(), function(field) {
     data <- cohort_match_counts(master, field)
     categories <- data$Category[data$Group == "Same trust"]
-    list(data = data, charts = cohort_match_panels(data, field),
+    list(data = data, charts = htmltools::tagList(
+      report_colour_key(c("Same trust" = "#006747", "Different trusts" = "#AE2573"), "cohort-match-key"),
+      cohort_match_panels(data, field)),
       Trust = cohort_match_org_profiles(master, field, "Trust", categories),
       ICB_Cluster = cohort_match_org_profiles(master, field, "ICB_Cluster", categories))
   })
   list(summary = summary, coverage = coverage, profiles = profiles)
 }
 
-# 6. OBJECTS FOR RSTUDIO AND THE REPORT ---------------------------------
+# 6. DELIVERY PATTERNS WITHIN DEMOGRAPHIC GROUPS -----------------------
+delivery_pattern_key <- function() {
+  data.frame(Outcome = c("Same trust", "Different cluster trust", "Outside cluster",
+    "No recorded delivery", "Unknown location"),
+    Label = c("Same trust as booking", "Different trust within cluster",
+      "Outside cluster or home birth", "No recorded delivery", "Delivery location unknown"),
+    Colour = unname(booking_delivery_palette()))
+}
+
+delivery_pattern_counts <- function(rows, field, categories = NULL) {
+  if (is.null(categories)) categories <- cohort_profile_counts(rows, field)$Category
+  data <- dplyr::bind_rows(lapply(delivery_pattern_key()$Outcome, function(outcome) {
+    counts <- cohort_profile_counts(rows[rows$Delivery_pattern %in% outcome, ], field, categories)
+    counts$Outcome <- outcome
+    counts
+  }))
+  # Aggregate before disclosure control; normalise the protected cells only.
+  data |> dplyr::group_by(Category) |>
+    dplyr::mutate(Category_total = sum(N), Share = dc_divide(N, Category_total)) |>
+    dplyr::ungroup() |> dplyr::select(Category, Label, Outcome, N, Category_total, Share)
+}
+
+delivery_pattern_chart <- function(data, field, code, group) {
+  key <- delivery_pattern_key()
+  labels <- unique(data$Label)
+  ticks <- sub("Asian or Asian British", "Asian / Asian British", labels, fixed = TRUE)
+  ticks <- sub("Black or Black British", "Black / Black British", ticks, fixed = TRUE)
+  ticks <- sub("Other ethnic groups - ", "Other: ", ticks, fixed = TRUE)
+  if (field == "imd_quintile") ticks <- sub(" \\(.*\\)$", "", ticks)
+  ticks <- vapply(ticks, function(x) paste(strwrap(x, 19), collapse = "<br>"), character(1))
+  label_lines <- lengths(strsplit(ticks, "<br>", fixed = TRUE))
+  chart <- plotly::plot_ly(height = max(285, sum(pmax(35, label_lines * 17 + 8)) + 65))
+  for (i in seq_len(nrow(key))) {
+    rows <- data[data$Outcome == key$Outcome[i], ]
+    chart <- plotly::add_trace(chart, type = "bar", orientation = "h",
+      x = rows$Share, y = rows$Label, name = key$Label[i],
+      marker = list(color = key$Colour[i]),
+      text = ifelse(rows$N > 0 & is.finite(rows$Share), scales::percent(rows$Share, accuracy = .1), ""),
+      textposition = "inside", insidetextanchor = "middle", textangle = 0,
+      textfont = list(size = 13, color = if (key$Outcome[i] %in% c("Outside cluster", "Unknown location")) "#111111" else "white"),
+      constraintext = "inside",
+      customdata = paste0(rows$Label, "<br>", key$Label[i], "<br>",
+        ifelse(is.finite(rows$Share), scales::percent(rows$Share, accuracy = .1), "No pregnancies"),
+        " within this demographic group<br>Pregnancies: ", scales::comma(rows$N)),
+      hovertemplate = "%{customdata}<extra></extra>",
+      meta = list(delivery_pattern_field = field, organisation = code, organisation_group = group))
+  }
+  chart |> plotly::layout(barmode = "stack", showlegend = FALSE,
+    meta = list(delivery_pattern_field = field),
+    uniformtext = list(minsize = 12, mode = "hide"),
+    xaxis = list(title = "% within demographic group", range = c(0, 1), dtick = .25, tickformat = ".0%"),
+    yaxis = list(title = "", categoryorder = "array", categoryarray = rev(labels),
+      tickmode = "array", tickvals = labels, ticktext = ticks, automargin = FALSE),
+    margin = list(l = if (field == "ethnicity_broad") 135 else if (field == "imd_quintile") 85 else 70,
+      r = 12, t = 12, b = 55), font = list(family = "Arial", size = 14)) |>
+    plotly::config(displayModeBar = FALSE, responsive = TRUE) |> dc_widget()
+}
+
+build_delivery_pattern_profiles <- function(master) {
+  master <- cohort_comparison_ethnicity(master)
+  # Booking providers define panels. Projection residence exclusions do not apply.
+  master <- master[master$Booking %in% cluster_trusts, ]
+  key <- delivery_pattern_key()
+  fields <- c(age = "Age_band", imd = "imd_quintile",
+    ethnicity_four = "ethnicity_profile", ethnicity = "ethnicity_broad")
+  stats::setNames(lapply(c("Trust", "ICB_Cluster"), function(group) {
+    codes <- if (group == "Trust") unique(c(intersect(names(trust_labels), cluster_trusts),
+      intersect(cluster_trusts, master$Booking))) else c(cluster_icbs, "Cluster")
+    lapply(fields, function(field) {
+      categories <- cohort_profile_counts(master, field)$Category
+      counts <- stats::setNames(lapply(codes, function(code) {
+        rows <- if (group == "Trust") master[master$Booking == code, ] else
+          if (code == "Cluster") master else master[master$Booking_ICB == code, ]
+        delivery_pattern_counts(rows, field, categories)
+      }), codes)
+      panels <- lapply(codes, function(code) {
+        htmltools::div(class = "demo-sankey-panel",
+          htmltools::h4(cohort_profile_org_label(code, group)),
+          delivery_pattern_chart(counts[[code]], field, code, group))
+      })
+      list(data = counts, grid = htmltools::tagList(
+        report_colour_key(stats::setNames(key$Colour, key$Label), "delivery-pattern-key"),
+        htmltools::div(class = "demo-sankey-grid delivery-pattern-grid", panels),
+        htmltools::p(class = "cohort-overview-note",
+          "Each non-empty demographic category totals 100%. Hover for percentages and controlled counts, including small segments. Empty categories have no bar.",
+          if (field == "imd_quintile") " IMD 1 is most deprived; 5 is least deprived. Colour represents delivery outcome.")))
+    })
+  }), c("Trust", "ICB_Cluster"))
+}
+
+# 7. OBJECTS FOR RSTUDIO AND THE REPORT ---------------------------------
 # Clean once per mother before the pregnancy join; keep raw inputs for inspection.
 demographics_cleaned <- prepare_demographics(demographics)
-`Demo Sankeys` <- build_demo_sankeys(final_cohort_2326, demographics_cleaned, report_episodes)
+`Demo Sankeys` <- cohort_comparison_ethnicity(
+  build_demo_sankeys(final_cohort_2326, demographics_cleaned, report_episodes))
 demo_sankey_charts <- list(
-  version = "demographic-profile-v15",
+  version = "demographic-profile-v19",
   cohort_total = dc_count(sum(`Demo Sankeys`$N)),
   cohort_profile = build_cohort_profile(`Demo Sankeys`),
   cohort_trust_profiles = build_cohort_trust_profiles(`Demo Sankeys`),
   cohort_icb_profiles = build_cohort_trust_profiles(`Demo Sankeys`, "ICB_Cluster"),
   cohort_match_profiles = build_cohort_match_profiles(`Demo Sankeys`),
+  delivery_pattern_profiles = build_delivery_pattern_profiles(`Demo Sankeys`),
   overview_delivery = demo_overview_tabs(`Demo Sankeys`, "Delivery"),
   overview_booking = demo_overview_tabs(`Demo Sankeys`, "Booking"),
   overall = demo_sankey_chart(`Demo Sankeys`),
   ethnicity = demo_sankey_grid(`Demo Sankeys`, "ethnicity_broad"),
+  ethnicity_four = demo_sankey_grid(`Demo Sankeys`, "ethnicity_profile"),
   imd = demo_sankey_grid(`Demo Sankeys`, "imd_quintile"),
   age = demo_sankey_grid(`Demo Sankeys`, "Age_band"),
   demographic_ribbons = list(
     ethnicity = demo_ribbon_views(`Demo Sankeys`, "ethnicity_broad"),
+    ethnicity_four = demo_ribbon_views(`Demo Sankeys`, "ethnicity_profile"),
     age = demo_ribbon_views(`Demo Sankeys`, "Age_band"),
     imd = demo_ribbon_views(`Demo Sankeys`, "imd_quintile")),
   booking_icb = demo_pathway_tabs(`Demo Sankeys`, "ICB_Cluster"),

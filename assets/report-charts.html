@@ -29,6 +29,9 @@
 
   // Only already-disclosed ribbon values enter the layout and added labels.
   function sankeyLayers(trace, values = trace.link.value) {
+    // R/jsonlite can serialise a one-link metadata vector as a scalar.
+    // Treat it as a one-element series, including in hidden-tab resize passes.
+    if (!Array.isArray(values)) values = [values];
     const x = trace.node.x;
     const incoming = x.map(() => 0), outgoing = x.map(() => 0);
     values.forEach((value, i) => {
@@ -233,7 +236,7 @@
         horizontal: plot.layout.legend?.orientation === 'h',
         compactProfile: plot.layout.meta?.compact_cohort_profile === true,
         compactPopulation: plot.layout.meta?.compact_population_grid === true,
-        overviewBar: Boolean(plot.layout.meta?.demographic_overview_field),
+        overviewBar: Boolean(plot.layout.meta?.demographic_overview_field || plot.layout.meta?.delivery_pattern_field),
         names: plot.data.map(t => t.name || ''),
         annotations: (plot.layout.annotations || []).map(a => ({...a}))
       });

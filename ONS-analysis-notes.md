@@ -62,8 +62,9 @@ Resident deliveries outside the linked cohort remain in the residual category.
 Negative gaps or an LA antenatal-only count below the observed cohort count
 leave provider allocations Unallocated; negative residuals are never silently
 clamped. Missing uplift evidence is shown explicitly. QA checks coverage as
-well as totals. The booking section shows projected residual counts and shares
-by LA and age band, separately from provider activity.
+well as totals. Saved analysis objects retain projected residual counts and shares
+by LA and age band for console investigation; the long residual tables were removed
+from the report.
 Its projected residual and share remain unavailable where a positive source
 contribution cannot be estimated or allocated. Zero source contributions stay zero.
 
@@ -73,14 +74,16 @@ the wider totals file do not enter the model. The console summarises issues once
 `la_source_matching` retains the individual rows. Missing uplift
 evidence is counted by LA/age group, without repeating each projection year.
 
-Provider coverage uses supplied rows aged 13–54, including those without a usable LA
-or ONS match, and retains unknown-age records for checks. Known ages outside 13–54
-are out of scope, not missing coverage. Incomplete allocations leave the affected provider totals and
-changes unavailable. The summaries retain `Available_projected` for reconciliation
-and `Projection_complete` for display. Age-specific gaps affect their band;
-unknown-age gaps can affect any band. The flow diagrams show available allocations
-explicitly and suppress changes for incomplete flows. Missing coverage leaves
-the affected estimate unavailable.
+Provider coverage applies the projection-only residence rule first: keep reconciled
+English LAs present in the supplied ONS domain. Source-cohort country tables retain
+all residences. Within projection scope, coverage tables include all ages; gaps
+that trigger Partial use ages 13–54 plus unknown ages. Known ages outside 13–54
+are out of model scope, not a cause of Partial. Provider totals retain available
+allocations and identify incomplete coverage. Delivery changes use matched recorded
+LA/age cells; booking and age-band changes use the same model support across years.
+The summaries retain `Available_projected` and `Projection_complete`. Age-specific
+gaps affect their band; unknown-age gaps can affect any band. Flow diagrams suppress
+changes for incomplete flows. Entirely unsupported estimates remain unavailable.
 
 The report presents the current method and results. QA details and code inspection
 remain in the saved analysis objects and console.
@@ -157,9 +160,13 @@ aggregation in both inputs. Whole-district mergers combine their constituent
 counts; the 2025 Barnsley/Sheffield codes use their 2023 predecessors as a documented
 boundary approximation, without attempting to redistribute the transferred area.
 The report lists applied mappings and cites the ONS change list. Original source
-objects and ONS values are unchanged. Structural absent count
-categories within supported inputs are zero; missing source areas, explicit NAs
-and undefined zero-denominator rates remain unavailable.
+objects and ONS values are unchanged. Descriptive sections retain all residences.
+Projection calculations and their recorded comparisons use only reconciled
+English LA codes present in the ONS projection input; the report counts excluded
+residences separately. Structural absent counts and explicit missing count
+values become zero in the model, while raw diagnostics retain the missing values.
+Zero resident-delivery denominators give a zero pathway factor; positive ONS
+contributions without usable same-age evidence remain unavailable.
 
 The report calls the fifth modifier **Maternity pathway adjustment**. The existing
 `Bookings_uplift_modifier` column name is retained for compatibility; it still means

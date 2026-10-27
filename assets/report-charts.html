@@ -7,11 +7,31 @@
   const context = canvas.getContext('2d');
   let pending = false;
 
-  // Fixed node order from controlled ribbon widths; matches sankey_node_y()
-  function sankeyNodeY(trace, height) {
+  function labelTabsets() {
+    const letter = i => i < 26 ? String.fromCharCode(65 + i) : letter(Math.floor(i / 26) - 1) + letter(i % 26);
+    document.querySelectorAll('.panel-tabset [role="tablist"]').forEach(list => {
+      const tabs = [...list.querySelectorAll('[role="tab"]')].filter(tab => tab.closest('[role="tablist"]') === list);
+      if (tabs.length < 2) return;
+      const parentPane = list.closest('.tab-pane');
+      const parentTab = parentPane && document.getElementById(parentPane.getAttribute('aria-labelledby'));
+      const parentCode = parentTab?.dataset.reportTabCode;
+      tabs.forEach((tab, i) => {
+        if (tab.dataset.reportTabCode) return;
+        const code = parentCode ? `${parentCode}.${letter(i).toLowerCase()}` : letter(i);
+        const prefix = document.createElement('span');
+        prefix.className = 'report-tab-letter';
+        prefix.textContent = `${code}. `;
+        tab.prepend(prefix);
+        tab.dataset.reportTabCode = code;
+      });
+    });
+  }
+
+  // Only already-disclosed ribbon values enter the layout and added labels.
+  function sankeyLayers(trace, values = trace.link.value) {
     const x = trace.node.x;
     const incoming = x.map(() => 0), outgoing = x.map(() => 0);
-    trace.link.value.forEach((value, i) => {
+    values.forEach((value, i) => {
       if (Number.isFinite(value) && value > 0) {
         outgoing[trace.link.source[i]] += value;
         incoming[trace.link.target[i]] += value;
@@ -20,21 +40,112 @@
     const weights = x.map((_, i) => Math.max(incoming[i], outgoing[i]));
     const layers = [...new Set(x)].map(stage => x.map((v, i) => i)
       .filter(i => x[i] === stage && weights[i] > 0)).filter(ids => ids.length);
+    return {weights, layers};
+  }
+
+  function sankeyLabels(trace) {
+    // The equal-width demographic view has count metadata: its outcome shares
+    // must describe pregnancies, not an unweighted average of category shares.
+    const values = trace.meta?.msds_sankey_scale === 'normalised_categories'
+      ? trace.meta.display_counts : trace.link.value;
+    const {weights, layers} = sankeyLayers(trace, values);
+    const labels = [...trace.node.label];
+    layers.forEach(ids => {
+      const total = ids.reduce((sum, i) => sum + weights[i], 0);
+      ids.forEach(i => {
+        if (!/\d(?:\.\d+)?\s*%/.test(labels[i]))
+          labels[i] += `<br>${(100 * weights[i] / total).toFixed(1)}%`;
+      });
+    });
+    return labels;
+  }
+
+  function activeSankey(trace) {
+    const {weights} = sankeyLayers(trace);
+    const ids = weights.map((_, i) => i).filter(i => weights[i] > 0);
+    if (ids.length === weights.length) return null;
+    // Plotly 2.x indexes fixed coordinates by the filtered node list. Drop
+    // zero-width nodes explicitly so later nodes cannot take their positions.
+    const links = trace.link.value.map((_, i) => i).filter(i => trace.link.value[i] > 0);
+    const node = {...trace.node}, link = {...trace.link}, meta = {...trace.meta};
+    Object.keys(node).forEach(k => {if (Array.isArray(node[k]) && node[k].length === weights.length) node[k] = ids.map(i => node[k][i]);});
+    Object.keys(link).forEach(k => {if (Array.isArray(link[k]) && link[k].length === trace.link.value.length) link[k] = links.map(i => link[k][i]);});
+    link.source = link.source.map(i => ids.indexOf(i));
+    link.target = link.target.map(i => ids.indexOf(i));
+    ['display_counts', 'display_denominators'].forEach(k => {if (Array.isArray(meta[k])) meta[k] = links.map(i => meta[k][i]);});
+    return {node: [node], link: [link], meta: [meta]};
+  }
+
+  // Keep one volume scale, but distribute each column's spare space across
+  // its own gaps so its first/last nodes meet the same top/bottom boundaries.
+  function sankeyNodeY(trace, height, pad) {
+    const x = trace.node.x;
+    const {weights, layers} = sankeyLayers(trace);
     const y = x.map(() => 0.5);
     if (!layers.length) return y;
-    const gap = Math.min(trace.node.pad, height / Math.max(1, ...layers.map(ids => ids.length - 1)));
+    const gap = Math.min(pad, height / Math.max(1, ...layers.map(ids => ids.length - 1)));
     const scale = Math.min(...layers.map(ids =>
       (height - gap * (ids.length - 1)) / ids.reduce((sum, i) => sum + weights[i], 0)));
     layers.forEach(ids => {
-      const used = ids.reduce((sum, i) => sum + weights[i] * scale, 0) + gap * (ids.length - 1);
-      let top = (height - used) / 2;
+      const filled = ids.reduce((sum, i) => sum + weights[i] * scale, 0);
+      const columnGap = ids.length > 1 ? (height - filled) / (ids.length - 1) : 0;
+      let top = ids.length > 1 ? 0 : (height - filled) / 2;
       ids.forEach(i => {
         const size = weights[i] * scale;
         y[i] = (top + size / 2) / height;
-        top += size + gap;
+        top += size + columnGap;
       });
     });
     return y;
+  }
+
+  function separateSankeyLabels(plot) {
+    // Tiny categories still need readable labels. Move text only, leaving
+    // nodes/ribbons untouched, and connect displaced labels to their node.
+    plot.querySelectorAll('.sankey').forEach(sankey => {
+      const columns = new Map();
+      sankey.querySelectorAll('.sankey-node').forEach(node => {
+        const text = node.querySelector('.node-label'), rect = node.querySelector('.node-rect');
+        if (!text || !rect) return;
+        node.querySelector('.report-label-leader')?.remove();
+        if (text.getAttribute('transform') === text.dataset.reportAdjustedTransform)
+          text.setAttribute('transform', text.dataset.reportBaseTransform);
+        const transform = text.getAttribute('transform') || '';
+        text.dataset.reportBaseTransform = transform;
+        const box = text.getBoundingClientRect(), nodeBox = rect.getBoundingClientRect();
+        const key = Math.round(nodeBox.x);
+        if (!columns.has(key)) columns.set(key, []);
+        columns.get(key).push({node, text, rect, box, nodeBox, transform, top: box.top});
+      });
+      columns.forEach(items => {
+        items.sort((a, b) => a.nodeBox.top - b.nodeBox.top);
+        const top = Math.min(...items.map(i => i.nodeBox.top));
+        const bottom = Math.max(...items.map(i => i.nodeBox.bottom));
+        let next = top;
+        items.forEach(i => { i.top = Math.max(i.box.top, next); next = i.top + i.box.height + 4; });
+        let end = bottom;
+        [...items].reverse().forEach(i => { i.top = Math.min(i.top, end - i.box.height); end = i.top - 4; });
+        items.forEach(i => {
+          const dy = i.top - i.box.top;
+          if (Math.abs(dy) < 0.5) return;
+          i.text.dataset.reportAdjustedTransform = `translate(0,${dy}) ${i.transform}`;
+          i.text.setAttribute('transform', i.text.dataset.reportAdjustedTransform);
+          if (Math.abs(dy) < 5) return;
+          const right = i.text.getAttribute('text-anchor') !== 'end';
+          const edge = right ? Number(i.rect.getAttribute('width')) : 0;
+          const leader = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+          leader.setAttribute('class', 'report-label-leader');
+          leader.setAttribute('x1', edge);
+          leader.setAttribute('x2', edge + (right ? 3 : -3));
+          leader.setAttribute('y1', Number(i.rect.getAttribute('height')) / 2);
+          leader.setAttribute('y2', i.top + i.box.height / 2 - i.nodeBox.top);
+          leader.setAttribute('stroke', '#666');
+          leader.setAttribute('stroke-width', '0.7');
+          leader.setAttribute('pointer-events', 'none');
+          i.node.insertBefore(leader, i.text);
+        });
+      });
+    });
   }
 
   function wrap(text, width, size) {
@@ -56,14 +167,30 @@
     const width = Math.floor(plot.parentElement.getBoundingClientRect().width);
     if (width < 100) return; // Hidden tabs are measured when they become visible.
     // Preserve Sankey height for all categories
-    const height = state.sankey ? state.height : Math.min(state.height, Math.max(320, window.innerHeight - 48));
+    let height = state.sankey || state.compactPopulation || state.overviewBar ? state.height : Math.min(state.height, Math.max(320, window.innerHeight - 48));
+    if (state.sankey) plot.data.forEach(trace => {
+      if (trace.type !== 'sankey' || !trace.node?.x?.length) return;
+      const labels = sankeyLabels(trace), {layers} = sankeyLayers(trace);
+      const size = trace.textfont?.size || plot.layout.font?.size || 12;
+      layers.forEach(ids => {
+        const labelHeight = ids.reduce((sum, i) => sum + labels[i].split(/<br\s*\/?>/i).length * size * 1.3 + 8, 0);
+        height = Math.max(height, labelHeight + (state.margin.t || 0) + (state.margin.b || 0) + 24);
+      });
+    });
     const key = `${width}:${height}`;
     if (state.key === key && Math.abs(plot._fullLayout.width - width) < 1 &&
         plot._fullLayout.height === height && plot.clientHeight === height) return;
     state.busy = true;
     try {
       const update = {width, height, autosize: false};
+      if (plot.data.some(trace => trace.type === 'scatter' && trace.mode?.includes('lines')))
+        update['legend.itemwidth'] = 50;
       const margin = {...state.margin};
+      if (state.overviewBar) {
+        context.font = `${plot.layout.font?.size || 13}px Arial`;
+        const lines = (plot.layout.yaxis.ticktext || []).flatMap(t => String(t).split(/<br\s*\/?>/i));
+        margin.l = Math.ceil(Math.max(32, ...lines.map(t => context.measureText(t).width))) + 8;
+      }
       const annotations = state.annotations.map(a => ({...a,
         text: a.xref === 'paper' ? wrap(a.text || '',
           Math.max(140, width - (margin.l || 60) - (margin.r || 20)), a.font?.size || 12) : a.text
@@ -74,14 +201,15 @@
       annotations.filter(a => a.xref === 'paper' && a.yref === 'paper' && a.y > 1)
         .sort((a, b) => a.y - b.y).forEach(note => {
           note.y = 1;
-          note.yshift = topOffset;
+          note.yshift = state.sankey ? 12 : topOffset;
           note.yanchor = 'bottom';
-          topOffset += note.text.split('<br>').length * (note.font?.size || 12) * 1.4 + 8;
-          margin.t = Math.max(margin.t || 0, topOffset + 8);
+          const noteHeight = note.text.split('<br>').length * (note.font?.size || 12) * 1.4;
+          if (state.sankey) margin.t = Math.max(margin.t || 0, noteHeight + 24);
+          else { topOffset += noteHeight + 8; margin.t = Math.max(margin.t || 0, topOffset + 8); }
         });
       // Horizontal legends wrap long organisation names and reserve enough space
       // below the axes. Never replace an overflowing legend with a scroll box.
-      if (state.horizontal && plot.layout.showlegend !== false) {
+      if (state.horizontal && !state.compactProfile && plot.layout.showlegend !== false) {
         const size = plot.layout.legend?.font?.size || 11;
         const available = Math.max(140, width - (margin.l || 60) - (margin.r || 20));
         const names = state.names.map(name => wrap(name, available - 55, size));
@@ -123,13 +251,28 @@
       plot.style.width = '100%';
       plot.style.height = `${height}px`;
       for (let i = 0; i < plot.data.length; i++) {
-        const trace = plot.data[i];
+        let trace = plot.data[i];
         if (trace.type === 'sankey' && trace.arrangement === 'fixed' && trace.node?.x?.length) {
+          const active = activeSankey(trace);
+          if (active) { await Plotly.restyle(plot, active, [i]); trace = plot.data[i]; }
           const innerHeight = Math.max(1, height - (margin.t || 0) - (margin.b || 0));
-          await Plotly.restyle(plot, {'node.y': [sankeyNodeY(trace, innerHeight)]}, [i]);
+          const {layers} = sankeyLayers(trace);
+          // A one-node column cannot contain gaps. Remove gaps from its paired
+          // columns too, preserving the same pixels per unit and full height.
+          const pad = layers.some(ids => ids.length === 1) ? 0 : trace.node.pad;
+          const nodeUpdate = {'node.y': [sankeyNodeY(trace, innerHeight, pad)],
+            'node.pad': pad, 'node.label': [sankeyLabels(trace)]};
+          if (trace.meta?.demographic_colour_field || trace.meta?.ribbon_colour_field)
+            nodeUpdate['node.color'] = [trace.node.x.map(() => '#959595')];
+          await Plotly.restyle(plot, nodeUpdate, [i]);
         }
       }
       await Plotly.relayout(plot, update);
+      if (state.sankey) {
+        // Sankey SVG transitions can finish after the Plotly promise resolves.
+        clearTimeout(state.labelTimer);
+        state.labelTimer = setTimeout(() => separateSankeyLabels(plot), 600);
+      }
       state.key = key;
     } finally { state.busy = false; }
   }
@@ -143,6 +286,7 @@
     });
   }
   function initialise() {
+    labelTabsets();
     if (!window.Plotly) return;
     const observer = new ResizeObserver(schedule);
     document.querySelectorAll('.cell-output-display div').forEach(el => {
@@ -155,6 +299,9 @@
         sankey: plot.data.some(trace => trace.type === 'sankey'),
         margin: {...plot.layout.margin},
         horizontal: plot.layout.legend?.orientation === 'h',
+        compactProfile: plot.layout.meta?.compact_cohort_profile === true,
+        compactPopulation: plot.layout.meta?.compact_population_grid === true,
+        overviewBar: Boolean(plot.layout.meta?.demographic_overview_field),
         names: plot.data.map(t => t.name || ''),
         annotations: (plot.layout.annotations || []).map(a => ({...a}))
       });

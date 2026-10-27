@@ -13,6 +13,7 @@ format:
 #| include: false
 options(warn = 1) # Keep rendering warnings visible when they occur.
 source("R/disclosure.R")
+source("R/report_colours.R")
 source("R/ons_data.R")
 source("R/age_boundary_review.R")
 library(gt)
@@ -60,8 +61,10 @@ if (is.null(patient_flows$country_coverage$tables))
   stop("Regenerate the cohort overview with R/Run analysis.R before rendering the country tables.")
 delivery_geography <- read_report_rds(".delivery_geography.rds", report_run$run_id)
 first_draft_projections <- read_report_rds(".projections.rds", report_run$run_id)
+if (is.null(first_draft_projections$sankey_comparison_cluster_las))
+  stop("Regenerate the projection charts with R/Run analysis.R for the grouped LA flow view.")
 demo_sankey_charts <- read_report_rds(".demo_sankeys.rds", report_run$run_id)
-if (!identical(demo_sankey_charts$version, "demographic-profile-v7"))
+if (!identical(demo_sankey_charts$version, "demographic-profile-v14"))
   stop("Regenerate the demographic charts with R/Run analysis.R before rendering sections 4 and 5.")
 ```
 
@@ -534,112 +537,13 @@ population_plot(
 female_population_change_table(female_population_projections)
 ```
 
-#### 13-14 {#method-1-population-age-13-14}
+#### Age bands by LA {#method-1-population-age-grid}
+
+Each chart shows one LA, with younger to older age groups following the shared blue gradient. Hover for the age band and population count. The age groups at the limits cover only ages 13–14 and 50–54.
 
 ```{r}
-#| label: method-1-female-population-13-14
-
-population_plot(
-  female_population_projections |> filter(age_band == "13-14"),
-  "Female population aged 13-14. Source: ONS 2022-based migration-category population projections, 2023 geography.",
-  area_colours
-)
-```
-
-#### 15-19 {#method-1-population-age-15-19}
-
-```{r}
-#| label: method-1-female-population-15-19
-
-population_plot(
-  female_population_projections |> filter(age_band == "15-19"),
-  "Female population aged 15-19. Source: ONS 2022-based migration-category population projections, 2023 geography.",
-  area_colours
-)
-```
-
-#### 20-24 {#method-1-population-age-20-24}
-
-```{r}
-#| label: method-1-female-population-20-24
-
-population_plot(
-  female_population_projections |> filter(age_band == "20-24"),
-  "Female population aged 20-24. Source: ONS 2022-based migration-category population projections, 2023 geography.",
-  area_colours
-)
-```
-
-#### 25-29 {#method-1-population-age-25-29}
-
-```{r}
-#| label: method-1-female-population-25-29
-
-population_plot(
-  female_population_projections |> filter(age_band == "25-29"),
-  "Female population aged 25-29. Source: ONS 2022-based migration-category population projections, 2023 geography.",
-  area_colours
-)
-```
-
-#### 30-34 {#method-1-population-age-30-34}
-
-```{r}
-#| label: method-1-female-population-30-34
-
-population_plot(
-  female_population_projections |> filter(age_band == "30-34"),
-  "Female population aged 30-34. Source: ONS 2022-based migration-category population projections, 2023 geography.",
-  area_colours
-)
-```
-
-#### 35-39 {#method-1-population-age-35-39}
-
-```{r}
-#| label: method-1-female-population-35-39
-
-population_plot(
-  female_population_projections |> filter(age_band == "35-39"),
-  "Female population aged 35-39. Source: ONS 2022-based migration-category population projections, 2023 geography.",
-  area_colours
-)
-```
-
-#### 40-44 {#method-1-population-age-40-44}
-
-```{r}
-#| label: method-1-female-population-40-44
-
-population_plot(
-  female_population_projections |> filter(age_band == "40-44"),
-  "Female population aged 40-44. Source: ONS 2022-based migration-category population projections, 2023 geography.",
-  area_colours
-)
-```
-
-#### 45-49 {#method-1-population-age-45-49}
-
-```{r}
-#| label: method-1-female-population-45-49
-
-population_plot(
-  female_population_projections |> filter(age_band == "45-49"),
-  "Female population aged 45-49. Source: ONS 2022-based migration-category population projections, 2023 geography.",
-  area_colours
-)
-```
-
-#### 50-54 {#method-1-population-age-50-54}
-
-```{r}
-#| label: method-1-female-population-50-54
-
-population_plot(
-  female_population_projections |> filter(age_band == "50-54"),
-  "Female population aged 50-54. Source: ONS 2022-based migration-category population projections, 2023 geography.",
-  area_colours
-)
+#| label: method-1-female-population-age-grid
+htmltools::browsable(population_age_grid(female_population_projections))
 ```
 :::
 
@@ -652,9 +556,9 @@ population_plot(
 | Supplied pregnancy cohort | One pregnancy row; resident LA, maternal age, booking provider/date and recorded delivery details | Recorded activity, patient flows and provider counts |
 | Expanded resident-LA totals | Pathways from `group`; shared FY uses birth first, otherwise EDD; age uses birth first, otherwise booking for NA birth age; sum `count` | Resident delivery totals, delivery age distributions and each LA's own pathway factor, for cluster and outside LAs |
 
-The pregnancy records come from `final_cohort_2326`. Maternal age uses `age_at_birth_mother`; only where this is missing (`NA`), it uses `age_at_booking_mother`. This selected maternal age is used for cohort-based charts, age bands, calibration, provider allocations and projections, except where an age-completeness diagnostic explicitly examines the supplied birth or booking age. Booking age is used as supplied, without adding a year; it is not an exact delivery age and can place a pregnancy in a younger age band. Records with neither usable age remain unknown. Model calculations use ages 13–54; the completeness diagnostics retain all supplied ages. Detailed counting rules accompany the relevant delivery and booking views.
+The pregnancy records come from `final_cohort_2326`. **Assigned maternal age** uses `age_at_birth_mother`; where this is missing (`NA`), it uses `age_at_booking_mother` as supplied, without adding a year. An age supplied by either field is complete for this analysis. This same assignment is used in both MSDS inputs and throughout the cohort charts, age bands, resident age distributions, calibration, provider allocations and projections. The source-field checks below describe where the assigned age came from; they do not classify a booking-sourced age as missing. Model calculations use ages 13–54; the source checks retain all supplied ages.
 
-**Where are missing values concentrated?** These charts distinguish birth age, booking-age fallback and unknown age. Every pregnancy row remains in its group, including rows with no supplied delivery year or provider. The tables retain supplied age values, including negative values and text, and show missing values in the original date and year fields. Only NA triggers the booking-age fallback. Pregnancy FY uses birth FY first and EDD FY when birth FY is missing. Publication rounding can mean displayed percentages do not sum to 100%.
+**Which field supplies the assigned age?** These charts distinguish birth-sourced and booking-sourced age, with unassigned age shown only where neither supplies a value. Every pregnancy row remains in its group, including rows with no supplied delivery year or provider. Pregnancy FY uses birth FY first and EDD FY when birth FY is missing. Publication rounding can mean displayed percentages do not sum to 100%.
 
 ```{r}
 #| label: record-completeness-setup
@@ -668,8 +572,6 @@ record_completeness <- patient_flows$record_completeness
 ```{r}
 #| label: record-completeness-all
 record_completeness$by_scope[["Whole extract"]]$chart
-record_completeness$by_scope[["Whole extract"]]$age_table
-record_completeness$by_scope[["Whole extract"]]$field_table
 ```
 
 #### By supplied delivery year
@@ -677,8 +579,6 @@ record_completeness$by_scope[["Whole extract"]]$field_table
 ```{r}
 #| label: record-completeness-years
 record_completeness$by_scope[["Supplied delivery year"]]$chart
-record_completeness$by_scope[["Supplied delivery year"]]$age_table
-record_completeness$by_scope[["Supplied delivery year"]]$field_table
 ```
 
 #### By booking provider
@@ -686,8 +586,6 @@ record_completeness$by_scope[["Supplied delivery year"]]$field_table
 ```{r}
 #| label: record-completeness-booking-provider
 record_completeness$by_scope[["Booking provider"]]$chart
-record_completeness$by_scope[["Booking provider"]]$age_table
-record_completeness$by_scope[["Booking provider"]]$field_table
 ```
 
 #### By delivery provider
@@ -695,12 +593,10 @@ record_completeness$by_scope[["Booking provider"]]$field_table
 ```{r}
 #| label: record-completeness-delivery-provider
 record_completeness$by_scope[["Delivery provider"]]$chart
-record_completeness$by_scope[["Delivery provider"]]$age_table
-record_completeness$by_scope[["Delivery provider"]]$field_table
 ```
 :::
 
-Some missing birth ages may relate to bookings without a corresponding recorded birth. The table below assesses this explanation and shows the proportion of the full cohort with neither age recorded. Absence of a recorded birth does not establish that no birth occurred: incomplete recording or linkage may also contribute. Counts refer to pregnancy records, so a mother with more than one pregnancy can appear more than once.
+The table below documents availability of the two source fields and use of the agreed age assignment. A missing birth-age field does not mean missing assigned age when booking age is available. Counts refer to pregnancy records, so a mother with more than one pregnancy can appear more than once.
 
 ```{r}
 #| label: maternal-age-completeness
@@ -709,7 +605,7 @@ age_completeness_table <- patient_flows$maternal_age_completeness_table
 age_completeness_table
 ```
 
-**Is missing birth age more common at older ages?** The chart shows the percentage with birth age `NA` within each booking-age group. Both numerator and denominator use **age at booking** for this descriptive view. Records without a usable booking age appear in an explicit **Unknown** group, rather than disappearing. All supplied ages are included here; the model's birth-age-first rule is unchanged. Hover for counts, or use the table.
+**Birth-age field availability by booking-age group.** This source check shows the percentage with birth age `NA` within each supplied booking-age group. It describes use of the age fields, not missingness of the assigned age used in the calculations. **Unknown** on this chart refers to the booking-age field only. Hover for counts.
 
 ```{r}
 #| label: booking-age-fallback-setup
@@ -717,21 +613,10 @@ age_completeness_table
 booking_age_fallback <- patient_flows$booking_age_fallback
 ```
 
-::: panel-tabset
-#### By age at booking
-
 ```{r}
 #| label: booking-age-fallback-chart
 booking_age_fallback$chart
 ```
-
-#### Counts and percentages
-
-```{r}
-#| label: booking-age-fallback-table
-booking_age_fallback$table
-```
-:::
 
 The model uses the six BBCS LAs and other LAs with recorded bookings or deliveries at cluster trusts. Every LA's resident delivery counts, age distribution and pathway factor come from the expanded LA extract. All pathway groups use birth financial year first, otherwise estimated due financial year, and birth age first, falling back to booking age only when birth age is NA, without adding a year. Counts are pooled over 2023/24–2025/26 before division. Booking and delivery provider counts come from the pregnancy cohort. Missing counts are zero in the model, while raw diagnostics retain missing values and unknown ages.
 
@@ -858,7 +743,7 @@ The hospital charts keep the main cluster LAs and ten largest additional 2025/26
 
 These diagrams connect residents to delivery destinations, including home births. They cover cluster residents plus deliveries associated with cluster providers from elsewhere; this is not every delivery from every feeder LA nationally.
 
-Compare flows out of an LA or into a destination. Grids show the main areas, ten largest additional areas overall and a combined remainder. Each chart keeps the main cluster categories and five largest additional flows, grouping the rest. Unknown residence, provider and home status stay separate. Hover for counts and shares; the matrix groups destinations and “All flows” retains every LA and trust.
+Compare flows out of an LA or into a destination. Grids show the main areas, ten largest additional areas overall and a combined remainder. Each chart keeps the main cluster categories and five largest additional flows, grouping the rest. Unknown residence, provider and home status stay separate. Hover for counts and shares.
 
 ::: panel-tabset
 ##### From each resident LA
@@ -877,21 +762,6 @@ htmltools::browsable(htmltools::tagList(delivery_geography$sankey_by_la_grid))
 htmltools::browsable(htmltools::tagList(delivery_geography$sankey_by_destination_grid))
 ```
 
-##### Matrix
-
-```{r}
-#| label: delivery-la-destination-matrix
-
-delivery_geography$matrix_table
-```
-
-##### All flows
-
-```{r}
-#| label: delivery-la-destination-values
-
-delivery_geography$matrix_values_table
-```
 :::
 
 #### 2.2.3.2 Hospital deliveries by resident LA and age, 2025/26 {#delivery-la-age-mapping}
@@ -1028,7 +898,7 @@ delivery_geography$all_results_table
 
 #### 2.2.3.4 Change from 2023/24 {#delivery-la-mapping-changes}
 
-Count changes are **percentages relative to 2023/24**. LA share changes are **percentage points**: a share moving from 20% to 25% rises by 5 percentage points. The table also retains relative share changes; a zero baseline has no calculable relative change.
+Count changes are **percentages relative to 2023/24**. LA share changes are **percentage points**: a share moving from 20% to 25% rises by 5 percentage points. A zero baseline has no calculable relative change.
 
 ##### Change in delivery counts
 
@@ -1069,14 +939,6 @@ htmltools::browsable(delivery_geography$chart_grids$share_change$Trust)
 htmltools::browsable(delivery_geography$chart_grids$share_change$ICB_Cluster)
 ```
 :::
-
-##### All organisations — table
-
-```{r}
-#| label: delivery-la-all-organisation-changes
-
-delivery_geography$all_changes_table
-```
 
 ### 2.2.4A Patient flows, 2025/26 {#patient-flow-counting-rules}
 
@@ -1147,6 +1009,14 @@ patient_flows$full_patient_flows$trust_sankey
 ```
 
 ##### Residence, booking and delivery status
+
+<div class="demo-ribbon-key" aria-label="Ribbon colour: ICB of residence">
+<span class="demo-ribbon-key-item"><span class="demo-ribbon-swatch" style="background:#F9BD07" aria-hidden="true"></span>Black Country</span>
+<span class="demo-ribbon-key-item"><span class="demo-ribbon-swatch" style="background:#5881C1" aria-hidden="true"></span>Birmingham and Solihull</span>
+<span class="demo-ribbon-key-item"><span class="demo-ribbon-swatch" style="background:#959595" aria-hidden="true"></span>All other / unknown ICBs</span>
+</div>
+
+Ribbon colour follows the ICB of residence through both booking and delivery stages.
 
 ```{r}
 #| label: patient-flow-full-residence-booking-birth
@@ -1861,7 +1731,7 @@ Each LA(R) keeps one colour. **Solid lines** show recorded MSDS activity in the 
 ons_exploration$resident_comparison$chart
 ```
 
-The MSDS line sums recorded delivery counts in `total_births_by_LA_2326` among residents of each BBCS LA, including home deliveries, deliveries outside cluster trusts and records with unknown age. Antenatal-only rows are excluded from this delivery comparison. MSDS financial years are plotted at their starting year: 2023 represents 2023/24. Published ONS maternities use registration years; adjusted projections use the supplied ONS projection years, paired as described in the [reporting-year convention](#reporting-years). The recorded series retain their original age coverage; the model distributes the ONS projections across ages 13–54. Modelled maternities also include the maternity pathway adjustment allowance for pregnancies without a recorded delivery. The vertical line falls between 2025 and 2026, separating the recorded period through 2025/26 from future years. Historical model estimates remain in the retrospective comparisons and tables.
+The MSDS line sums recorded delivery counts in `total_births_by_LA_2326` among residents of each BBCS LA, including home deliveries and deliveries outside cluster trusts, across all supplied ages. Antenatal-only rows are excluded from this delivery comparison. MSDS financial years are plotted at their starting year: 2023 represents 2023/24. Published ONS maternities use registration years; adjusted projections use the supplied ONS projection years, paired as described in the [reporting-year convention](#reporting-years). The recorded series retain their original age coverage; the model distributes the ONS projections across ages 13–54. Modelled maternities also include the maternity pathway adjustment allowance for pregnancies without a recorded delivery. The vertical line falls between 2025 and 2026, separating the recorded period through 2025/26 from future years. Historical model estimates remain in the retrospective comparisons and tables.
 
 # 3. Projections: deliveries and antenatal bookings {#first-draft-projections}
 
@@ -1927,16 +1797,16 @@ For an individual delivery provider, replace D in the allocation numerator with 
 
 #### Example: from ONS births to adjusted maternities
 
-**Fictional counts and factors.** An LA has 200 projected live births in the combined ≤15 row. Local age shares split the count before the other four modifiers are applied. For transparent arithmetic, the fictional Private–NHS modifier is 0.99 and the maternity pathway adjustment is 1.25.
+**Fictional counts and factors.** An LA has 200 projected live births in the combined ≤15 row. Local age shares split the count before the other four modifiers are applied. The fictional Private–NHS modifier retains 99.0% and the maternity pathway adjustment scales the result to 125.0%. Example results are displayed to one decimal place; calculations retain unrounded values.
 
 | Age (SY) | Age share | Live births after split | Stillbirth factor | Live + stillborn babies | Multiplicity factor | Private–NHS modifier | Pathway factor | Adjusted maternities |
 |---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| 13 | 10% | 20 | 1.05 | 21 | 0.98 | 0.99 | 1.25 | 25.46775 |
-| 14 | 20% | 40 | 1.025 | 41 | 0.98 | 0.99 | 1.25 | 49.72275 |
-| 15 | 70% | 140 | 1.00 | 140 | 0.99 | 0.99 | 1.25 | 171.51750 |
-| **Total** | **100%** | **200** |  | **202** |  |  |  | **246.70800** |
+| 13 | 10.0% | 20 | 105.0% | 21 | 98.0% | 99.0% | 125.0% | 25.5 |
+| 14 | 20.0% | 40 | 102.5% | 41 | 98.0% | 99.0% | 125.0% | 49.7 |
+| 15 | 70.0% | 140 | 100.0% | 140 | 99.0% | 99.0% | 125.0% | 171.5 |
+| **Total** | **100.0%** | **200** |  | **202** |  |  |  | **246.7** |
 
-For age 13: **200 × 10% × 1.05 × 0.98 × 0.99 × 1.25 = 25.46775 maternities**. The final total includes pregnancies without a recorded delivery; provider allocations select the relevant booking or delivery activity from it.
+For age 13: **200 × 10.0% × 105.0% × 98.0% × 99.0% × 125.0% ≈ 25.5 maternities**. The final total includes pregnancies without a recorded delivery; provider allocations select the relevant booking or delivery activity from it.
 
 ### 3.1.2 Allocating maternities to providers {#provider-allocation}
 
@@ -1951,7 +1821,7 @@ Trusts outside the cluster retain their own shares. Adding every provider and th
 
 #### Example: from resident maternities to trust activity {#allocation-worked-example}
 
-**Fictional counts and factors.** Two LA/age groups contribute to Trust A. Both ages have their own ONS rows, so their age shares are 1. The national factor is the stillbirth factor multiplied by the multiplicity factor. The separate fictional Private–NHS factor is 0.99 for both ages.
+**Fictional counts and factors.** Two LA/age groups contribute to Trust A. Both ages have their own ONS rows, so their age shares are 100.0%. The national factor is the stillbirth factor multiplied by the multiplicity factor. The separate fictional Private–NHS factor retains 99.0% for both ages. Factors are shown as percentages and results to one decimal place; calculations retain unrounded values.
 
 ::::::: {.projection-example-grid .allocation-example-grid}
 ::: example-step
@@ -1959,10 +1829,10 @@ Trusts outside the cluster retain their own shares. Adding every provider and th
 
 | LA(R) / Age (SY) | ONS live births | National factor | Private–NHS modifier | Pathway factor | Adjusted maternities |
 |----|---:|---:|---:|---:|---:|
-| B / 25 | 100 | 1.01 × 0.99 = 0.9999 | 0.99 | 1.20 | 118.78812 |
-| C / 30 | 200 | 1.02 × 0.98 = 0.9996 | 0.99 | 1.25 | 247.40100 |
+| B / 25 | 100 | 101.0% × 99.0% ≈ 100.0% | 99.0% | 120.0% | 118.8 |
+| C / 30 | 200 | 102.0% × 98.0% ≈ 100.0% | 99.0% | 125.0% | 247.4 |
 
-For B: **100 × 0.9999 × 0.99 × 1.20 = 118.78812**.
+For B: **100 × (101.0% × 99.0%) × 99.0% × 120.0% ≈ 118.8**.
 :::
 
 ::: example-step
@@ -1973,7 +1843,7 @@ For B: **100 × 0.9999 × 0.99 × 1.20 = 118.78812**.
 | B / 25 | 100 | 120 | 60 | 72 |
 | C / 30 | 200 | 250 | 100 | 150 |
 
-For B, the shared denominator is **100 × 1.20 = 120**. Trust A's delivery share is **60/120 = 50%** and its booking share is **72/120 = 60%**. For C, the shares are **40%** and **60%**.
+For B, the shared denominator is **100 × 120.0% = 120**. Trust A's delivery share is **60/120 = 50.0%** and its booking share is **72/120 = 60.0%**. For C, the shares are **40.0%** and **60.0%**.
 :::
 
 ::: example-step
@@ -1981,8 +1851,8 @@ For B, the shared denominator is **100 × 1.20 = 120**. Trust A's delivery share
 
 | LA / age | Projected Trust A deliveries | Projected Trust A bookings |
 |----------|-----------------------------:|---------------------------:|
-| B / 25   |       118.78812 × 50% = 59.39406 |    118.78812 × 60% = 71.272872 |
-| C / 30   |       247.401 × 40% = 98.9604 |   247.401 × 60% = 148.4406 |
+| B / 25   |       118.8 × 50.0% ≈ 59.4 |    118.8 × 60.0% ≈ 71.3 |
+| C / 30   |       247.4 × 40.0% ≈ 99.0 |   247.4 × 60.0% ≈ 148.4 |
 
 Both views use the same adjusted maternity total. Each applies its own provider share once.
 :::
@@ -1992,8 +1862,8 @@ Both views use the same adjusted maternity total. Each applies its own provider 
 
 | Trust A            | Projected activity |
 |--------------------|-------------------:|
-| Deliveries         |        **158.35446** |
-| Antenatal bookings |       **219.713472** |
+| Deliveries         |        **158.4** |
+| Antenatal bookings |       **219.7** |
 
 Other providers and non-provider categories retain their shares. Add the unrounded LA/age contributions before displaying trust, ICB and cluster totals; bookings and deliveries are separate views of the same pregnancies.
 :::
@@ -2026,94 +1896,11 @@ projection_plot(
 )
 ```
 
-### Under 20 {#method-1-under-20}
+### By age band {#method-1-projected-maternities-age-grid}
 
 ```{r}
-#| label: method-1-projected-maternities-15-19
-#| fig-width: 10
-#| fig-height: 6
-projection_plot(
-  age_band_projections |> filter(age_band == "Under 20"),
-  "Under 20: local age shares, stillbirth, multiplicity, Private–NHS and maternity pathway adjustments applied; calculated before allocation to providers.",
-  area_colours
-)
-```
-
-### 20-24 {#method-1-20-24}
-
-```{r}
-#| label: method-1-projected-maternities-20-24
-#| fig-width: 10
-#| fig-height: 6
-projection_plot(
-  age_band_projections |> filter(age_band == "20-24"),
-  "Ages 20-24: ONS live births with stillbirth, multiplicity, Private–NHS and maternity pathway adjustments at each age.",
-  area_colours
-)
-```
-
-### 25-29 {#method-1-25-29}
-
-```{r}
-#| label: method-1-projected-maternities-25-29
-#| fig-width: 10
-#| fig-height: 6
-projection_plot(
-  age_band_projections |> filter(age_band == "25-29"),
-  "Ages 25-29: ONS live births with stillbirth, multiplicity, Private–NHS and maternity pathway adjustments at each age.",
-  area_colours
-)
-```
-
-### 30-34 {#method-1-30-34}
-
-```{r}
-#| label: method-1-projected-maternities-30-34
-#| fig-width: 10
-#| fig-height: 6
-projection_plot(
-  age_band_projections |> filter(age_band == "30-34"),
-  "Ages 30-34: ONS live births with stillbirth, multiplicity, Private–NHS and maternity pathway adjustments at each age.",
-  area_colours
-)
-```
-
-### 35-39 {#method-1-35-39}
-
-```{r}
-#| label: method-1-projected-maternities-35-39
-#| fig-width: 10
-#| fig-height: 6
-projection_plot(
-  age_band_projections |> filter(age_band == "35-39"),
-  "Ages 35-39: ONS live births with stillbirth, multiplicity, Private–NHS and maternity pathway adjustments at each age.",
-  area_colours
-)
-```
-
-### 40–44 {#method-1-40-44}
-
-```{r}
-#| label: method-1-projected-maternities-40-44
-#| fig-width: 10
-#| fig-height: 6
-projection_plot(
-  age_band_projections |> filter(age_band == "40-44"),
-  "Ages 40-44: stillbirth, multiplicity, Private–NHS and maternity pathway adjustments applied; age 44 uses the local split of ONS 44+ births.",
-  area_colours
-)
-```
-
-### 45+ {#method-1-45-plus}
-
-```{r}
-#| label: method-1-projected-maternities-45-plus
-#| fig-width: 10
-#| fig-height: 6
-projection_plot(
-  age_band_projections |> filter(age_band == "45+"),
-  "Ages 45-54: local split of ONS 44+ births, then stillbirth, multiplicity, Private–NHS and maternity pathway adjustments at each age.",
-  area_colours)
+#| label: method-1-projected-maternities-age-grid
+htmltools::browsable(projection_age_grid(age_band_projections, area_colours))
 ```
 :::
 
@@ -2121,9 +1908,9 @@ projection_plot(
 
 ### Projection coverage {#provider-projection-coverage}
 
-Provider charts retain the allocations that can be calculated. An unmatched record no longer removes the whole provider estimate: **Partial** means the displayed count covers usable LA/age cells, while **No usable estimate** remains unavailable. Ages still missing after the booking-age fallback are not redistributed. Unknown residence, source-geography differences and unresolved calibration remain explicit limitations. Zero counts are used for absent recorded categories within supported data, not for missing source areas, unknown ages or undefined rates.
+Provider charts retain the allocations that can be calculated. **Partial** means one or more cohort LA/age contributions could not be matched to a supported model calculation; the displayed count includes the contributions that could be calculated. **No usable estimate** remains unavailable. The coverage status reflects actual matching or calibration failures. Zero counts are used for absent recorded categories within supported data, not for missing source areas or undefined rates.
 
-The table below counts the supplied cohort separately for bookings and deliveries. It shows the proportion of recorded activity with usable LA/age evidence; this is not a claim that the same percentage of future activity is covered. Unknown-age records cannot be assigned to individual age bands and can therefore flag several bands, but are counted only once in each provider total. Recorded historical totals retain all activity; delivery percentage comparisons use only recorded activity from the same usable LA/age cells as the projection. Booking and age-specific growth compare the same modelled cells across years.
+The table below counts the supplied cohort separately for bookings and deliveries. It shows the proportion of recorded activity with usable LA/age evidence; this is not a claim that the same percentage of future activity is covered. Recorded historical totals retain all activity; delivery percentage comparisons use only recorded activity from the same usable LA/age cells as the projection. Booking and age-specific growth compare the same modelled cells across years.
 
 ```{r}
 #| label: provider-projection-coverage-summary
@@ -2178,6 +1965,17 @@ The projected panel shows available allocations. Where coverage is incomplete, t
 ```{r}
 #| label: projection-delivery-sankey-comparison
 htmltools::browsable(first_draft_projections$sankey_comparison$display)
+```
+
+#### Delivery flows — cluster LAs and all other LA
+
+The same recorded and final-year delivery flows, with only the six cluster LAs shown separately on the left. **All other LA** combines all remaining LAs, including unknown residence. The population, delivery destinations and available allocations are unchanged; only the origin grouping differs.
+
+Colours retain the same meaning: red shows a decrease, blue an increase, and grey incomplete allocation or no recorded starting count. Percentage changes are calculated after summing each displayed flow.
+
+```{r}
+#| label: projection-delivery-sankey-cluster-las
+htmltools::browsable(first_draft_projections$sankey_comparison_cluster_las$display)
 ```
 
 #### All organisations — table
@@ -2387,12 +2185,6 @@ htmltools::browsable(first_draft_projections$booking_grids$age$ICB_Cluster)
 ```
 :::
 
-#### All organisations — table
-
-```{r}
-#| label: booking-projection-age-table
-first_draft_projections$booking_age_table
-```
 :::::
 
 ### 3.4.3 Change from modelled 2025 bookings {#booking-percentage-change}
@@ -2414,39 +2206,6 @@ htmltools::browsable(first_draft_projections$booking_change_charts$Trust)
 htmltools::browsable(first_draft_projections$booking_change_charts$ICB_Cluster)
 ```
 
-#### Separate trusts
-
-```{r}
-#| label: booking-projection-trust-change
-htmltools::browsable(first_draft_projections$booking_grids$change$Trust)
-```
-
-#### Separate ICBs and whole cluster
-
-```{r}
-#| label: booking-projection-icb_cluster-change
-htmltools::browsable(first_draft_projections$booking_grids$change$ICB_Cluster)
-```
-:::
-
-### Booking Denominator Factor: volume without linked booking details {#booking-denominator-projections}
-
-These tables show estimated pregnancies without linked booking details, by LA and age band. They are part of the shared adjusted total and are kept separate from provider bookings.
-
-::: panel-tabset
-#### By LA
-
-```{r}
-#| label: booking-gap-projected-la
-first_draft_projections$booking_gap_table
-```
-
-#### By LA and age band
-
-```{r}
-#| label: booking-gap-projected-age
-first_draft_projections$booking_gap_age_table
-```
 :::
 
 ## 3.5 Compare modelled and recorded activity {#projection-comparisons}
@@ -2522,7 +2281,7 @@ first_draft_projections$backtest$all_table
 
 All charts in this section use the **whole supplied BBCS cohort, pooled across 2023/24–2025/26**. Each supplied pregnancy row contributes once, whether it has a delivery and booking, a delivery without a recorded booking, or a booking without a recorded delivery. Separate pregnancies for the same woman remain separate. Records without either event remain visible too. There is no further event-year filter: missing dates and bookings before the delivery year do not remove a cohort record.
 
-A booking is recorded when a booking provider or appointment date is supplied; a delivery uses the recorded birth flag. Due years do not establish either event. Maternal age uses birth age first and booking age only when birth age is NA. Where two residence LSOAs are supplied, one is selected at random with a repeatable choice per mother, then linked to [English IMD 2019 on 2011 LSOAs](https://www.gov.uk/government/statistics/english-indices-of-deprivation-2019). The source deciles are combined into quintiles: deciles 1–2 form quintile 1 (most deprived), 3–4 form quintile 2, 5–6 form quintile 3, 7–8 form quintile 4 and 9–10 form quintile 5 (least deprived). Missing or unmatched LSOAs retain an unknown quintile. Counts are combined before disclosure controls are applied. Ethnicity uses NHS category descriptions and seven broad groups, with paired codes resolved using the agreed combination grid. Unresolved conflicting pairs remain **Two conflicting**; unknown codes remain visible separately from **Not stated**. Detailed descriptions are retained for single categories; paired categories show the broad result without inferring a subtype. Counts are controlled independently for display, so displayed subgroup totals can differ from the overall total, particularly when many small groups are shown.
+A booking is recorded when a booking provider or appointment date is supplied; a delivery uses the recorded birth flag. Due years do not establish either event. Maternal age follows the [shared assignment](#msds-inputs). Where two residence LSOAs are supplied, one is selected at random with a repeatable choice per mother, then linked to [English IMD 2019 on 2011 LSOAs](https://www.gov.uk/government/statistics/english-indices-of-deprivation-2019). The source deciles are combined into quintiles: deciles 1–2 form quintile 1 (most deprived), 3–4 form quintile 2, 5–6 form quintile 3, 7–8 form quintile 4 and 9–10 form quintile 5 (least deprived). Missing or unmatched LSOAs retain an unknown quintile. Counts are combined before disclosure controls are applied. Ethnicity uses NHS category descriptions and seven broad groups, with paired codes resolved using the agreed combination grid. Unresolved conflicting pairs remain **Two conflicting**; unknown codes remain visible separately from **Not stated**. Detailed descriptions are retained for single categories; paired categories show the broad result without inferring a subtype. Counts are controlled independently for display, so displayed subgroup totals can differ from the overall total, particularly when many small groups are shown.
 
 ## 4.1 Demographic overview {#demographic-overview}
 
@@ -2628,11 +2387,11 @@ htmltools::browsable(demo_sankey_charts$overview_booking$Trust$imd)
 htmltools::browsable(demo_sankey_charts$overview_booking$Trust$ethnicity)
 ```
 
-##### Ethnicity description
+##### Ethnicity (4 groups)
 
 ```{r}
-#| label: demo-overview-booking-trust-ethnicity_description
-htmltools::browsable(demo_sankey_charts$overview_booking$Trust$ethnicity_description)
+#| label: demo-overview-booking-trust-ethnicity-four
+htmltools::browsable(demo_sankey_charts$overview_booking$Trust$ethnicity_four)
 ```
 
 :::
@@ -2661,11 +2420,11 @@ htmltools::browsable(demo_sankey_charts$overview_booking$ICB_Cluster$imd)
 htmltools::browsable(demo_sankey_charts$overview_booking$ICB_Cluster$ethnicity)
 ```
 
-##### Ethnicity description
+##### Ethnicity (4 groups)
 
 ```{r}
-#| label: demo-overview-booking-icb_cluster-ethnicity_description
-htmltools::browsable(demo_sankey_charts$overview_booking$ICB_Cluster$ethnicity_description)
+#| label: demo-overview-booking-icb_cluster-ethnicity-four
+htmltools::browsable(demo_sankey_charts$overview_booking$ICB_Cluster$ethnicity_four)
 ```
 
 :::
@@ -2985,58 +2744,49 @@ The **whole supplied BBCS cohort, 2023/24–2025/26**: **`r scales::comma(demo_s
 
 Bars show counts; labels and hover show percentages of all cohort pregnancies. Demographic definitions follow section 4.
 
-::: panel-tabset
-### Age band
-
-Age at birth, or booking age where birth age is missing; missing age remains **Unknown**.
-
 ```{r}
-#| label: cohort-profile-age
-htmltools::browsable(demo_sankey_charts$cohort_profile$age$chart)
+#| label: cohort-profile-grid
+profile_titles <- c(age = "Age band", imd = "IMD quintile", ethnicity = "Ethnicity (broad)")
+profile_notes <- c(
+  age = "Assigned maternal age, using the shared definition in the counting rules.",
+  imd = "English IMD 2019: quintile 1 is most deprived and quintile 5 least deprived. Missing or unmatched areas remain Unknown.",
+  ethnicity = "Broad ethnicity groups; Not stated, Two conflicting and Unknown are shown separately.")
+htmltools::browsable(htmltools::div(class = "demo-sankey-grid cohort-overview-grid",
+  lapply(names(profile_titles), function(key) htmltools::div(class = "demo-sankey-panel",
+    htmltools::tags$h4(profile_titles[[key]]),
+    demo_sankey_charts$cohort_profile[[key]]$chart,
+    htmltools::tags$p(class = "cohort-overview-note", profile_notes[[key]])))))
 ```
 
-### IMD quintile
+## 5.2 Booking and delivery profiles by organisation
 
-English IMD 2019: **quintile 1 is most deprived**, **quintile 5 least deprived**. Missing or unmatched areas remain **Unknown**.
+Paired bars compare pregnancies **booked at each organisation (blue)** with those **delivered there (orange)**, using the cohort and demographic definitions in section 5.1. Hover percentages use each organisation’s booking or delivery total separately. Ethnicity is grouped into **White, Asian, Black and All other**; All other includes mixed and other ethnicities, not stated, conflicting and unknown values.
 
-```{r}
-#| label: cohort-profile-imd
-htmltools::browsable(demo_sankey_charts$cohort_profile$imd$chart)
-```
+Use the **By trust** or **By ICB / cluster** tabs. ICB panels group each event by its provider’s ICB; the combined BBCS cluster includes either BBCS ICB. The cluster overlaps its ICB panels, so these totals should not be added together.
 
-### Ethnicity (broad)
+A pregnancy may appear in both series, so they should not be added together. Transfers appear under the relevant organisation at each event. Home births have no delivery-provider bar; missing events have no bar for that event. These pregnancies remain in the overall cohort profile. Panels share category order and count scale within each tab.
 
-Broad ethnicity groups, with **Not stated**, **Two conflicting** and **Unknown** shown separately.
+:::: panel-tabset
 
-```{r}
-#| label: cohort-profile-ethnicity
-htmltools::browsable(demo_sankey_charts$cohort_profile$ethnicity$chart)
-```
-
-:::
-
-## 5.2 Booking and delivery profiles by trust
-
-Paired bars compare pregnancies **booked at each trust (blue)** with those **delivered there (orange)**, using the cohort and demographic definitions in section 5.1. Hover percentages use each trust’s booking or delivery total separately.
-
-A pregnancy may appear in both series, so they should not be added together. Transfers appear under the relevant trust at each event. Home births have no delivery-trust bar; missing events have no bar for that event. These pregnancies remain in the overall cohort profile. Panels share category order and count scale within each tab.
+### By trust
 
 ::: panel-tabset
-### Age band
+
+#### Age band
 
 ```{r}
 #| label: cohort-trust-profile-age
 htmltools::browsable(demo_sankey_charts$cohort_trust_profiles$age$grid)
 ```
 
-### IMD quintile
+#### IMD quintile
 
 ```{r}
 #| label: cohort-trust-profile-imd
 htmltools::browsable(demo_sankey_charts$cohort_trust_profiles$imd$grid)
 ```
 
-### Ethnicity (broad)
+#### Ethnicity
 
 ```{r}
 #| label: cohort-trust-profile-ethnicity
@@ -3045,9 +2795,42 @@ htmltools::browsable(demo_sankey_charts$cohort_trust_profiles$ethnicity$grid)
 
 :::
 
+### By ICB / cluster
+
+::: panel-tabset
+
+#### Age band
+
+```{r}
+#| label: cohort-icb-cluster-profile-age
+htmltools::browsable(demo_sankey_charts$cohort_icb_profiles$age$grid)
+```
+
+#### IMD quintile
+
+```{r}
+#| label: cohort-icb-cluster-profile-imd
+htmltools::browsable(demo_sankey_charts$cohort_icb_profiles$imd$grid)
+```
+
+#### Ethnicity
+
+```{r}
+#| label: cohort-icb-cluster-profile-ethnicity
+htmltools::browsable(demo_sankey_charts$cohort_icb_profiles$ethnicity$grid)
+```
+
+:::
+
+::::
+
 ## 5.3 Same or different booking and delivery trust
 
-Compare pregnancies **booked and delivered at the same trust (green)** with those at **different trusts (purple)**, using the cohort and demographic definitions in section 5.1. Paired charts show counts and percentages within each comparison group, including unknown demographic values.
+Compare pregnancies **booked and delivered at the same trust (green)** with those at **different trusts (pink)**. Counts are shown alongside **100% stacked bars within each demographic category**: for example, each 20–24 age bar shows the percentage who delivered at the same trust and the percentage at a different trust. Each coloured segment is labelled with its percentage of that category.
+
+Percentages use the sum of the two disclosure-controlled counts within the category, so each non-empty bar totals 100%. Categories with no comparable pregnancies have no percentage bar. Unknown age and IMD remain separate categories. Ethnicity is grouped into **White, Asian, Black and All other**; All other includes mixed and other ethnicities, not stated, conflicting and unknown values.
+
+The **By trust** and **By ICB / cluster** panels group pregnancies by **booking organisation**. The combined BBCS cluster includes bookings in either BBCS ICB; the whole-cohort tab includes all comparable pregnancies in the supplied cohort. The colours always compare booking and delivery **trusts**, including in the ICB panels. The combined cluster overlaps its ICB panels, so these totals should not be added together.
 
 Different trusts indicate a recorded change in provider, not necessarily a change in the woman’s preference. The comparison requires recorded booking and delivery, identifiable NHS trusts and no recorded home birth. The table shows the comparison groups and reasons other pregnancies cannot be compared.
 
@@ -3056,22 +2839,26 @@ Different trusts indicate a recorded change in provider, not necessarily a chang
 demo_sankey_charts$cohort_match_profiles$coverage
 ```
 
+:::: panel-tabset
+
+### Whole cohort
+
 ::: panel-tabset
-### Age band
+#### Age band
 
 ```{r}
 #| label: cohort-match-age
 htmltools::browsable(demo_sankey_charts$cohort_match_profiles$profiles$age$charts)
 ```
 
-### IMD quintile
+#### IMD quintile
 
 ```{r}
 #| label: cohort-match-imd
 htmltools::browsable(demo_sankey_charts$cohort_match_profiles$profiles$imd$charts)
 ```
 
-### Ethnicity (broad)
+#### Ethnicity
 
 ```{r}
 #| label: cohort-match-ethnicity
@@ -3079,6 +2866,60 @@ htmltools::browsable(demo_sankey_charts$cohort_match_profiles$profiles$ethnicity
 ```
 
 :::
+
+### By trust
+
+::: panel-tabset
+#### Age band
+
+```{r}
+#| label: cohort-match-age-trust
+htmltools::browsable(demo_sankey_charts$cohort_match_profiles$profiles$age$Trust$charts)
+```
+
+#### IMD quintile
+
+```{r}
+#| label: cohort-match-imd-trust
+htmltools::browsable(demo_sankey_charts$cohort_match_profiles$profiles$imd$Trust$charts)
+```
+
+#### Ethnicity
+
+```{r}
+#| label: cohort-match-ethnicity-trust
+htmltools::browsable(demo_sankey_charts$cohort_match_profiles$profiles$ethnicity$Trust$charts)
+```
+
+:::
+
+### By ICB / cluster
+
+::: panel-tabset
+#### Age band
+
+```{r}
+#| label: cohort-match-age-icb-cluster
+htmltools::browsable(demo_sankey_charts$cohort_match_profiles$profiles$age$ICB_Cluster$charts)
+```
+
+#### IMD quintile
+
+```{r}
+#| label: cohort-match-imd-icb-cluster
+htmltools::browsable(demo_sankey_charts$cohort_match_profiles$profiles$imd$ICB_Cluster$charts)
+```
+
+#### Ethnicity
+
+```{r}
+#| label: cohort-match-ethnicity-icb-cluster
+htmltools::browsable(demo_sankey_charts$cohort_match_profiles$profiles$ethnicity$ICB_Cluster$charts)
+```
+
+:::
+
+::::
 
 # References {#method-1-references}
 

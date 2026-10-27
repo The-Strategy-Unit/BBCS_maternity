@@ -17,17 +17,20 @@ review_index <- function(data, keys, value, reference) {
 }
 
 review_line <- function(data, value, title, y, caption, facet = NULL, index = FALSE) {
+  age_series <- all(grepl("^(Under [0-9]+|[0-9]+([+]|-[0-9]+)?)$", as.character(data$series)))
   p <- ggplot2::ggplot(data, ggplot2::aes(year, .data[[value]], colour = series, group = series)) +
     ggplot2::geom_point(size = 1.6, na.rm = TRUE) +
     ggplot2::scale_x_continuous(breaks = if (length(unique(data$year)) <= 5) sort(unique(data$year)) else pretty(range(data$year), n = 5)) +
     ggplot2::scale_y_continuous(labels = scales::label_comma()) +
-    ggplot2::scale_colour_viridis_d(end = 0.85) +
+    (if (age_series) ggplot2::scale_colour_manual(values = age_series_colours(data$series)) else
+      ggplot2::scale_colour_viridis_d(end = 0.85)) +
     ggplot2::labs(title = title, x = "Year", y = y, colour = NULL, caption = caption) +
     ggplot2::theme_minimal(base_family = "sans", base_size = 11) +
     ggplot2::theme(legend.position = "bottom", legend.text = ggplot2::element_text(size = 10),
       plot.title = ggplot2::element_text(size = 13, face = "bold"),
       plot.caption = ggplot2::element_text(hjust = 0, size = 9), panel.grid.minor = ggplot2::element_blank()) +
-    ggplot2::guides(colour = ggplot2::guide_legend(nrow = 2, byrow = TRUE))
+    ggplot2::guides(colour = ggplot2::guide_legend(nrow = 2, byrow = TRUE,
+      override.aes = list(linewidth = 2)))
   if (length(unique(data$year)) > 1) p <- p + ggplot2::geom_line(linewidth = 0.85, na.rm = TRUE)
   if (index) p <- p + ggplot2::geom_hline(yintercept = 100, colour = "grey55", linetype = 2)
   if (!is.null(facet)) p <- p + ggplot2::facet_wrap(ggplot2::vars(.data[[facet]]), ncol = 3,
@@ -134,7 +137,7 @@ build_older_outcome_review <- function(path, pooled, old) {
     ggplot2::geom_col(position = ggplot2::position_stack(reverse = TRUE)) +
     ggplot2::coord_flip() + ggplot2::scale_y_continuous(labels = scales::label_percent()) +
     ggplot2::scale_x_discrete(labels = c(live_births = "Live births", maternities = "Maternities", stillbirths = "Stillbirths")) +
-    ggplot2::scale_fill_viridis_d(end = 0.85) +
+    ggplot2::scale_fill_manual(values = age_series_colours(composition$age)) +
     ggplot2::labs(title = "Who makes up 44+, and who contributes its outcomes?", x = NULL,
       y = "Share of the 44+ total", fill = "Maternal age",
       caption = "ONS Table 5, pooled 2023-2025. Each bar has its own denominator.\nDisproportionate outcome shares do not establish causation.") +

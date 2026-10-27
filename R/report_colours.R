@@ -42,7 +42,7 @@ extended_identity_colour <- function(key) {
   }, character(1), USE.NAMES = FALSE)
 }
 
-identity_colours <- function(codes) {
+identity_colours <- function(codes, priority = character()) {
   original <- as.character(codes)
   key <- toupper(trimws(sub("^(trust|icb)-", "", original, ignore.case = TRUE)))
   colours <- unname(organisation_colour_key[key])
@@ -58,7 +58,30 @@ identity_colours <- function(codes) {
     grepl("^(UNKNOWN|MISSING|NOT (STATED|KNOWN|RECORDED)|L999)", key)] <- "Unknown"
   colours[!is.na(status)] <- unname(status_colour_key[status[!is.na(status)]])
   missing <- is.na(colours)
-  colours[missing] <- extended_identity_colour(key[missing])
+  # Fixed colours first; frequent external organisations keep their shades
+  priority <- toupper(trimws(sub("^(trust|icb)-", "", priority, ignore.case = TRUE)))
+  external <- unique(key[missing])
+  external <- c(intersect(priority, external), sort(setdiff(external, priority)))
+  fallback <- stats::setNames(extended_identity_colour(external), external)
+  used <- unique(c(organisation_colour_key, local_authority_colour_key, status_colour_key))
+  for (code in external) {
+    if (fallback[[code]] %in% used) {
+      # Unused colours with the greatest separation from those already assigned
+      grid <- expand.grid(h = seq(0, 360, length.out = max(121L, length(external) + 1L))[-1],
+        c = c(45, 65), l = c(40, 60, 80))
+      candidates <- setdiff(unique(c(hybrid_palette, grDevices::hcl(grid$h, grid$c, grid$l))), used)
+      lab <- grDevices::convertColor(t(grDevices::col2rgb(c(candidates, used))) / 255,
+        from = "sRGB", to = "Lab")
+      proposed <- lab[seq_along(candidates), , drop = FALSE]
+      assigned <- lab[length(candidates) + seq_along(used), , drop = FALSE]
+      distances <- outer(proposed[, 1], assigned[, 1], "-")^2 +
+        outer(proposed[, 2], assigned[, 2], "-")^2 +
+        outer(proposed[, 3], assigned[, 3], "-")^2
+      fallback[[code]] <- candidates[which.max(apply(distances, 1, min))]
+    }
+    used <- c(used, fallback[[code]])
+  }
+  colours[missing] <- unname(fallback[key[missing]])
   stats::setNames(colours, original)
 }
 

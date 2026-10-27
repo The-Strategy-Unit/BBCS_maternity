@@ -574,6 +574,70 @@ projection_plot <- function(data, caption, colours) {
     ons_plot_theme()
 }
 
+population_age_grid <- function(data) {
+  bands <- unique(as.character(data$age_band))
+  bands <- bands[order(as.numeric(sub("-.*", "", bands)))]
+  colours <- age_series_colours(bands)
+  areas <- unique(as.character(data$area_name))
+  key <- htmltools::div(class = "demo-ribbon-key population-age-key",
+    lapply(bands, function(band) htmltools::span(class = "demo-ribbon-key-item",
+      htmltools::span(style = paste0("display:inline-block;width:30px;height:5px;background:", colours[[band]], ";")),
+      band)))
+  charts <- lapply(areas, function(area) {
+    rows <- data[data$area_name == area, ]
+    chart <- plotly::plot_ly(height = 245)
+    for (band in bands) {
+      series <- rows[as.character(rows$age_band) == band, ]
+      series <- series[order(series$year), ]
+      chart <- plotly::add_trace(chart, x = series$year, y = series$female_population,
+        type = "scatter", mode = "lines", name = band,
+        line = list(color = colours[[band]], width = 2.5),
+        hovertemplate = paste0("Age ", band, "<br>%{x}: %{y:,.0f} women<extra></extra>"))
+    }
+    chart <- plotly::layout(chart, showlegend = FALSE,
+      meta = list(compact_population_grid = TRUE), font = list(family = "Arial", size = 13),
+      margin = list(l = 56, r = 12, t = 10, b = 42),
+      xaxis = list(title = "", tickvals = sort(unique(c(min(rows$year), 2035, max(rows$year))))),
+      yaxis = list(title = "Women", tickformat = ",.0f", rangemode = "tozero"),
+      paper_bgcolor = "white", plot_bgcolor = "white")
+    htmltools::div(class = "demo-sankey-panel",
+      htmltools::h4(area), dc_widget(plotly::config(chart, displayModeBar = FALSE, responsive = TRUE)))
+  })
+  htmltools::tagList(key, htmltools::div(class = "population-age-grid", charts))
+}
+
+projection_age_grid <- function(data, colours) {
+  data <- dc_counts(data, "projected_maternities")
+  bands <- c("Under 20", "20-24", "25-29", "30-34", "35-39", "40-44", "45+")
+  areas <- unique(as.character(data$area_name))
+  key <- htmltools::div(class = "demo-ribbon-key",
+    lapply(areas, function(area) htmltools::span(class = "demo-ribbon-key-item",
+      htmltools::span(style = paste0("display:inline-block;width:30px;height:5px;background:", colours[[area]], ";")), area)))
+  charts <- lapply(bands, function(band) {
+    rows <- data[as.character(data$age_band) == band, ]
+    chart <- plotly::plot_ly(height = 245)
+    for (area in areas) {
+      series <- rows[rows$area_name == area, ]
+      series <- series[order(series$year), ]
+      chart <- plotly::add_trace(chart, x = series$year, y = series$projected_maternities,
+        type = "scatter", mode = "lines", name = area,
+        line = list(color = colours[[area]], width = 2.5),
+        hovertemplate = paste0(area, "<br>%{x}: %{y:,.0f} maternities<extra></extra>"))
+    }
+    chart <- plotly::layout(chart, showlegend = FALSE,
+      meta = list(compact_population_grid = TRUE), font = list(family = "Arial", size = 13),
+      margin = list(l = 56, r = 12, t = 10, b = 42),
+      xaxis = list(title = "", tickvals = sort(unique(c(min(rows$year), 2035, max(rows$year))))),
+      yaxis = list(title = "Adjusted resident maternities", tickformat = ",.0f", rangemode = "tozero"),
+      paper_bgcolor = "white", plot_bgcolor = "white")
+    htmltools::div(class = "demo-sankey-panel", htmltools::h4(band),
+      dc_widget(plotly::config(chart, displayModeBar = FALSE, responsive = TRUE)))
+  })
+  htmltools::tagList(key, htmltools::div(class = "population-age-grid", charts),
+    htmltools::p(class = "chart-grid-note",
+      "ONS 2022-based projected live births on 2023 geography, with local splits of the youngest and oldest ONS age groups, then stillbirth, multiplicity, Private–NHS and maternity pathway adjustments. Estimates are calculated before allocation to providers; Under 20 covers ages 13–19 and 45+ covers ages 45–54."))
+}
+
 population_plot <- function(data, caption, colours) {
   ggplot2::ggplot(data, ggplot2::aes(year, female_population,
                                     colour = area_name, group = area_name)) +

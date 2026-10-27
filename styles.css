@@ -39,6 +39,9 @@ main#quarto-document-content {
   height: auto;
 }
 .report-chart-grid > * { min-width: 0; }
+/* Make colour samples readable without thickening the plotted data. */
+.plotly .legend .legendlines .js-line { stroke-width: 4.5px !important; }
+.report-tab-letter { font-weight: 700; }
 @container (max-width: 760px) {
   .report-chart-grid { grid-template-columns: 1fr !important; }
 }
@@ -180,7 +183,27 @@ a { color: var(--su-blue); }
   gap: 1.5rem;
 }
 .demo-sankey-panel p { margin: 0.2rem 0; font-size: 0.85rem; }
+.cohort-match-cards { display: grid; gap: 1.5rem; }
+.cohort-match-card > h4 { margin-bottom: 0.5rem; }
+.cohort-match-chart { min-width: 0; }
+.cohort-overview-grid > .demo-sankey-panel { display: flex; flex-direction: column; }
+.cohort-overview-grid .cohort-overview-note { margin-top: 0.5rem; }
+@container (max-width: 1000px) {
+  .cohort-overview-grid { grid-template-columns: 1fr !important; }
+}
+#cohort-demographics .demo-sankey-panel h4 { font-size: 1.1rem; line-height: 1.35; }
+#cohort-demographics .demo-sankey-panel p { font-size: 0.95rem; line-height: 1.4; }
 .demo-sankey-stages { color: #5f5b58; }
+.population-age-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; }
+.population-age-grid > div { min-width: 0; }
+.population-age-key { font-size: 0.95rem; }
+.chart-grid-note { color: #5f5b58; font-size: 0.9rem; margin-top: 0.75rem; }
+@container (max-width: 850px) {
+  .population-age-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@container (max-width: 600px) {
+  .population-age-grid { grid-template-columns: 1fr; }
+}
 .demo-ribbon-key { display: flex; flex-wrap: wrap; gap: 0.4rem 1rem; margin: 0.5rem 0 1rem; font-size: 0.85rem; }
 .demo-ribbon-key-item { display: inline-flex; align-items: center; gap: 0.4rem; }
 .demo-ribbon-swatch { display: inline-block; width: 1.1rem; height: 0.65rem; border: 1px solid #777; }

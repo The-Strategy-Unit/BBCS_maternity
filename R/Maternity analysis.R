@@ -1340,6 +1340,11 @@ build_delivery_geography <- function(years = delivery_years, age_bands = deliver
                                                TRUE ~ "Unknown location"))
   age_bands <- unique(c(age_bands, delivery_episodes$Age_band))
 
+  # Shared colours across geography charts; frequent organisations first
+  colour_priority <- names(sort(table(c(delivery_episodes$LA, delivery_episodes$Destination)), decreasing = TRUE))
+  geography_colours <- identity_colours(c(colour_priority, "All other feeder LAs", "All other trusts", "Unknown LA"),
+    priority = colour_priority)
+
   # Step 2: use the local public name lookups. Codes remain the matching keys.
   la_lookup <- readr::read_csv("data/lookups/la_names.csv", show_col_types = FALSE)
   la_lookup <- dplyr::bind_rows(la_lookup,
@@ -1457,7 +1462,7 @@ build_delivery_geography <- function(years = delivery_years, age_bands = deliver
     vapply(destinations, function(z) sum(sankey_links$N[sankey_links$Destination_group == z]), numeric(1))))
   raw_sankey_links <- sankey_links
   sankey_links <- dc_cells(sankey_links, c("N", "Origin_total"), list(Share = c("N", "Origin_total")))
-  palette <- unname(identity_colours(origins))
+  palette <- unname(geography_colours[origins])
   sankey_height <- max(340, max(length(origins), length(destinations)) * 18)
   node_x <- c(rep(0.01, length(origins)), rep(0.99, length(destinations)))
   sankey_chart <- plotly::plot_ly(type = "sankey", height = sankey_height,
@@ -1466,7 +1471,7 @@ build_delivery_geography <- function(years = delivery_years, age_bands = deliver
       y = sankey_node_y(node_x, match(sankey_links$Origin, origins) - 1L,
         length(origins) + match(sankey_links$Destination_group, destinations) - 1L,
         sankey_links$N, sankey_height - 20, 9),
-      color = c(palette, unname(identity_colours(destinations))),
+      color = c(palette, unname(geography_colours[destinations])),
       customdata = paste0(c(origin_labels, destination_labels), "<br>Deliveries: ", node_totals),
       hovertemplate = "%{customdata}<extra></extra>"),
     link = list(source = match(sankey_links$Origin, origins) - 1L,
@@ -1537,7 +1542,7 @@ build_delivery_geography <- function(years = delivery_years, age_bands = deliver
     all_destination_labels$Destination)
   all_destination_labels["All other trusts"] <- "All other trusts"
   all_origins <- c(sort(unique(raw_sankey_flows$LA)), "All other feeder LAs")
-  origin_colours <- identity_colours(all_origins)
+  origin_colours <- geography_colours[all_origins]
 
   # Short chart labels fit the compact panels; hover still gives the complete name.
   small_sankey <- function(links, origin_codes, destination_codes, percentage_label) {
@@ -1565,7 +1570,7 @@ build_delivery_geography <- function(years = delivery_years, age_bands = deliver
         y = sankey_node_y(node_x, match(links$Origin, origin_codes) - 1L,
           length(origin_codes) + match(links$Destination_group, destination_codes) - 1L,
           links$N, chart_height - 20, 14),
-        color = c(unname(origin_colours[origin_codes]), unname(identity_colours(destination_codes))),
+        color = c(unname(origin_colours[origin_codes]), unname(geography_colours[destination_codes])),
         customdata = paste0(node_names, "<br>Recorded deliveries: ", scales::comma(node_counts, accuracy = 1)),
         hovertemplate = "%{customdata}<extra></extra>"),
       link = list(
@@ -1668,7 +1673,7 @@ build_delivery_geography <- function(years = delivery_years, age_bands = deliver
   }
   line_chart <- function(data, field, y_title, units = "percent", colours = NULL, show_legend = TRUE) {
     groups <- unique(data$Origin_group)
-    if (is.null(colours)) colours <- identity_colours(groups)
+    if (is.null(colours)) colours <- geography_colours[groups]
     chart <- plotly::plot_ly(height = 260)
     for (j in seq_along(groups)) {
       line <- data[data$Origin_group == groups[j], , drop = FALSE]
@@ -1837,7 +1842,7 @@ build_delivery_geography <- function(years = delivery_years, age_bands = deliver
     list(data.frame(Origin_group = character(), Origin_name = character())),
     lapply(organisation_plots, function(x) x$trend_groups))) |>
     dplyr::distinct(Origin_group, Origin_name)
-  trend_colours <- identity_colours(trend_key$Origin_group)
+  trend_colours <- geography_colours[trend_key$Origin_group]
   trend_specs <- list(
     count = list(field = "N", title = "Deliveries", units = "count"),
     contribution = list(field = "Share", title = "% from LA", units = "percent"),

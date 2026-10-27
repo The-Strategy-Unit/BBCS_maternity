@@ -1,3 +1,43 @@
+# FIRST CHECK: IS THIS ACTUALLY A PROBLEM? ------------------------------
+# Select and run this block after running the analysis on your current data.
+# It reads the failures already recorded by the model; it does not rerun or
+# change any calculations. Only affected cohort/provider records are counted.
+hh_calibration_problem_check <- function(projections) {
+  gaps <- projections$provider_projection_gaps
+  if (is.null(gaps) || !all(c("Level", "Reason", "Allocation", "LA", "Age", "Cohort_rows") %in% names(gaps)))
+    stop("Run the current analysis first; its saved projection-gap results are needed.")
+  checks <- list(
+    "Cohort births exceed resident births" =
+      "Cohort births exceed resident births: check source periods/processing",
+    "Resident denominator missing or zero" = c("No matching resident birth count",
+      "No positive resident birth denominator", "No matching LA/age resident calibration"),
+    "Pathway counts inconsistent" = c("Unknown/missing resident pathway group",
+      "Cohort pregnancies exceed estimated resident total",
+      "LA antenatal-only count below observed cohort no-delivery count"))
+  # Keep Trust rows only: ICB and cluster rows repeat the same activity.
+  gaps <- gaps[gaps$Level == "Trust", , drop = FALSE]
+  answer <- do.call(rbind, lapply(names(checks), function(label) {
+    rows <- gaps[gaps$Reason %in% checks[[label]], , drop = FALSE]
+    data.frame(Check = label, Problem = if (nrow(rows)) "YES" else "No",
+      Bookings = sum(rows$Cohort_rows[rows$Allocation == "Booking"]),
+      Deliveries = sum(rows$Cohort_rows[rows$Allocation == "Delivery"]),
+      LA_age_cells = nrow(unique(rows[c("LA", "Age")])) )
+  }))
+  cat("\nIS THIS ACTUALLY A PROBLEM IN THE CURRENT MODEL RUN?\n")
+  if (any(answer$Problem == "YES"))
+    cat("YES: the model reports one or more of these calibration failures.\n") else
+    cat("NO: none of these calibration checks is blocking provider projections.\n")
+  print(answer, row.names = FALSE, right = FALSE)
+  cat("Counts are affected cohort activity. Bookings and deliveries can overlap; do not add them.\n",
+    "This checks calibration causes only, separately from country/geography coverage.\n",
+    "No changes made. If YES, use this summary to decide what to investigate next.\n", sep = "")
+  invisible(answer)
+}
+if (exists("first_draft_projections")) {
+  hh_calibration_check <- hh_calibration_problem_check(first_draft_projections)
+} else cat("\nRun the analysis first, then rerun this FIRST CHECK block.\n")
+# END FIRST CHECK ------------------------------------------------------
+
 # UNKNOWN AGES: exact internal counts after birth/booking-age fallback
 # Count-weighted resident totals; overlapping files, not additive
 source("R/report_cohort.R")
@@ -56,6 +96,148 @@ cat("\nCounts are pregnancies, not distinct mothers. FY = birth_yr first, otherw
   "Subtotal/total rows overlap the country rows. Bookings and deliveries also overlap; do not add them.\n",
   "NA percentages mean no activity in the denominator.\n", sep = "")
 # END MSDS COUNTRY CONTRIBUTIONS ---------------------------------------
+
+# WHY PROVIDER PROJECTIONS ARE PARTIAL ----------------------------------
+# Run this block after the analysis, using the SAME loaded pregnancy cohort.
+# Internal QA only: exact counts; no files saved and no model inputs changed.
+# Use the model's saved reasons, not all unmatched codes in the national lookup.
+# Trust rows only: do not double-count their ICB/cluster copies. Bookings and
+# deliveries can refer to the same pregnancy and must not be added together.
+library(dplyr)
+source("R/report_cohort.R")
+
+hh_explain_projection_gaps <- function(projections, cohort, detail_limit = 12L) {
+  needed <- c("provider_projection_gaps", "provider_coverage", "organisations", "allocation_tables")
+  if (!all(needed %in% names(projections)))
+    stop("Run the current analysis first: provider coverage diagnostics are missing.")
+  episodes <- prepare_report_cohort(cohort)
+  orgs <- projections$organisations |> filter(Level == "Trust") |>
+    distinct(Trust = Code, Organisation)
+  ages <- projections$allocation_tables$ages
+  if (!length(ages)) stop("The saved projection age range is missing; rerun the analysis.")
+  records <- bind_rows(
+    episodes |> mutate(Allocation = "Booking", Trust = projection_booking_destination(episodes)),
+    episodes |> mutate(Allocation = "Delivery", Trust = projection_delivery_destination(episodes))) |>
+    inner_join(orgs, by = "Trust", relationship = "many-to-one")
+  # This is exactly the scope that can trigger Partial. Known ages outside the
+  # configured range are reported separately, never described as mismatches.
+  eligible <- records |> filter(is.na(Age) | Age %in% ages)
+  gaps <- projections$provider_projection_gaps |> filter(Level == "Trust") |>
+    select(Allocation, Trust, LA, Age, Reason, Cohort_rows)
+  keys <- c("Allocation", "Trust", "LA", "Age")
+  affected <- eligible |> inner_join(gaps, by = keys, relationship = "many-to-one")
+
+  # Do not diagnose a new/reloaded cohort against stale model results.
+  actual <- affected |> count(across(all_of(keys)), name = "Actual_rows")
+  check <- full_join(gaps, actual, by = keys)
+  saved_totals <- projections$provider_coverage |> filter(Level == "Trust") |>
+    select(Allocation, Organisation, Saved_rows = Cohort_rows)
+  totals_check <- records |> count(Allocation, Organisation, name = "Current_rows") |>
+    full_join(saved_totals, by = c("Allocation", "Organisation"))
+  if (any(coalesce(check$Actual_rows, 0L) != coalesce(check$Cohort_rows, 0L)) ||
+      any(coalesce(totals_check$Current_rows, 0L) != coalesce(totals_check$Saved_rows, 0L)))
+    stop("Loaded cohort does not reconcile to the saved coverage counts. Rerun the analysis on this cohort before using this diagnostic.")
+
+  la_names <- read.csv("data/lookups/la_names.csv", stringsAsFactors = FALSE) |>
+    distinct(LA, LA_name)
+  affected <- affected |>
+    mutate(Country = report_la_country(LA),
+      Cause = if_else(Reason == "No matching ONS LA/age projection" &
+        Country %in% c("Wales", "Scotland", "Northern Ireland"),
+        paste0("Outside supplied ONS geography: ", Country), Reason)) |>
+    left_join(la_names, by = "LA", relationship = "many-to-one") |>
+    mutate(LA_name = coalesce(LA_name, LA))
+  scope <- eligible |> count(Allocation, name = "Eligible_records") |>
+    full_join(affected |> count(Allocation, name = "Unmatched"), by = "Allocation") |>
+    mutate(Unmatched = coalesce(Unmatched, 0L),
+      Unmatched_pct = round(100 * Unmatched / Eligible_records, 1))
+  causes <- affected |> group_by(Cause) |>
+    summarise(Pregnancies = n_distinct(Row), Bookings = sum(Allocation == "Booking"),
+      Deliveries = sum(Allocation == "Delivery"), .groups = "drop") |>
+    arrange(desc(Pregnancies), Cause)
+  trusts <- affected |> group_by(Trust, Organisation) |>
+    summarise(Bookings = sum(Allocation == "Booking"), Deliveries = sum(Allocation == "Delivery"),
+      .groups = "drop") |> arrange(desc(Bookings + Deliveries))
+  cells <- affected |> group_by(LA, LA_name, Country, Age, Cause) |>
+    summarise(Pregnancies = n_distinct(Row), Bookings = sum(Allocation == "Booking"),
+      Deliveries = sum(Allocation == "Delivery"),
+      Trusts = paste(sort(unique(Trust)), collapse = ", "), .groups = "drop")
+  # Attach the exact competing source counts for each affected LA/age cell.
+  calibration <- projections$allocation_tables$calibration |>
+    select(LA, Age, MSDS_resident_count, Cohort_recorded_births, Cohort_pregnancies,
+      Shared_maternity_denominator, Resident_antenatal_only, Cohort_no_recorded_delivery,
+      Resident_unclassified_rows)
+  cells <- cells |> left_join(calibration, by = c("LA", "Age"), relationship = "many-to-one") |>
+    mutate(Evidence = case_when(
+      Cause == "Cohort births exceed resident births: check source periods/processing" ~
+        paste0("Cohort births ", Cohort_recorded_births, " > resident births ", MSDS_resident_count),
+      Cause == "Cohort pregnancies exceed estimated resident total" ~
+        paste0("Cohort pregnancies ", Cohort_pregnancies, " > resident total ", round(Shared_maternity_denominator, 1)),
+      Cause == "LA antenatal-only count below observed cohort no-delivery count" ~
+        paste0("LA antenatal-only ", Resident_antenatal_only, " < cohort no-delivery ", Cohort_no_recorded_delivery),
+      Cause == "Unknown/missing resident pathway group" ~
+        paste0(Resident_unclassified_rows, " resident rows have an unrecognised pathway group"),
+      Cause == "No matching resident birth count" ~ "No resident delivery count for this reconciled LA/age",
+      Cause == "No matching LA/age resident calibration" ~ "Reconciled LA is present, but this age has no resident calibration cell",
+      Cause == "No positive resident birth denominator" ~ paste0("Resident deliveries = ", MSDS_resident_count),
+      Cause == "No matching ONS LA/age projection" ~ "Reconciled LA/age absent from the projection master",
+      Cause == "No same-age uplift estimate" ~ "LA/age exists, but its required projection factors are unavailable",
+      Cause == "Missing/unusable maternal age" ~ "Selected age is still unusable after the agreed fallback",
+      Cause == "Missing/unusable resident LA" ~ "Residence code is missing/unusable after the crosswalk",
+      TRUE ~ Cause)) |> arrange(desc(Pregnancies), LA, Age)
+  # Name the unavailable factor, rather than repeating the model's generic
+  # 'No same-age uplift estimate' label. Inspect affected cells only.
+  factor_names <- c(Exact_age_live_births = "ONS live births after age split",
+    Stillbirth_factor = "stillbirth factor", Multiplicity_factor = "multiplicity factor",
+    Private_NHS_factor = "Private–NHS factor", Bookings_uplift_modifier = "pathway factor")
+  for (i in which(cells$Cause == "No same-age uplift estimate")) {
+    master <- projections$master
+    if (is.null(master)) next
+    rows <- master[which(master$LA == cells$LA[i] & master$Age == cells$Age[i]), ]
+    fields <- intersect(names(factor_names), names(rows))
+    missing <- fields[vapply(fields, function(field) any(!is.finite(rows[[field]])), logical(1))]
+    if (length(missing)) cells$Evidence[i] <- paste0("Unavailable: ",
+      paste(unname(factor_names[missing]), collapse = ", "))
+  }
+
+  cat("\nWHY PROVIDER PROJECTIONS ARE PARTIAL — COHORT RECORDS ONLY\n")
+  cat("Selected age unknown/unusable after fallback: ", sum(is.na(episodes$Age)),
+    " of ", nrow(episodes), " cohort pregnancies",
+    if (!anyNA(episodes$Age)) " — age missingness is not a cause in this cohort.\n" else ".\n", sep = "")
+  cat("Flag scope: cluster-provider activity, ages ", min(ages), "–", max(ages),
+    " plus unknown age; pooled supplied cohort. Booking and delivery columns overlap.\n", sep = "")
+  print(scope, n = Inf, width = Inf)
+  excluded <- records |> filter(!is.na(Age), !Age %in% ages) |> count(Allocation, name = "Out_of_range")
+  if (nrow(excluded)) { cat("Known ages outside model scope (NOT Partial causes):\n"); print(excluded, n = Inf) }
+  if (!nrow(affected)) cat("No unmatched in-scope provider records: no cohort matching gaps explain Partial.\n") else {
+    cat("\nACTUAL CAUSES (unique pregnancies; activity columns overlap)\n")
+    print(causes, n = Inf, width = Inf)
+    cat("\nAFFECTED TRUSTS (codes match the detail list)\n")
+    print(trusts, n = Inf, width = Inf)
+    other <- cells |> filter(!grepl("^Outside supplied ONS geography:", Cause))
+    cat("\nISSUES OTHER THAN COUNTRY COVERAGE: ", nrow(other), " affected LA/age/cause combinations\n", sep = "")
+    if (!nrow(other)) cat("None: the saved gaps are entirely due to country coverage.\n")
+    for (i in seq_len(min(nrow(other), detail_limit))) {
+      row <- other[i, ]
+      cat("- ", row$LA_name, " [", row$LA, "], age ", ifelse(is.na(row$Age), "Unknown", row$Age),
+        ": ", row$Evidence, "; ", row$Bookings, " bookings / ", row$Deliveries,
+        " deliveries; trusts ", row$Trusts, ".\n", sep = "")
+    }
+    if (nrow(other) > detail_limit) cat("Showing the ", detail_limit,
+      " largest; all ", nrow(other), " are in hh_unmatched_cells (no lookup-only issues).\n", sep = "")
+  }
+  cat("\nhh_unmatched_records: original cohort Row, FY, source/reconciled LA, ages, trust and actual reason.\n",
+    "Inspect a source pregnancy locally with final_cohort_2326[hh_unmatched_records$Row[1], ].\n", sep = "")
+  list(records = affected |> select(Row, Pregnancy_FY, Allocation, Trust, Organisation,
+      LA_source, LA, LA_name, Country, Age_at_birth, Age_at_booking, Age, Age_source, Cause),
+    cells = cells, causes = causes, trusts = trusts, scope = scope)
+}
+
+# Optional detailed investigation later: run these lines only when needed.
+# hh_gap_diagnostic <- hh_explain_projection_gaps(first_draft_projections, final_cohort_2326)
+# hh_unmatched_records <- hh_gap_diagnostic$records
+# hh_unmatched_cells <- hh_gap_diagnostic$cells
+# END WHY PROVIDER PROJECTIONS ARE PARTIAL -------------------------------
 
 # Older investigations: select their lines to run; sourcing skips them.
 if (FALSE) {

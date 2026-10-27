@@ -21,6 +21,15 @@ sum_available_projection <- function(x) {
 # Numeric copy for arithmetic only. Supplied age labels are retained separately.
 report_age <- function(x) report_number(x)
 
+# One assigned age for both MSDS inputs and every downstream calculation.
+# A booking-sourced age is complete under the agreed definition.
+report_assigned_age_value <- function(birth_age, booking_age) {
+  value <- as.character(birth_age)
+  use_booking <- is.na(birth_age)
+  value[use_booking] <- as.character(booking_age[use_booking])
+  value
+}
+
 # ONS publishes combined boundary rows, not separate births below 15 or above 44.
 # Retain MSDS Age and use this separate key only to select an ONS source boundary.
 report_ons_age <- function(x) pmin(44, pmax(15, report_age(x)))
@@ -161,8 +170,7 @@ prepare_la_records <- function(residents) {
       Pathway_group = report_resident_group(group),
       Has_delivery = Pathway_group %in% c("birth only", "antenatal+delivery"),
       Has_antenatal = Pathway_group %in% c("antenatal only", "antenatal+delivery"),
-      Age_value = dplyr::if_else(is.na(age_at_birth_mother),
-        as.character(age_at_booking_mother), as.character(age_at_birth_mother)),
+      Age_value = report_assigned_age_value(age_at_birth_mother, age_at_booking_mother),
       Age = report_age(Age_value))
 }
 
@@ -202,15 +210,12 @@ prepare_report_cohort <- function(cohort) {
   start <- report_fy_start(year)
   booking_date <- report_date(cohort$antenatal_app_date)
   # Agreed maternal-age rule: birth age takes priority; only a source NA
-  # permits booking age. Keep Age_source visible rather than relabelling the
-  # fallback as an exact age at delivery.
+  # permits booking age. Age_source is provenance, not a completeness penalty.
   birth_age <- report_age(cohort$age_at_birth_mother)
   booking_age <- report_age(cohort$age_at_booking_mother)
   use_booking_age <- is.na(cohort$age_at_birth_mother)
-  age_value <- as.character(cohort$age_at_birth_mother)
-  age_value[use_booking_age] <- as.character(cohort$age_at_booking_mother[use_booking_age])
-  age <- birth_age
-  age[use_booking_age] <- booking_age[use_booking_age]
+  age_value <- report_assigned_age_value(cohort$age_at_birth_mother, cohort$age_at_booking_mother)
+  age <- report_age(age_value)
 
   tibble::tibble(
     Row = seq_len(nrow(cohort)),

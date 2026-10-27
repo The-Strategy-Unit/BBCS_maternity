@@ -76,76 +76,26 @@
     return {node: [node], link: [link], meta: [meta]};
   }
 
-  // Keep one volume scale, but distribute each column's spare space across
-  // its own gaps so its first/last nodes meet the same top/bottom boundaries.
-  function sankeyNodeY(trace, height, pad) {
+  // Original volume-based layout: regular gaps and independently centred
+  // columns. A column with fewer categories naturally occupies less height.
+  function sankeyNodeY(trace, height) {
     const x = trace.node.x;
     const {weights, layers} = sankeyLayers(trace);
     const y = x.map(() => 0.5);
     if (!layers.length) return y;
-    const gap = Math.min(pad, height / Math.max(1, ...layers.map(ids => ids.length - 1)));
+    const gap = Math.min(trace.node.pad, height / Math.max(1, ...layers.map(ids => ids.length - 1)));
     const scale = Math.min(...layers.map(ids =>
       (height - gap * (ids.length - 1)) / ids.reduce((sum, i) => sum + weights[i], 0)));
     layers.forEach(ids => {
-      const filled = ids.reduce((sum, i) => sum + weights[i] * scale, 0);
-      const columnGap = ids.length > 1 ? (height - filled) / (ids.length - 1) : 0;
-      let top = ids.length > 1 ? 0 : (height - filled) / 2;
+      const used = ids.reduce((sum, i) => sum + weights[i] * scale, 0) + gap * (ids.length - 1);
+      let top = (height - used) / 2;
       ids.forEach(i => {
         const size = weights[i] * scale;
         y[i] = (top + size / 2) / height;
-        top += size + columnGap;
+        top += size + gap;
       });
     });
     return y;
-  }
-
-  function separateSankeyLabels(plot) {
-    // Tiny categories still need readable labels. Move text only, leaving
-    // nodes/ribbons untouched, and connect displaced labels to their node.
-    plot.querySelectorAll('.sankey').forEach(sankey => {
-      const columns = new Map();
-      sankey.querySelectorAll('.sankey-node').forEach(node => {
-        const text = node.querySelector('.node-label'), rect = node.querySelector('.node-rect');
-        if (!text || !rect) return;
-        node.querySelector('.report-label-leader')?.remove();
-        if (text.getAttribute('transform') === text.dataset.reportAdjustedTransform)
-          text.setAttribute('transform', text.dataset.reportBaseTransform);
-        const transform = text.getAttribute('transform') || '';
-        text.dataset.reportBaseTransform = transform;
-        const box = text.getBoundingClientRect(), nodeBox = rect.getBoundingClientRect();
-        const key = Math.round(nodeBox.x);
-        if (!columns.has(key)) columns.set(key, []);
-        columns.get(key).push({node, text, rect, box, nodeBox, transform, top: box.top});
-      });
-      columns.forEach(items => {
-        items.sort((a, b) => a.nodeBox.top - b.nodeBox.top);
-        const top = Math.min(...items.map(i => i.nodeBox.top));
-        const bottom = Math.max(...items.map(i => i.nodeBox.bottom));
-        let next = top;
-        items.forEach(i => { i.top = Math.max(i.box.top, next); next = i.top + i.box.height + 4; });
-        let end = bottom;
-        [...items].reverse().forEach(i => { i.top = Math.min(i.top, end - i.box.height); end = i.top - 4; });
-        items.forEach(i => {
-          const dy = i.top - i.box.top;
-          if (Math.abs(dy) < 0.5) return;
-          i.text.dataset.reportAdjustedTransform = `translate(0,${dy}) ${i.transform}`;
-          i.text.setAttribute('transform', i.text.dataset.reportAdjustedTransform);
-          if (Math.abs(dy) < 5) return;
-          const right = i.text.getAttribute('text-anchor') !== 'end';
-          const edge = right ? Number(i.rect.getAttribute('width')) : 0;
-          const leader = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-          leader.setAttribute('class', 'report-label-leader');
-          leader.setAttribute('x1', edge);
-          leader.setAttribute('x2', edge + (right ? 3 : -3));
-          leader.setAttribute('y1', Number(i.rect.getAttribute('height')) / 2);
-          leader.setAttribute('y2', i.top + i.box.height / 2 - i.nodeBox.top);
-          leader.setAttribute('stroke', '#666');
-          leader.setAttribute('stroke-width', '0.7');
-          leader.setAttribute('pointer-events', 'none');
-          i.node.insertBefore(leader, i.text);
-        });
-      });
-    });
   }
 
   function wrap(text, width, size) {
@@ -168,15 +118,6 @@
     if (width < 100) return; // Hidden tabs are measured when they become visible.
     // Preserve Sankey height for all categories
     let height = state.sankey || state.compactPopulation || state.overviewBar ? state.height : Math.min(state.height, Math.max(320, window.innerHeight - 48));
-    if (state.sankey) plot.data.forEach(trace => {
-      if (trace.type !== 'sankey' || !trace.node?.x?.length) return;
-      const labels = sankeyLabels(trace), {layers} = sankeyLayers(trace);
-      const size = trace.textfont?.size || plot.layout.font?.size || 12;
-      layers.forEach(ids => {
-        const labelHeight = ids.reduce((sum, i) => sum + labels[i].split(/<br\s*\/?>/i).length * size * 1.3 + 8, 0);
-        height = Math.max(height, labelHeight + (state.margin.t || 0) + (state.margin.b || 0) + 24);
-      });
-    });
     const key = `${width}:${height}`;
     if (state.key === key && Math.abs(plot._fullLayout.width - width) < 1 &&
         plot._fullLayout.height === height && plot.clientHeight === height) return;
@@ -256,23 +197,14 @@
           const active = activeSankey(trace);
           if (active) { await Plotly.restyle(plot, active, [i]); trace = plot.data[i]; }
           const innerHeight = Math.max(1, height - (margin.t || 0) - (margin.b || 0));
-          const {layers} = sankeyLayers(trace);
-          // A one-node column cannot contain gaps. Remove gaps from its paired
-          // columns too, preserving the same pixels per unit and full height.
-          const pad = layers.some(ids => ids.length === 1) ? 0 : trace.node.pad;
-          const nodeUpdate = {'node.y': [sankeyNodeY(trace, innerHeight, pad)],
-            'node.pad': pad, 'node.label': [sankeyLabels(trace)]};
+          const nodeUpdate = {'node.y': [sankeyNodeY(trace, innerHeight)],
+            'node.label': [sankeyLabels(trace)]};
           if (trace.meta?.demographic_colour_field || trace.meta?.ribbon_colour_field)
             nodeUpdate['node.color'] = [trace.node.x.map(() => '#959595')];
           await Plotly.restyle(plot, nodeUpdate, [i]);
         }
       }
       await Plotly.relayout(plot, update);
-      if (state.sankey) {
-        // Sankey SVG transitions can finish after the Plotly promise resolves.
-        clearTimeout(state.labelTimer);
-        state.labelTimer = setTimeout(() => separateSankeyLabels(plot), 600);
-      }
       state.key = key;
     } finally { state.busy = false; }
   }

@@ -2515,7 +2515,7 @@ build_provider_total_comparison <- function(master, cohort, organisations, model
   }))
 }
 
-provider_total_chart <- function(data, title) {
+provider_total_chart <- function(data, title, legend_below = FALSE) {
   data <- dc_coverage_note(dc_counts(data, "Value"))
   keys <- unique(data$Key)
   colours <- organisation_line_colours(keys)
@@ -2535,7 +2535,7 @@ provider_total_chart <- function(data, title) {
       chart <- plotly::add_trace(chart, x = line$Year, y = line$Value,
         type = "scatter", mode = "lines", name = label, showlegend = first,
         legendgroup = key, meta = list(Key = key, Series = series),
-        line = list(color = unname(colours[key]), width = 2.2,
+        line = list(color = unname(colours[key]), width = if (legend_below) 3 else 2.2,
           dash = if (series == "ONS base") "dash" else "solid"),
         text = paste0(line$Organisation, "<br>", series, "<br>", line$Period,
           "<br>", ifelse(is.na(line$Value), "Unavailable", scales::comma(line$Value, accuracy = 1)),
@@ -2548,7 +2548,7 @@ provider_total_chart <- function(data, title) {
   left <- min(years) - 0.25
   right <- max(years) + 0.25
   ticks <- sort(unique(c(min(years), latest_recorded, years[years %% 5 == 0], max(years))))
-  source_key <- plotly_source_line_key()
+  source_key <- plotly_source_line_key(if (legend_below) "bottom" else "top")
   notes <- list(
     list(text = "Historical", x = (left + boundary) / 2, y = 1.06, xref = "x", yref = "paper", showarrow = FALSE),
     list(text = "Future projections", x = (boundary + right) / 2, y = 1.06, xref = "x", yref = "paper", showarrow = FALSE))
@@ -2564,7 +2564,8 @@ provider_total_chart <- function(data, title) {
     annotations = c(notes, source_key$annotations),
     legend = list(orientation = "h", x = 0, y = -0.29, font = list(size = 13),
       itemwidth = 50, groupclick = "togglegroup"),
-    margin = list(l = 75, r = 20, t = 145, b = if (combined) 130 else 115),
+    margin = list(l = 75, r = 20, t = if (legend_below) 60 else 145,
+      b = if (legend_below) 150 else if (combined) 130 else 115),
     font = list(family = "Arial")) |>
     plotly::config(displayModeBar = FALSE, responsive = TRUE)
 }
@@ -3284,9 +3285,9 @@ build_first_draft_projections <- function(baseline_fy = projection_baseline,
     }
     # Delivery charts: completed counts, compared with the recorded baseline.
     total_chart <- provider_total_chart(result$total_comparison$Delivery[
-      result$total_comparison$Delivery$Key == key, ], "Deliveries / ONS live-birth base")
+      result$total_comparison$Delivery$Key == key, ], "Deliveries / ONS live-birth base", legend_below = TRUE)
     change_chart <- plotly::plot_ly(org_totals, height = projection_chart_height, x = ~Year, y = ~Percent_change,
-      type = "scatter", mode = "lines+markers", line = list(color = unname(organisation_line_colours(key)), width = 2),
+      type = "scatter", mode = "lines+markers", line = list(color = unname(organisation_line_colours(key)), width = 3),
       marker = list(color = unname(organisation_line_colours(key)), size = 5),
       text = ~paste0(Year_label, "<br>Change from matched recorded ", baseline_fy, ": ",
         ifelse(is.na(Percent_change), "n.a.", scales::percent(Percent_change, accuracy = 0.1)), "<br>", Coverage_note),
@@ -3391,15 +3392,15 @@ build_first_draft_projections <- function(baseline_fy = projection_baseline,
   # Shared total comparisons and change charts for both allocation views.
   total_charts <- lapply(age_groups, function(rows) provider_total_chart(
     result$total_comparison$Delivery[result$total_comparison$Delivery$Key %in% rows$Key, ],
-    "Deliveries / ONS live-birth base"))
-  combined_change_chart <- function(data, rows, title) {
+    "Deliveries / ONS live-birth base", legend_below = TRUE))
+  combined_change_chart <- function(data, rows, title, line_width = 2) {
     colours <- organisation_line_colours(rows$Key)
     chart <- plotly::plot_ly(height = projection_chart_height + 100)
     for (i in seq_len(nrow(rows))) {
       line <- data[data$Key == rows$Key[i], ] |> dplyr::arrange(Year)
       chart <- plotly::add_trace(chart, x = line$Year, y = line$Percent_change,
         type = "scatter", mode = "lines", name = rows$Organisation[i],
-        line = list(color = colours[i], width = 2), connectgaps = FALSE,
+        line = list(color = colours[i], width = line_width), connectgaps = FALSE,
         text = paste0(rows$Organisation[i], "<br>", line$Year, "<br>", title, ": ",
           ifelse(is.na(line$Percent_change), "Unavailable", scales::percent(line$Percent_change, accuracy = 0.1)),
           "<br>", line$Coverage_note),
@@ -3408,26 +3409,28 @@ build_first_draft_projections <- function(baseline_fy = projection_baseline,
     style_line_chart(chart, title, percent = TRUE)
   }
   change_charts <- lapply(age_groups, function(rows) combined_change_chart(
-    maternity_projections, rows, paste("% change from matched recorded", baseline_fy)))
-  organisation_grid <- function(charts, rows, shared_colours = NULL) {
+    maternity_projections, rows, paste("% change from matched recorded", baseline_fy), line_width = 3))
+  organisation_grid <- function(charts, rows, shared_colours = NULL, legend_below = FALSE, bottom_margin = 65,
+                                columns = 2L) {
     age_key <- !is.null(shared_colours)
     if (is.null(shared_colours)) shared_colours <- stats::setNames(
       unname(organisation_line_colours(rows$Key)), rows$Organisation)
-    htmltools::tagList(
-      report_colour_key(shared_colours,
-        if (age_key) "organisation-age-key" else "organisation-comparison-key", lines = TRUE),
-      htmltools::div(style = "display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px;",
+    key <- report_colour_key(shared_colours,
+      if (age_key) "organisation-age-key" else "organisation-comparison-key", lines = TRUE)
+    grid <- htmltools::div(style = paste0("display: grid; grid-template-columns: repeat(", columns,
+      ", minmax(0, 1fr)); gap: 24px;"),
       htmltools::tagList(lapply(seq_len(nrow(rows)), function(i) {
         chart <- charts[[rows$Key[i]]]
         if (!is.null(shared_colours) && inherits(chart, "plotly"))
-          chart <- plotly::layout(chart, showlegend = FALSE, margin = list(b = 65))
+          chart <- plotly::layout(chart, showlegend = FALSE, margin = list(b = bottom_margin))
         htmltools::div(style = "min-width: 0;", htmltools::h3(rows$Organisation[i]), chart)
-      }))))
+      })))
+    if (legend_below) htmltools::tagList(grid, key) else htmltools::tagList(key, grid)
   }
   result$delivery_total_grids <- lapply(age_groups, function(rows) organisation_grid(
-    lapply(forecast_outputs, function(x) x$total_chart), rows))
+    lapply(forecast_outputs, function(x) x$total_chart), rows, legend_below = TRUE, bottom_margin = 150))
   result$delivery_change_grids <- lapply(age_groups, function(rows) organisation_grid(
-    lapply(forecast_outputs, function(x) x$change_chart), rows))
+    lapply(forecast_outputs, function(x) x$change_chart), rows, legend_below = TRUE))
   all_totals_table <- maternity_projections |>
     dplyr::select(Level, Organisation, Coverage_status, Year_label, Projected) |>
     tidyr::pivot_wider(names_from = Year_label, values_from = Projected) |>
@@ -3497,10 +3500,11 @@ build_first_draft_projections <- function(baseline_fy = projection_baseline,
   # Changes are relative to the MODELLED reference year, not observed bookings.
   booking_chart <- function(key, view) {
     if (view == "total") return(provider_total_chart(result$total_comparison$Booking[
-      result$total_comparison$Booking$Key == key, ], "Antenatal bookings / ONS live-birth base"))
+      result$total_comparison$Booking$Key == key, ], "Antenatal bookings / ONS live-birth base", legend_below = TRUE))
     data <- booking_total_projections[booking_total_projections$Key == key, ]
     incomplete <- key %in% booking_gaps$Key || anyNA(data$Projected)
-    chart <- plotly::plot_ly(height = projection_chart_height)
+    chart <- plotly::plot_ly(height = if (view %in% c("age", "age_change"))
+      projection_chart_height / 2 else projection_chart_height)
     if (view %in% c("age", "age_change")) {
       data <- booking_age_projections[booking_age_projections$Key == key, ]
       for (band in age_bands) {
@@ -3524,7 +3528,7 @@ build_first_draft_projections <- function(baseline_fy = projection_baseline,
       values <- if (view == "change") data$Percent_change else data$Projected
       chart <- plotly::add_trace(chart, x = data$Year, y = values,
         type = "scatter", mode = "lines+markers", name = "Projected antenatal bookings",
-        line = list(color = unname(organisation_line_colours(key)), width = 2),
+        line = list(color = unname(organisation_line_colours(key)), width = 3),
         marker = list(color = unname(organisation_line_colours(key)), size = 5),
         text = paste0(data$Year, "<br>", if (view == "change")
           paste0("Change from modelled ", ons_reference_year, ": ", scales::percent(values, accuracy = 0.1)) else
@@ -3550,12 +3554,15 @@ build_first_draft_projections <- function(baseline_fy = projection_baseline,
   booking_groups <- age_groups
   booking_grids <- stats::setNames(lapply(booking_views, function(view)
     lapply(booking_groups, function(rows) organisation_grid(booking_charts[[view]], rows,
-      if (view %in% c("age", "age_change")) stats::setNames(age_colours, age_bands) else NULL))), booking_views)
+      if (view %in% c("age", "age_change")) stats::setNames(age_colours, age_bands) else NULL,
+      legend_below = view %in% c("total", "change"),
+      bottom_margin = if (view == "total") 150 else 65,
+      columns = if (view %in% c("age", "age_change")) 3L else 2L))), booking_views)
   result$booking_total_charts <- lapply(booking_groups, function(rows) provider_total_chart(
     result$total_comparison$Booking[result$total_comparison$Booking$Key %in% rows$Key, ],
-    "Antenatal bookings / ONS live-birth base"))
+    "Antenatal bookings / ONS live-birth base", legend_below = TRUE))
   result$booking_change_charts <- lapply(booking_groups, function(rows) combined_change_chart(
-    booking_total_projections, rows, paste("% change from modelled", ons_reference_year)))
+    booking_total_projections, rows, paste("% change from modelled", ons_reference_year), line_width = 3))
   booking_table <- booking_total_projections |>
     dplyr::select(Level, Organisation, Coverage_status, Year, Projected, Percent_change) |>
     base_table("Projected antenatal bookings", paste("Change from modelled", ons_reference_year, "bookings")) |>
@@ -3597,6 +3604,7 @@ build_first_draft_projections <- function(baseline_fy = projection_baseline,
     target_episodes, completed, organisations, baseline_fy, max(projection_years),
     main_las = cluster_las, other_las = 0L, cluster_only = TRUE,
     unavailable_flows = delivery_gaps |> dplyr::filter(Level == "Trust") |> dplyr::distinct(LA, Trust))
+  result$chart_layout_version <- "projection-chart-layout-v1"
   result
 }
 

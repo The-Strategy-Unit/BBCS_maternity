@@ -104,7 +104,8 @@ booking_delivery_palette <- function() c(
 
 # Standalone organisation comparisons use the same tab-top keys as chart grids.
 # Keep the black source-style inset inside the chart; it encodes a different field.
-report_line_chart <- function(chart) {
+report_line_chart <- function(chart, legend_position = c("top", "bottom")) {
+  legend_position <- match.arg(legend_position)
   built <- plotly::plotly_build(chart)
   traces <- Filter(function(trace) !identical(trace$showlegend, FALSE) &&
     length(trace$name) == 1L && length(trace$line$color) == 1L, built$x$data)
@@ -112,8 +113,9 @@ report_line_chart <- function(chart) {
     vapply(traces, function(x) x$name, character(1)))
   colours <- colours[!duplicated(names(colours))]
   built$x$layout$showlegend <- FALSE
-  built$x$layout$margin$b <- 65
-  htmltools::tagList(report_colour_key(colours, "organisation-comparison-key", lines = TRUE), built)
+  built$x$layout$margin$b <- if (legend_position == "bottom") max(65, built$x$layout$margin$b) else 65
+  key <- report_colour_key(colours, "organisation-comparison-key", lines = TRUE)
+  if (legend_position == "bottom") htmltools::tagList(built, key) else htmltools::tagList(key, built)
 }
 
 # Static figures also put their key before their title, not between title and axes.
@@ -192,17 +194,22 @@ source_line_key_grob <- function() {
       gp = grid::gpar(col = "black", fontsize = 12, fontfamily = "sans")))
 }
 
-plotly_source_line_key <- function() {
-  # Fixed-pixel key in reserved top margin: never covers the data area.
+plotly_source_line_key <- function(position = c("top", "bottom")) {
+  position <- match.arg(position)
+  # Fixed-pixel key in the reserved margin. Bottom labels use y=0 and pixel
+  # shifts so the responsive chart code does not collapse them onto one line.
+  anchor <- if (position == "bottom") 0 else 1
+  offset <- if (position == "bottom") -180 else 0
   line <- function(y, dash) list(type = "line", xref = "paper", yref = "paper",
-    xsizemode = "pixel", ysizemode = "pixel", xanchor = 1, yanchor = 1,
-    x0 = -235, x1 = -175, y0 = y, y1 = y, line = list(color = "black", width = 3.5, dash = dash))
-  label <- function(y, text) list(x = 1, y = 1, xref = "paper", yref = "paper",
-    xshift = -165, yshift = y, xanchor = "left", yanchor = "middle",
+    xsizemode = "pixel", ysizemode = "pixel", xanchor = 1, yanchor = anchor,
+    x0 = -235, x1 = -175, y0 = y + offset, y1 = y + offset,
+    line = list(color = "black", width = 3.5, dash = dash))
+  label <- function(y, text) list(x = 1, y = anchor, xref = "paper", yref = "paper",
+    xshift = -165, yshift = y + offset, xanchor = "left", yanchor = "middle",
     text = text, showarrow = FALSE, font = list(size = 14, color = "black"))
   list(shapes = list(
     list(type = "rect", xref = "paper", yref = "paper", xsizemode = "pixel", ysizemode = "pixel",
-      xanchor = 1, yanchor = 1, x0 = -250, x1 = 0, y0 = 50, y1 = 115,
+      xanchor = 1, yanchor = anchor, x0 = -250, x1 = 0, y0 = 50 + offset, y1 = 115 + offset,
       fillcolor = "white", line = list(color = "#777777", width = 1)),
     line(95, "solid"), line(70, "dash")),
     annotations = list(label(95, "MSDS / modelled"), label(70, "ONS base")))

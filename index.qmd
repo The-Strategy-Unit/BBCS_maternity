@@ -63,6 +63,8 @@ delivery_geography <- read_report_rds(".delivery_geography.rds", report_run$run_
 if (!identical(delivery_geography$age_mix_denominator, "sum-disclosed-age-counts-v1"))
   stop("Regenerate the delivery geography charts with R/Run analysis.R to update the within-LA age percentages.")
 first_draft_projections <- read_report_rds(".projections.rds", report_run$run_id)
+if (!identical(first_draft_projections$chart_layout_version, "projection-chart-layout-v1"))
+  stop("Regenerate the projection charts with R/Run analysis.R for the section 3 legends, line widths and booking-age grid layout.")
 if (!identical(first_draft_projections$projection_geography$version, "english-ons-la-v1"))
   stop("Regenerate the projections with R/Run analysis.R to apply the English resident-LA scope.")
 if (is.null(first_draft_projections$sankey_comparison_cluster_las))
@@ -1967,7 +1969,7 @@ Recorded deliveries count each pregnancy with a recorded live birth or stillbirt
 ```{r}
 #| label: projection-totals-trusts
 
-htmltools::browsable(report_line_chart(first_draft_projections$total_charts$Trust))
+htmltools::browsable(report_line_chart(first_draft_projections$total_charts$Trust, legend_position = "bottom"))
 ```
 
 #### ICBs and whole cluster
@@ -1975,7 +1977,7 @@ htmltools::browsable(report_line_chart(first_draft_projections$total_charts$Trus
 ```{r}
 #| label: projection-totals-icbs-cluster
 
-htmltools::browsable(report_line_chart(first_draft_projections$total_charts$ICB_Cluster))
+htmltools::browsable(report_line_chart(first_draft_projections$total_charts$ICB_Cluster, legend_position = "bottom"))
 ```
 
 #### Separate trusts
@@ -2099,7 +2101,7 @@ These charts compare each modelled ONS-year total with the organisation's record
 ```{r}
 #| label: projection-changes-trusts
 
-htmltools::browsable(report_line_chart(first_draft_projections$change_charts$Trust))
+htmltools::browsable(report_line_chart(first_draft_projections$change_charts$Trust, legend_position = "bottom"))
 ```
 
 #### ICBs and whole cluster
@@ -2107,7 +2109,7 @@ htmltools::browsable(report_line_chart(first_draft_projections$change_charts$Tru
 ```{r}
 #| label: projection-changes-icbs-cluster
 
-htmltools::browsable(report_line_chart(first_draft_projections$change_charts$ICB_Cluster))
+htmltools::browsable(report_line_chart(first_draft_projections$change_charts$ICB_Cluster, legend_position = "bottom"))
 ```
 
 #### Separate trusts
@@ -2150,14 +2152,14 @@ Recorded bookings count each pregnancy once at its booking provider in its assig
 
 ```{r}
 #| label: booking-projection-combined-trust-total
-htmltools::browsable(report_line_chart(first_draft_projections$booking_total_charts$Trust))
+htmltools::browsable(report_line_chart(first_draft_projections$booking_total_charts$Trust, legend_position = "bottom"))
 ```
 
 #### ICBs and whole cluster
 
 ```{r}
 #| label: booking-projection-combined-icb-total
-htmltools::browsable(report_line_chart(first_draft_projections$booking_total_charts$ICB_Cluster))
+htmltools::browsable(report_line_chart(first_draft_projections$booking_total_charts$ICB_Cluster, legend_position = "bottom"))
 ```
 
 #### Separate trusts
@@ -2234,14 +2236,14 @@ These charts compare each projected year with the organisation's modelled 2025 b
 
 ```{r}
 #| label: booking-projection-combined-trust-change
-htmltools::browsable(report_line_chart(first_draft_projections$booking_change_charts$Trust))
+htmltools::browsable(report_line_chart(first_draft_projections$booking_change_charts$Trust, legend_position = "bottom"))
 ```
 
 #### ICBs and whole cluster
 
 ```{r}
 #| label: booking-projection-combined-icb-change
-htmltools::browsable(report_line_chart(first_draft_projections$booking_change_charts$ICB_Cluster))
+htmltools::browsable(report_line_chart(first_draft_projections$booking_change_charts$ICB_Cluster, legend_position = "bottom"))
 ```
 
 :::

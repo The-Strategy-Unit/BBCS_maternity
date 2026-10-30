@@ -115,6 +115,38 @@
     }).join('<br>');
   }
 
+  // Separate full count labels on narrow Section 5.3 charts without changing
+  // the bar values or abbreviating counts. Plotly redraws reset their positions.
+  function spaceComparisonCountLabels(plot) {
+    if (!plot.data.some(trace => trace.meta?.measure === 'count' &&
+      trace.meta?.cohort_match_field && trace.orientation !== 'h')) return;
+    const labels = [...plot.querySelectorAll('.bartext')].filter(label => label.textContent.trim());
+    labels.forEach(label => {
+      const current = label.getAttribute('transform') || '';
+      const previous = label.reportCountPosition;
+      const base = previous && current === previous.adjusted ? previous.base : current;
+      label.setAttribute('transform', base);
+      label.reportCountPosition = {base, adjusted: base};
+    });
+    labels.sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top ||
+      a.getBoundingClientRect().left - b.getBoundingClientRect().left);
+    const placed = [];
+    labels.forEach(label => {
+      let box = label.getBoundingClientRect(), shift = 0;
+      for (let attempt = 0; attempt < placed.length; attempt++) {
+        const overlap = placed.find(other => box.left < other.right + 2 && box.right + 2 > other.left &&
+          box.top < other.bottom + 2 && box.bottom + 2 > other.top);
+        if (!overlap) break;
+        shift -= box.bottom - overlap.top + 3;
+        const position = label.reportCountPosition;
+        position.adjusted = `${position.base} translate(0, ${shift})`;
+        label.setAttribute('transform', position.adjusted);
+        box = label.getBoundingClientRect();
+      }
+      placed.push(box);
+    });
+  }
+
   async function fit(plot, state) {
     if (!plot._fullLayout || !plot.clientWidth || !plot.getClientRects().length || state.busy) return;
     const width = Math.floor(plot.parentElement.getBoundingClientRect().width);
@@ -241,6 +273,8 @@
         names: plot.data.map(t => t.name || ''),
         annotations: (plot.layout.annotations || []).map(a => ({...a}))
       });
+      plot.on('plotly_afterplot', () => spaceComparisonCountLabels(plot));
+      spaceComparisonCountLabels(plot);
       observer.observe(plot.parentElement);
     });
     window.addEventListener('resize', schedule);

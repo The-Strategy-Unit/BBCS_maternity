@@ -15,17 +15,19 @@ demo_bbcs_org_codes <- function(group, include_other = FALSE) {
     c(cluster_icbs, "Cluster")
 }
 
-# Same/different original trust codes; exclude missing events/providers and home births
+# Compare the booking trust with the actual trust or Home destination.
+# A recorded home birth is Different even if its responsible provider is the
+# booking trust. A home destination does not need a delivery-provider code.
 cohort_trust_comparison <- function(episodes) {
   booking <- episodes$Booking_provider_supplied | episodes$Booking_date_supplied
   valid <- grepl("^R[A-Z0-9]{2}$", episodes$Booking_Trust) &
-    grepl("^R[A-Z0-9]{2}$", episodes$Trust)
+    (episodes$Home %in% 1 | grepl("^R[A-Z0-9]{2}$", episodes$Trust))
   dplyr::case_when(
     !booking & !episodes$Birth_recorded ~ "Neither booking nor delivery recorded",
     !booking ~ "No recorded booking",
     !episodes$Birth_recorded ~ "No recorded delivery",
-    episodes$Home %in% 1 ~ "Home birth",
     !valid ~ "Missing or invalid trust code",
+    episodes$Home %in% 1 ~ "Different trusts",
     episodes$Booking_Trust == episodes$Trust ~ "Same trust",
     TRUE ~ "Different trusts")
 }
@@ -675,6 +677,10 @@ cohort_match_counts <- function(master, field, categories = NULL) {
     dplyr::ungroup()
 }
 
+cohort_match_group_label <- function(group) {
+  ifelse(group == "Different trusts", "Different trust or home birth", group)
+}
+
 cohort_match_chart <- function(data, field, proportions = FALSE) {
   horizontal <- field %in% c("ethnicity_broad", "ethnicity_profile")
   labels <- data$Label[data$Group == "Same trust"]
@@ -682,7 +688,7 @@ cohort_match_chart <- function(data, field, proportions = FALSE) {
   # Keep percentage labels readable even when one status occupies a thin sliver.
   small <- if (proportions) data[!is.na(data$Share) & data$N > 0 & data$Share < .08, ] else data[0, ]
   small_labels <- lapply(seq_len(nrow(small)), function(i) {
-    label <- list(text = scales::percent(small$Share[i], accuracy = .1), showarrow = FALSE,
+    label <- list(text = scales::percent(small$Share[i], accuracy = 1), showarrow = FALSE,
       font = list(size = 15, color = unname(colours[small$Group[i]])))
     if (horizontal) c(label, list(x = 1, xref = "paper", xshift = 8, xanchor = "left",
       y = small$Label[i], yref = "y")) else
@@ -694,7 +700,7 @@ cohort_match_chart <- function(data, field, proportions = FALSE) {
     rows <- data[data$Group == group, ]
     percent <- ifelse(is.na(rows$Share), "Percentage unavailable (no comparable pregnancies in this category)",
       paste0(scales::percent(rows$Share, accuracy = .1), " of comparable pregnancies in this category"))
-    hover <- paste0(rows$Label, "<br>", group, "<br>Pregnancies: ", scales::comma(rows$N), "<br>", percent)
+    hover <- paste0(rows$Label, "<br>", cohort_match_group_label(group), "<br>Pregnancies: ", scales::comma(rows$N), "<br>", percent)
     value <- if (proportions) rows$Share else rows$N
     chart <- plotly::add_trace(chart, type = "bar", name = group,
       orientation = if (horizontal) "h" else "v",
@@ -702,16 +708,17 @@ cohort_match_chart <- function(data, field, proportions = FALSE) {
       marker = list(color = colours[[group]]),
       offsetgroup = if (proportions) "category" else group, legendgroup = group,
       text = if (proportions) ifelse(is.na(rows$Share) | rows$N == 0 | rows$Share < .08, "",
-        scales::percent(rows$Share, accuracy = .1)) else NULL,
-      textposition = if (proportions) "inside" else "none",
-      insidetextanchor = "middle", textfont = list(color = "white", size = 15), textangle = 0,
+        scales::percent(rows$Share, accuracy = 1)) else ifelse(rows$N > 0, scales::comma(rows$N, accuracy = 1), ""),
+      textposition = if (proportions) "inside" else "outside", cliponaxis = FALSE,
+      insidetextanchor = "middle",
+      textfont = list(color = if (proportions) "white" else "#2C2825", size = if (proportions) 15 else 13), textangle = 0,
       constraintext = "none",
       customdata = hover, hovertemplate = "%{customdata}<extra></extra>",
       meta = list(cohort_match_field = field, group = group, measure = if (proportions) "share" else "count"))
   }
   maximum <- if (proportions) max(c(0, data$Share), na.rm = TRUE) else max(data$N)
   value_axis <- list(title = if (proportions) "% within category" else "Pregnancies",
-    range = if (proportions) c(0, 1) else c(0, max(5, maximum) * 1.12),
+    range = if (proportions) c(0, 1) else c(0, max(5, maximum) * 1.22),
     rangemode = "tozero", tickformat = if (proportions) ".0%" else ",.0f")
   category_axis <- list(title = "", type = "category", categoryorder = "array",
     categoryarray = if (horizontal) rev(labels) else labels,
@@ -730,7 +737,7 @@ cohort_match_chart <- function(data, field, proportions = FALSE) {
       xaxis = if (horizontal) value_axis else category_axis,
       yaxis = if (horizontal) category_axis else value_axis,
       margin = list(l = if (horizontal) 120 else 75,
-        r = if (horizontal && nrow(small)) 80 else 20,
+        r = if (horizontal && (!proportions || nrow(small))) 80 else 20,
         t = if (!horizontal && nrow(small)) 75 else 55,
         b = if (horizontal) 60 else if (field == "imd_quintile") 85 else 65),
       font = list(family = "Arial", size = 15), hoverlabel = list(font = list(size = 15)),
@@ -747,23 +754,56 @@ cohort_match_panels <- function(data, field, title = "Whole BBCS cohort") {
       htmltools::div(class = "cohort-match-chart", cohort_match_chart(data, field, TRUE))))
 }
 
+cohort_match_cluster_member <- function(master) {
+  master$Booking_ICB %in% cluster_icbs | master$Delivery_ICB %in% cluster_icbs
+}
+
+# Section 5.3 requires a BBCS interaction at either event. Keep the original
+# trust comparison in the shared master; account for out-of-scope comparisons
+# here so residence-only outside/outside rows cannot enter these charts.
+cohort_match_population <- function(master) {
+  outside <- !cohort_match_cluster_member(master) &
+    master$Trust_comparison %in% c("Same trust", "Different trusts")
+  master$Trust_comparison[outside] <- "Outside BBCS comparison scope"
+  master
+}
+
+# A transfer belongs to both relevant organisation panels, but only once within
+# each panel. Do not bind the two event selections or change the stage-specific
+# selector used by the booking/delivery profiles elsewhere in the report.
+cohort_match_org_rows <- function(master, group, code) {
+  at_organisation <- function(stage) {
+    column <- if (group == "Trust") stage else paste0(stage, "_ICB")
+    if (group == "Trust" && code == "Other") {
+      known <- master[[column]] %in% "Other" | grepl("^R[A-Z0-9]{2}$", master[[column]])
+      return(known & !master[[column]] %in% demo_bbcs_org_codes("Trust"))
+    }
+    codes <- if (group == "ICB_Cluster" && code == "Cluster") cluster_icbs else code
+    master[[column]] %in% codes
+  }
+  master[cohort_match_cluster_member(master) &
+    (at_organisation("Booking") | at_organisation("Delivery")), , drop = FALSE]
+}
+
 cohort_match_org_profiles <- function(master, field, group, categories) {
+  master <- cohort_match_population(master)
   eligible <- master[master$Trust_comparison %in% c("Same trust", "Different trusts"), , drop = FALSE]
   codes <- demo_bbcs_org_codes(group, include_other = TRUE)
   codes <- setdiff(codes, c("Unknown", "No booking", "No delivery", "Home"))
   counts <- stats::setNames(lapply(codes, function(code)
-    cohort_match_counts(cohort_profile_org_rows(eligible, "Booking", group, code), field, categories)), codes)
+    cohort_match_counts(cohort_match_org_rows(eligible, group, code), field, categories)), codes)
   panels <- lapply(codes, function(code)
     cohort_match_panels(counts[[code]], field, cohort_profile_org_label(code, group)))
   list(data = counts, charts = htmltools::tagList(
-    report_colour_key(c("Same trust" = "#006747", "Different trusts" = "#AE2573"), "cohort-match-key"),
+    report_colour_key(c("Same trust" = "#006747", "Different trust or home birth" = "#AE2573"), "cohort-match-key"),
     htmltools::div(class = "cohort-match-cards", panels)))
 }
 
 build_cohort_match_profiles <- function(master) {
-  master <- cohort_comparison_ethnicity(master)
+  master <- cohort_match_population(cohort_comparison_ethnicity(master))
   groups <- c("Same trust", "Different trusts", "Neither booking nor delivery recorded",
-    "No recorded booking", "No recorded delivery", "Home birth", "Missing or invalid trust code")
+    "No recorded booking", "No recorded delivery", "Missing or invalid trust code",
+    "Outside BBCS comparison scope")
   stopifnot(all(master$Trust_comparison %in% groups))
   summary <- dc_cells(data.frame(Group = groups,
     N = vapply(groups, function(group) sum(master$N[master$Trust_comparison %in% group]), numeric(1)),
@@ -771,7 +811,8 @@ build_cohort_match_profiles <- function(master) {
   coverage <- summary |>
     dplyr::select(Group, N, Share) |>
     gt::gt() |>
-    gt::cols_label(Group = "Trust comparison / reason not comparable", N = "Pregnancies", Share = "% of whole cohort") |>
+    gt::cols_label(Group = "Comparison / reason not comparable", N = "Pregnancies", Share = "% of whole cohort") |>
+    gt::text_transform(fn = cohort_match_group_label, locations = gt::cells_body(columns = Group)) |>
     gt::fmt_number(columns = N, decimals = 0) |>
     gt::fmt_percent(columns = Share, decimals = 1) |>
     gt::sub_missing(missing_text = "Unavailable") |>
@@ -881,7 +922,7 @@ demographics_cleaned <- prepare_demographics(demographics)
 # Section 5 also includes a pooled Other trusts card.
 demo_delivery_profiles <- build_delivery_pattern_profiles(get("Demo Sankeys"))
 demo_sankey_charts <- list(
-  version = "demographic-profile-v26",
+  version = "demographic-profile-v29",
   cohort_total = dc_count(sum(`Demo Sankeys`$N)),
   cohort_profile = build_cohort_profile(`Demo Sankeys`),
   cohort_trust_profiles = build_cohort_trust_profiles(`Demo Sankeys`),

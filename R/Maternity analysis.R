@@ -3413,6 +3413,13 @@ build_first_draft_projections <- function(baseline_fy = projection_baseline,
   organisation_grid <- function(charts, rows, shared_colours = NULL, legend_below = FALSE, bottom_margin = 65,
                                 columns = 2L) {
     age_key <- !is.null(shared_colours)
+    if (legend_below) return(htmltools::div(
+      style = paste0("display: grid; grid-template-columns: repeat(", columns, ", minmax(0, 1fr)); gap: 24px;"),
+      htmltools::tagList(lapply(seq_len(nrow(rows)), function(i) {
+        chart <- report_native_line_chart(charts[[rows$Key[i]]], title = rows$Organisation[i],
+          legend_name = if (age_key) NULL else gsub(" NHS.*$", "", rows$Organisation[i]), compact = age_key)
+        htmltools::div(style = "min-width: 0;", chart)
+      }))))
     if (is.null(shared_colours)) shared_colours <- stats::setNames(
       unname(organisation_line_colours(rows$Key)), rows$Organisation)
     key <- report_colour_key(shared_colours,
@@ -3555,7 +3562,7 @@ build_first_draft_projections <- function(baseline_fy = projection_baseline,
   booking_grids <- stats::setNames(lapply(booking_views, function(view)
     lapply(booking_groups, function(rows) organisation_grid(booking_charts[[view]], rows,
       if (view %in% c("age", "age_change")) stats::setNames(age_colours, age_bands) else NULL,
-      legend_below = view %in% c("total", "change"),
+      legend_below = TRUE,
       bottom_margin = if (view == "total") 150 else 65,
       columns = if (view %in% c("age", "age_change")) 3L else 2L))), booking_views)
   result$booking_total_charts <- lapply(booking_groups, function(rows) provider_total_chart(
@@ -3604,7 +3611,7 @@ build_first_draft_projections <- function(baseline_fy = projection_baseline,
     target_episodes, completed, organisations, baseline_fy, max(projection_years),
     main_las = cluster_las, other_las = 0L, cluster_only = TRUE,
     unavailable_flows = delivery_gaps |> dplyr::filter(Level == "Trust") |> dplyr::distinct(LA, Trust))
-  result$chart_layout_version <- "projection-chart-layout-v1"
+  result$chart_layout_version <- "projection-chart-layout-v2"
   result
 }
 

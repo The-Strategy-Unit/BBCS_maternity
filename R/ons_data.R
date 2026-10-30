@@ -579,7 +579,8 @@ projection_plot <- function(data, caption, colours) {
     ggplot2::scale_y_continuous(labels = scales::label_comma(),
                               expand = ggplot2::expansion(mult = c(0.02, 0.08))) +
     ggplot2::scale_colour_manual(values = colours) +
-    ggplot2::labs(x = NULL, y = "Adjusted resident maternities", colour = NULL, caption = caption) +
+    ggplot2::labs(title = "Adjusted resident maternity projections", x = "Year",
+      y = "Adjusted resident maternities", colour = NULL, caption = caption) +
     ons_line_guides() +
     ons_plot_theme()
 }
@@ -620,12 +621,9 @@ projection_age_grid <- function(data, colours) {
   data <- dc_counts(data, "projected_maternities")
   bands <- c("Under 20", "20-24", "25-29", "30-34", "35-39", "40-44", "45+")
   areas <- unique(as.character(data$area_name))
-  key <- htmltools::div(class = "demo-ribbon-key",
-    lapply(areas, function(area) htmltools::span(class = "demo-ribbon-key-item",
-      htmltools::span(style = paste0("display:inline-block;width:30px;height:5px;background:", colours[[area]], ";")), area)))
   charts <- lapply(bands, function(band) {
     rows <- data[as.character(data$age_band) == band, ]
-    chart <- plotly::plot_ly(height = 245)
+    chart <- plotly::plot_ly(height = 400)
     for (area in areas) {
       series <- rows[rows$area_name == area, ]
       series <- series[order(series$year), ]
@@ -634,16 +632,22 @@ projection_age_grid <- function(data, colours) {
         line = list(color = colours[[area]], width = 2.5),
         hovertemplate = paste0(area, "<br>%{x}: %{y:,.0f} maternities<extra></extra>"))
     }
-    chart <- plotly::layout(chart, showlegend = FALSE,
-      meta = list(compact_population_grid = TRUE), font = list(family = "Arial", size = 13),
-      margin = list(l = 56, r = 12, t = 10, b = 42),
-      xaxis = list(title = "", tickvals = sort(unique(c(min(rows$year), 2035, max(rows$year))))),
+    chart <- plotly::layout(chart, showlegend = TRUE,
+      title = list(text = paste0("Adjusted resident maternity projections<br>Age ", band),
+        x = 0.02, xanchor = "left", font = list(size = 14)),
+      legend = list(orientation = "h", x = 0, xanchor = "left", y = -0.25,
+        yanchor = "top", itemwidth = 50, font = list(size = 12)),
+      meta = list(compact_population_grid = TRUE, native_line_legend = TRUE),
+      font = list(family = "Arial", size = 13),
+      margin = list(l = 56, r = 20, t = 72, b = 140),
+      xaxis = list(title = "Year", tickvals = sort(unique(c(min(rows$year), 2035, max(rows$year))))),
       yaxis = list(title = "Adjusted resident maternities", tickformat = ",.0f", rangemode = "tozero"),
       paper_bgcolor = "white", plot_bgcolor = "white")
-    htmltools::div(class = "demo-sankey-panel", htmltools::h4(band),
+    htmltools::div(class = "demo-sankey-panel",
       dc_widget(plotly::config(chart, displayModeBar = FALSE, responsive = TRUE)))
   })
-  htmltools::tagList(key, htmltools::div(class = "population-age-grid", charts),
+  htmltools::tagList(
+    htmltools::div(class = "population-age-grid", charts),
     htmltools::p(class = "chart-grid-note",
       "ONS 2022-based projected live births on 2023 geography, with local splits of the youngest and oldest ONS age groups, then stillbirth, multiplicity, Private\u2013NHS and maternity pathway adjustments. Estimates are calculated before allocation to providers; Under 20 covers ages 13\u201319 and 45+ covers ages 45\u201354."))
 }

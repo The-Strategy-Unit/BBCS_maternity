@@ -102,10 +102,40 @@ booking_delivery_palette <- function() c(
   "Outside cluster" = "#ED8B00", "No recorded delivery" = "#2C2825",
   "Unknown location" = "#959595")
 
-# Standalone organisation comparisons use the same tab-top keys as chart grids.
-# Keep the black source-style inset inside the chart; it encodes a different field.
-report_line_chart <- function(chart, legend_position = c("top", "bottom")) {
+# Native titles and legends stay inside the white chart canvas, including exports.
+report_native_line_chart <- function(chart, title = NULL, legend_name = NULL, compact = FALSE) {
+  built <- plotly::plotly_build(chart)
+  if (!is.null(legend_name) && length(built$x$data) == 1L) {
+    built$x$data[[1]]$name <- legend_name
+    built$x$data[[1]]$showlegend <- TRUE
+  }
+  layout <- built$x$layout
+  layout$showlegend <- TRUE
+  layout$paper_bgcolor <- layout$plot_bgcolor <- "white"
+  layout$legend <- utils::modifyList(if (is.null(layout$legend)) list() else layout$legend, list(
+    orientation = "h", x = 0, xanchor = "left", y = -0.25, yanchor = "top",
+    font = list(size = if (compact) 11 else 13), itemwidth = if (compact) 30 else 50))
+  if (!is.null(title)) layout$title <- list(text = title, x = 0.03, xanchor = "left",
+    y = 0.98, yanchor = "top", font = list(size = if (compact) 14 else 18))
+  if (!is.null(title)) layout$margin$t <- max(c(layout$margin$t, if (compact) 50 else 70))
+  if (compact) {
+    axis_title <- if (is.list(layout$yaxis$title)) layout$yaxis$title$text else layout$yaxis$title
+    if (identical(axis_title, "Projected antenatal bookings")) axis_title <- "Projected<br>bookings"
+    if (!is.null(axis_title)) layout$yaxis$title <- list(text = sub(
+      "^% change from modelled ", "% change from<br>modelled ", axis_title))
+  }
+  layout$meta <- utils::modifyList(if (is.null(layout$meta)) list() else layout$meta, list(
+    native_line_legend = TRUE, compact_line_legend = compact,
+    source_key_below = any(vapply(layout$annotations, function(a)
+      identical(a$text, "MSDS / modelled") && identical(a$y, 0) && a$yshift < 0, logical(1)))))
+  built$x$layout <- layout
+  built
+}
+
+# Other standalone comparisons retain their existing top HTML key by default.
+report_line_chart <- function(chart, legend_position = c("top", "bottom"), title = NULL) {
   legend_position <- match.arg(legend_position)
+  if (legend_position == "bottom") return(report_native_line_chart(chart, title))
   built <- plotly::plotly_build(chart)
   traces <- Filter(function(trace) !identical(trace$showlegend, FALSE) &&
     length(trace$name) == 1L && length(trace$line$color) == 1L, built$x$data)
@@ -113,20 +143,21 @@ report_line_chart <- function(chart, legend_position = c("top", "bottom")) {
     vapply(traces, function(x) x$name, character(1)))
   colours <- colours[!duplicated(names(colours))]
   built$x$layout$showlegend <- FALSE
-  built$x$layout$margin$b <- if (legend_position == "bottom") max(65, built$x$layout$margin$b) else 65
+  built$x$layout$margin$b <- 65
   key <- report_colour_key(colours, "organisation-comparison-key", lines = TRUE)
-  if (legend_position == "bottom") htmltools::tagList(built, key) else htmltools::tagList(key, built)
+  htmltools::tagList(key, built)
 }
 
-# Static figures also put their key before their title, not between title and axes.
-report_plot_grob <- function(plot) {
-  position <- if (identical(plot$theme$legend.position, "none")) "none" else "top"
+# Static figures default to a key before the title, with an optional key below the axes.
+report_plot_grob <- function(plot, legend_position = c("top", "bottom")) {
+  legend_position <- match.arg(legend_position)
+  position <- if (identical(plot$theme$legend.position, "none")) "none" else legend_position
   plot <- plot + ggplot2::theme(legend.position = position, legend.location = "plot",
     legend.justification = "left", legend.box.just = "left",
     legend.text = ggplot2::element_text(size = 12))
   grob <- ggplot2::ggplotGrob(plot)
   positions <- match(c("title", "subtitle", "guide-box-top"), grob$layout$name)
-  if (all(!is.na(positions))) {
+  if (position == "top" && all(!is.na(positions))) {
     rows <- grob$layout$t[positions]
     if (length(unique(rows)) == 3L) {
       heights <- grob$heights[rows]
@@ -137,9 +168,9 @@ report_plot_grob <- function(plot) {
   grob
 }
 
-report_static_plot <- function(plot) {
+report_static_plot <- function(plot, legend_position = "top") {
   grid::grid.newpage()
-  grid::grid.draw(report_plot_grob(plot))
+  grid::grid.draw(report_plot_grob(plot, legend_position))
   invisible(NULL)
 }
 

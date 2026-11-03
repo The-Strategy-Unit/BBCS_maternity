@@ -65,6 +65,8 @@ if (!identical(delivery_geography$age_mix_denominator, "sum-disclosed-age-counts
 first_draft_projections <- read_report_rds(".projections.rds", report_run$run_id)
 if (!identical(first_draft_projections$chart_layout_version, "projection-chart-layout-v2"))
   stop("Regenerate the projection charts with R/Run analysis.R for the section 3 titles and legends inside each chart.")
+if (!identical(first_draft_projections$projection_change_baseline, "modelled-reference-year-v1"))
+  stop("Regenerate the projection charts with R/Run analysis.R so percentage changes use the modelled reference-year baseline.")
 if (!identical(first_draft_projections$projection_geography$version, "english-ons-la-v1"))
   stop("Regenerate the projections with R/Run analysis.R to apply the English resident-LA scope.")
 if (is.null(first_draft_projections$sankey_comparison_cluster_las))
@@ -2149,9 +2151,9 @@ htmltools::browsable(first_draft_projections$age_tables$incoming_table)
 ```
 :::::
 
-### 3.3.3 Change from recorded 2025/26 deliveries {#projection-percentage-change}
+### 3.3.3 Change from modelled 2025 deliveries {#projection-percentage-change}
 
-These charts compare each modelled ONS-year total with the organisation's recorded MSDS deliveries in 2025/26 from the same usable LA/age cells. The percentage is (modelled deliveries ÷ matched recorded 2025/26 deliveries − 1) × 100. The modelled 2025 point can therefore be above or below zero. Later values include both the difference in starting levels and subsequent modelled change. Partial projections remain visible, with coverage identified in hover details and tables; they are not complete provider totals. A zero matched recorded count or no usable projection has no calculable percentage change. Full recorded counts remain visible in the total charts for context.
+These charts compare each projected year with the organisation's modelled 2025 deliveries, using (modelled deliveries in the selected year ÷ modelled 2025 deliveries − 1) × 100. Under the [reporting-year convention](#reporting-years), ONS 2025 is the 2025/26 baseline. Each line starts at 0% in 2025 wherever that modelled baseline is positive. Published percentages use disclosure-controlled counts for both the selected year and the baseline. Partial projections remain visible, with coverage identified in hover details and tables; they are not complete provider totals. A zero or unavailable modelled baseline has no calculable percentage change.
 
 ::: panel-tabset
 #### Trusts
@@ -2160,7 +2162,7 @@ These charts compare each modelled ONS-year total with the organisation's record
 #| label: projection-changes-trusts
 
 htmltools::browsable(report_line_chart(first_draft_projections$change_charts$Trust, legend_position = "bottom",
-  title = "Change from recorded 2025/26 deliveries by trust"))
+  title = "Change from modelled 2025 deliveries by trust"))
 ```
 
 #### ICBs and whole cluster
@@ -2169,7 +2171,7 @@ htmltools::browsable(report_line_chart(first_draft_projections$change_charts$Tru
 #| label: projection-changes-icbs-cluster
 
 htmltools::browsable(report_line_chart(first_draft_projections$change_charts$ICB_Cluster, legend_position = "bottom",
-  title = "Change from recorded 2025/26 deliveries by ICB and combined cluster"))
+  title = "Change from modelled 2025 deliveries by ICB and combined cluster"))
 ```
 
 #### Trusts and ICBs — side by side
@@ -2179,9 +2181,9 @@ htmltools::browsable(report_line_chart(first_draft_projections$change_charts$ICB
 htmltools::browsable(htmltools::div(class = "report-chart-grid report-change-pair",
   style = "display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px;",
   htmltools::div(report_line_chart(first_draft_projections$change_charts$Trust,
-    legend_position = "bottom", title = "Change from recorded 2025/26 deliveries by trust")),
+    legend_position = "bottom", title = "Change from modelled 2025 deliveries by trust")),
   htmltools::div(report_line_chart(first_draft_projections$change_charts$ICB_Cluster,
-    legend_position = "bottom", title = "Change from recorded 2025/26 deliveries by ICB and combined cluster"))))
+    legend_position = "bottom", title = "Change from modelled 2025 deliveries by ICB and combined cluster"))))
 ```
 
 #### Separate trusts
@@ -2348,7 +2350,7 @@ htmltools::browsable(first_draft_projections$booking_grids$age$ICB_Cluster)
 
 ### 3.4.3 Change from modelled 2025 bookings {#booking-percentage-change}
 
-These charts compare each projected year with the organisation's modelled 2025 bookings, using (modelled bookings in the selected year ÷ modelled 2025 bookings − 1) × 100. The starting point is 0% wherever the 2025 projection is positive. These percentages describe change within the booking projection; the delivery total-change charts in section 3.3.3 use recorded 2025/26 deliveries as their reference. The booking total charts above show the comparison with recorded activity. A zero starting count or unavailable estimate has no percentage change.
+These charts compare each projected year with the organisation's modelled 2025 bookings, using (modelled bookings in the selected year ÷ modelled 2025 bookings − 1) × 100. Under the [reporting-year convention](#reporting-years), ONS 2025 is the 2025/26 baseline. Each line starts at 0% in 2025 wherever that modelled baseline is positive. Published percentages use disclosure-controlled counts for both the selected year and the baseline, as in the delivery growth charts. A zero or unavailable modelled baseline has no calculable percentage change.
 
 ::: panel-tabset
 #### Trusts

@@ -2864,7 +2864,7 @@ build_first_draft_projections <- function(baseline_fy = projection_baseline,
   # Descriptive change in the completed model counts; not an input multiplier.
   weighted_age_growth <- age_projections |>
     dplyr::group_by(Key, Age_band) |>
-    dplyr::mutate(Baseline = Projected[Year == ons_reference_year],
+    dplyr::mutate(Baseline = Projected[match(ons_reference_year, Year)],
       Growth_change = relative_change(Projected, Baseline)) |>
     dplyr::ungroup()
   maternity_projections <- tidyr::expand_grid(Key = organisations$Key, Year = projection_years) |>
@@ -2874,8 +2874,11 @@ build_first_draft_projections <- function(baseline_fy = projection_baseline,
     dplyr::mutate(Projected = ifelse(!Key %in% feeder_projections$Key, 0, Projected),
       Year_label = as.character(Year)) |>
     dplyr::left_join(observed_totals, by = "Key") |>
-    dplyr::mutate(Change = Projected - Observed_baseline,
-      Percent_change = relative_change(Projected, Observed_baseline)) |>
+    dplyr::group_by(Key) |>
+    dplyr::mutate(Modelled_baseline = Projected[match(ons_reference_year, Year)],
+      Change = Projected - Modelled_baseline,
+      Percent_change = relative_change(Projected, Modelled_baseline)) |>
+    dplyr::ungroup() |>
     dplyr::left_join(organisations |> dplyr::select(Key, Level, Organisation), by = "Key")
   # 3.9b Booking summaries: independent of delivery shares ----------------
   booking_rows <- projection_destination_rows(wide_master, "Booking")
@@ -2903,27 +2906,33 @@ build_first_draft_projections <- function(baseline_fy = projection_baseline,
       by = c("Key", "Year")) |>
     dplyr::mutate(Projected = dplyr::if_else(!Key %in% booking_age_projections$Key, 0, Projected)) |>
     dplyr::group_by(Key) |>
-    dplyr::mutate(Percent_change = relative_change(Projected, Projected[Year == ons_reference_year])) |>
+    dplyr::mutate(Modelled_baseline = Projected[match(ons_reference_year, Year)],
+      Percent_change = relative_change(Projected, Modelled_baseline)) |>
     dplyr::ungroup() |>
     dplyr::left_join(organisations, by = "Key")
-  # Keep valid allocations visible and label partial coverage. Compare changes
-  # to matched recorded deliveries, or to the same model support for bookings.
+  # Keep valid allocations visible and label partial coverage. All projection
+  # growth compares each series with its own modelled reference-year total.
   single_age_projections <- mark_projection_coverage(single_age_projections, delivery_gaps, delivery_status)
   age_projections <- mark_projection_coverage(age_projections, delivery_gaps, delivery_status)
   weighted_age_growth <- mark_projection_coverage(weighted_age_growth, delivery_gaps, delivery_status) |>
     dplyr::group_by(Key, Age_band) |>
-    dplyr::mutate(Growth_change = relative_change(Projected, Projected[Year == ons_reference_year])) |>
+    dplyr::mutate(Baseline = Projected[match(ons_reference_year, Year)],
+      Growth_change = relative_change(Projected, Baseline)) |>
     dplyr::ungroup()
   maternity_projections <- mark_projection_coverage(maternity_projections, delivery_gaps, delivery_status) |>
     dplyr::left_join(matched_history |> dplyr::filter(Allocation == "Delivery", Event_year == ons_reference_year) |>
       dplyr::select(Key, Observed_matched_baseline = Observed_matched), by = "Key") |>
+    dplyr::group_by(Key) |>
     dplyr::mutate(Observed_matched_baseline = dplyr::coalesce(Observed_matched_baseline, 0L),
-      Change = Projected - Observed_matched_baseline,
-      Percent_change = relative_change(Projected, Observed_matched_baseline))
+      Modelled_baseline = Projected[match(ons_reference_year, Year)],
+      Change = Projected - Modelled_baseline,
+      Percent_change = relative_change(Projected, Modelled_baseline)) |>
+    dplyr::ungroup()
   booking_age_projections <- mark_projection_coverage(booking_age_projections, booking_gaps, booking_status)
   booking_total_projections <- mark_projection_coverage(booking_total_projections, booking_gaps, booking_status) |>
     dplyr::group_by(Key) |>
-    dplyr::mutate(Percent_change = relative_change(Projected, Projected[Year == ons_reference_year])) |>
+    dplyr::mutate(Modelled_baseline = Projected[match(ons_reference_year, Year)],
+      Percent_change = relative_change(Projected, Modelled_baseline)) |>
     dplyr::ungroup()
   projection_note <- paste("ONS births (L) \u00d7 local exact-age share \u00d7 [1 + S/L]",
     "\u00d7 M/(L+S) \u00d7 Private\u2013NHS modifier \u00d7 maternity pathway adjustment \u00d7 LA/age destination proportion.",
@@ -2933,7 +2942,8 @@ build_first_draft_projections <- function(baseline_fy = projection_baseline,
     "Every LA uses its own resident deliveries and antenatal-only counts for 2023/24--2025/26; a zero/missing delivery denominator gives a zero pathway factor.",
     "Both allocations use one adjusted total. Home, no recorded delivery/booking, unknowns",
     "and the Booking Denominator Factor remain separate. No rebasing to observed activity.")
-  result <- list(calculation_version = "ons-shared-age-calculations-v24", organisations = organisations, feeder_shares = feeder_shares,
+  result <- list(calculation_version = "ons-shared-age-calculations-v24",
+    projection_change_baseline = "modelled-reference-year-v1", organisations = organisations, feeder_shares = feeder_shares,
     master = wide_master, projection_geography = geography_scope,
     delivery_rows = master, booking_rows = booking_rows,
     booking_totals = list(Trust = booking_trust_totals, ICB = booking_icb_totals, Cluster = booking_cluster_totals),
@@ -3283,18 +3293,18 @@ build_first_draft_projections <- function(baseline_fy = projection_baseline,
     if (nrow(org_flows) && !nrow(ons_age_growth)) {
       growth_chart <- htmltools::div("No matched ONS age-specific series; these delivery contributions are not projected.")
     }
-    # Delivery charts: completed counts, compared with the recorded baseline.
+    # Delivery growth: completed counts compared with the modelled baseline.
     total_chart <- provider_total_chart(result$total_comparison$Delivery[
       result$total_comparison$Delivery$Key == key, ], "Deliveries / ONS live-birth base", legend_below = TRUE)
     change_chart <- plotly::plot_ly(org_totals, height = projection_chart_height, x = ~Year, y = ~Percent_change,
       type = "scatter", mode = "lines+markers", line = list(color = unname(organisation_line_colours(key)), width = 3),
       marker = list(color = unname(organisation_line_colours(key)), size = 5),
-      text = ~paste0(Year_label, "<br>Change from matched recorded ", baseline_fy, ": ",
+      text = ~paste0(Year_label, "<br>Change from modelled ", ons_reference_year, ": ",
         ifelse(is.na(Percent_change), "n.a.", scales::percent(Percent_change, accuracy = 0.1)), "<br>", Coverage_note),
       hovertemplate = "%{text}<extra></extra>", showlegend = FALSE) |>
-      style_line_chart(paste("% change from matched recorded", baseline_fy), TRUE)
-    if (org_totals$Observed_matched_baseline[1] == 0) change_chart <- plotly::layout(change_chart,
-      annotations = list(list(text = paste("No matched observed deliveries in", baseline_fy, "; relative change unavailable."),
+      style_line_chart(paste("% change from modelled", ons_reference_year), TRUE)
+    if (!is.finite(org_totals$Modelled_baseline[1]) || org_totals$Modelled_baseline[1] <= 0) change_chart <- plotly::layout(change_chart,
+      annotations = list(list(text = paste("No positive modelled delivery baseline in", ons_reference_year, "; relative change unavailable."),
         x = 0, y = 1.05, xref = "paper", yref = "paper", showarrow = FALSE, xanchor = "left")),
       margin = list(t = 45))
     total_table <- org_totals |>
@@ -3303,12 +3313,11 @@ build_first_draft_projections <- function(baseline_fy = projection_baseline,
       gt::cols_label(Year_label = "Year", Projected = "Projected deliveries") |>
       gt::fmt_number(columns = "Projected", decimals = 0)
     change_table <- org_totals |>
-      dplyr::select(Year_label, Observed_baseline, Observed_matched_baseline, Coverage_status, Projected, Change, Percent_change) |>
-      base_table(paste("Delivery change from matched recorded", baseline_fy)) |>
-      gt::cols_label(Year_label = "Year", Observed_baseline = paste("Recorded", baseline_fy),
-        Observed_matched_baseline = "Matched recorded", Coverage_status = "Coverage",
+      dplyr::select(Year_label, Modelled_baseline, Coverage_status, Projected, Change, Percent_change) |>
+      base_table(paste("Delivery change from modelled", ons_reference_year)) |>
+      gt::cols_label(Year_label = "Year", Modelled_baseline = paste("Modelled", ons_reference_year), Coverage_status = "Coverage",
         Projected = "Projected deliveries", Change = "Count change", Percent_change = "% change") |>
-      gt::fmt_number(columns = c("Observed_baseline", "Observed_matched_baseline", "Projected", "Change"), decimals = 0) |>
+      gt::fmt_number(columns = c("Modelled_baseline", "Projected", "Change"), decimals = 0) |>
       gt::fmt_percent(columns = "Percent_change", decimals = 1)
     list(growth_chart = growth_chart, incoming_chart = incoming_chart,
       growth_table = growth_table, incoming_table = incoming_table,
@@ -3409,7 +3418,7 @@ build_first_draft_projections <- function(baseline_fy = projection_baseline,
     style_line_chart(chart, title, percent = TRUE)
   }
   change_charts <- lapply(age_groups, function(rows) combined_change_chart(
-    maternity_projections, rows, paste("% change from matched recorded", baseline_fy), line_width = 3))
+    maternity_projections, rows, paste("% change from modelled", ons_reference_year), line_width = 3))
   organisation_grid <- function(charts, rows, shared_colours = NULL, legend_below = FALSE, bottom_margin = 65,
                                 columns = 2L) {
     age_key <- !is.null(shared_colours)
@@ -3453,7 +3462,7 @@ build_first_draft_projections <- function(baseline_fy = projection_baseline,
     dplyr::select(Level, Organisation, Coverage_status, Year_label, Percent_change) |>
     tidyr::pivot_wider(names_from = Year_label, values_from = Percent_change) |>
     gt::gt(groupname_col = "Level", rowname_col = "Organisation") |>
-    gt::tab_header(title = paste("Delivery changes from matched recorded", baseline_fy)) |>
+    gt::tab_header(title = paste("Delivery changes from modelled", ons_reference_year)) |>
     gt::cols_label(Coverage_status = "Projection coverage") |>
     gt::fmt_percent(columns = as.character(projection_years), decimals = 1) |>
     gt::sub_missing(missing_text = "n.a.") |>
@@ -3518,7 +3527,7 @@ build_first_draft_projections <- function(baseline_fy = projection_baseline,
         band_data <- data[data$Age_band == band, ]
         if (!nrow(band_data)) next
         values <- if (view == "age_change") relative_change(band_data$Projected,
-          band_data$Projected[band_data$Year == ons_reference_year]) else band_data$Projected
+          band_data$Projected[match(ons_reference_year, band_data$Year)]) else band_data$Projected
         chart <- plotly::add_trace(chart, x = band_data$Year, y = values,
           type = "scatter", mode = "lines", name = band,
           line = list(color = age_colours[match(band, age_bands)], width = 2),
@@ -3528,7 +3537,7 @@ build_first_draft_projections <- function(baseline_fy = projection_baseline,
           hovertemplate = "%{text}<extra></extra>")
       }
       if (!nrow(data)) chart <- plotly::add_trace(chart,
-        x = projection_years, y = rep(if (incomplete) NA_real_ else 0, length(projection_years)),
+        x = projection_years, y = rep(if (incomplete || view == "age_change") NA_real_ else 0, length(projection_years)),
         type = "scatter", mode = "lines", name = if (incomplete) "Unavailable" else "No allocated bookings",
         line = list(color = main_chart_colour), showlegend = FALSE, hoverinfo = "skip")
     } else {

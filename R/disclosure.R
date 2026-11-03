@@ -63,18 +63,17 @@ dc_calibration <- function(data) {
 }
 
 dc_projection <- function(data, reference_year, booking = FALSE) {
-  fields <- intersect(c("Projected", "Baseline", "Observed_baseline", "Observed_matched_baseline"), names(data))
+  fields <- intersect(c("Projected", "Baseline", "Modelled_baseline", "Observed_baseline", "Observed_matched_baseline"), names(data))
   data <- dc_coverage_note(dc_counts(data, fields))
-  if (booking || "Growth_change" %in% names(data)) {
-    keys <- intersect(c("Key", "Age_band"), names(data))
+  # Delivery and booking growth both use their own modelled reference year.
+  # Divide controlled counts, including the denominator, so the base is 0%.
+  if (any(c("Change", "Percent_change", "Growth_change") %in% names(data))) {
+    keys <- intersect(c("Key", "Age_band", "Age"), names(data))
     data <- data |> dplyr::group_by(dplyr::across(dplyr::all_of(keys))) |>
-      dplyr::mutate(.display_base = Projected[Year == reference_year]) |> dplyr::ungroup()
-    if ("Percent_change" %in% names(data)) data$Percent_change <- dc_divide(data$Projected, data$.display_base) - 1
-    if ("Growth_change" %in% names(data)) data$Growth_change <- dc_divide(data$Projected, data$.display_base) - 1
-    data$.display_base <- NULL
-  } else if ("Observed_matched_baseline" %in% names(data)) {
-    data$Change <- data$Projected - data$Observed_matched_baseline
-    data$Percent_change <- dc_divide(data$Projected, data$Observed_matched_baseline) - 1
+      dplyr::mutate(Modelled_baseline = Projected[match(reference_year, Year)]) |> dplyr::ungroup()
+    if ("Change" %in% names(data)) data$Change <- data$Projected - data$Modelled_baseline
+    if ("Percent_change" %in% names(data)) data$Percent_change <- dc_divide(data$Projected, data$Modelled_baseline) - 1
+    if ("Growth_change" %in% names(data)) data$Growth_change <- dc_divide(data$Projected, data$Modelled_baseline) - 1
   }
   data
 }

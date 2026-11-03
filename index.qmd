@@ -1947,7 +1947,7 @@ htmltools::browsable(projection_age_grid(age_band_projections, area_colours))
 
 Annual adjusted maternity totals by residence, before allocation to providers. Black Country ICB sums Dudley, Sandwell, Walsall and Wolverhampton; Birmingham and Solihull ICB sums Birmingham and Solihull. The BBCS cluster total sums all six resident LAs. The ICB and cluster rows aggregate the LA rows.
 
-The table shows 2025, 2030, 2035, 2040, 2045 and 2047. LA figures use the same disclosure rounding as the Total chart, and the aggregate rows sum the displayed LA figures.
+The table shows 2025, 2030, 2035, 2040, 2045 and 2047. LA figures use the same disclosure controls as the Total chart. ICB and cluster totals are calculated from the original LA figures and disclosure-controlled separately, so they may differ slightly from the sum of the displayed LA figures.
 
 ```{r}
 #| label: method-1-resident-projection-totals-table
@@ -2073,6 +2073,15 @@ htmltools::browsable(report_msds_only(first_draft_projections$delivery_total_gri
 ```{r}
 #| label: projection-totals-msds-only-icb-panels
 htmltools::browsable(report_msds_only(first_draft_projections$delivery_total_grids$ICB_Cluster))
+```
+
+#### Totals — table
+
+Modelled delivery totals for 2025, 2030, 2035, 2040, 2045 and 2047, including the modelled 2025 projection. The ICB and whole-cluster rows group activity by provider.
+
+```{r}
+#| label: projection-totals-msds-only-table
+provider_projection_totals_table(first_draft_projections$total_comparison$Delivery, "deliveries")
 ```
 :::
 
@@ -2282,6 +2291,15 @@ htmltools::browsable(report_msds_only(first_draft_projections$booking_grids$tota
 ```{r}
 #| label: booking-projection-msds-only-icb-cluster-total
 htmltools::browsable(report_msds_only(first_draft_projections$booking_grids$total$ICB_Cluster))
+```
+
+#### Totals — table
+
+Modelled antenatal booking totals for 2025, 2030, 2035, 2040, 2045 and 2047, including the modelled 2025 projection. The ICB and whole-cluster rows group activity by provider.
+
+```{r}
+#| label: booking-projection-msds-only-totals-table
+provider_projection_totals_table(first_draft_projections$total_comparison$Booking, "antenatal bookings")
 ```
 :::
 

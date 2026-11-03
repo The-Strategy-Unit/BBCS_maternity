@@ -586,7 +586,7 @@ projection_plot <- function(data, caption, colours) {
 }
 
 # Resident geography totals, before allocation to booking/delivery providers.
-# Aggregate the same disclosed LA values shown in the section 3.2 total chart.
+# Complete each LA/ICB/cluster aggregation from original values, then disclose.
 resident_projection_totals_table <- function(data) {
   resident_icb <- c(E08000025 = "Birmingham and Solihull ICB",
     E08000027 = "Black Country ICB", E08000028 = "Black Country ICB",
@@ -600,7 +600,7 @@ resident_projection_totals_table <- function(data) {
       by = c("area_code", "year"), relationship = "one-to-one") |>
     left_join(areas |> select(area_code, area_name), by = "area_code", relationship = "many-to-one") |>
     mutate(Resident_ICB = unname(resident_icb[area_code]),
-      Value = dc_count(projected_maternities))
+      Value = projected_maternities)
   # A missing LA/year makes its subtotal unavailable, rather than a partial sum.
   icb_rows <- shown |> group_by(Resident_ICB, year) |>
     summarise(Value = sum(Value), .groups = "drop") |>
@@ -611,6 +611,7 @@ resident_projection_totals_table <- function(data) {
     mutate(Residence = cluster_label)
   row_order <- c(areas$area_name, "Black Country ICB", "Birmingham and Solihull ICB", cluster_label)
   totals <- bind_rows(shown |> transmute(Residence = area_name, year, Value), icb_rows, cluster_rows) |>
+    dc_counts("Value") |>
     mutate(Residence = factor(Residence, levels = row_order)) |>
     arrange(Residence, year) |>
     tidyr::pivot_wider(names_from = year, values_from = Value) |>
@@ -625,10 +626,60 @@ resident_projection_totals_table <- function(data) {
     gt::tab_style(style = gt::cell_fill(color = "#FFF3CC"),
       locations = list(gt::cells_stub(rows = 9), gt::cells_body(rows = 9))) |>
     gt::cols_width(Residence ~ gt::px(300), everything() ~ gt::px(84)) |>
+    gt::tab_source_note("LA, ICB and cluster totals are calculated from original figures, then disclosure-controlled separately. Displayed totals may therefore differ from the sum of displayed LA figures. Unavailable estimates are shown as n.a.") |>
     gt::tab_options(table.font.names = c("Arial", "sans-serif"), table.font.size = gt::px(44 / 3),
       heading.title.font.size = gt::px(56 / 3), heading.align = "left",
       table.width = gt::px(300 + 84 * length(years)), table.layout = "fixed",
+      source_notes.font.size = gt::px(44 / 3),
       container.width = "100%", container.overflow.x = TRUE)
+}
+
+# Selected-year provider totals for the MSDS/modelled chart versions.
+# Use the existing provider aggregates, not the resident-LA subtotals.
+provider_projection_totals_table <- function(data, measure = c("deliveries", "antenatal bookings")) {
+  measure <- match.arg(measure)
+  years <- c(2025, 2030, 2035, 2040, 2045, 2047)
+  aggregate_keys <- c("icb-qua", "icb-qhl", "cluster")
+  organisations <- data |> distinct(Key, Level, Organisation) |>
+    filter(Level == "Trust" | Key %in% aggregate_keys)
+  stopifnot(all(aggregate_keys %in% organisations$Key), !anyDuplicated(organisations$Key))
+  row_order <- c(organisations$Key[organisations$Level == "Trust"], aggregate_keys)
+  organisations <- organisations |> arrange(match(Key, row_order)) |>
+    mutate(Organisation = if_else(Level == "Cluster", "BBCS cluster", as.character(Organisation)))
+  modelled <- data |> filter(Series == "Modelled projection", Year %in% years) |>
+    select(Key, Year, Value, Coverage_note) |> mutate(Value = dc_count(Value))
+  shown <- tidyr::expand_grid(Key = organisations$Key, Year = years) |>
+    left_join(modelled, by = c("Key", "Year"), relationship = "one-to-one")
+  totals <- shown |> select(Key, Year, Value) |>
+    tidyr::pivot_wider(names_from = Year, values_from = Value) |>
+    left_join(organisations, by = "Key", relationship = "one-to-one") |>
+    arrange(match(Key, row_order)) |> select(Organisation, all_of(as.character(years)))
+  aggregate_rows <- which(organisations$Level != "Trust")
+  cluster_row <- which(organisations$Level == "Cluster")
+  table <- totals |> gt::gt(rowname_col = "Organisation") |>
+    gt::tab_header(title = paste("Projected", measure, "by provider")) |>
+    gt::tab_stubhead(label = "Provider organisation") |>
+    gt::fmt_number(columns = all_of(as.character(years)), decimals = 0, use_seps = TRUE) |>
+    gt::sub_missing(missing_text = "n.a.") |>
+    gt::tab_style(style = list(gt::cell_text(weight = "bold"), gt::cell_fill(color = "#F5F4F3")),
+      locations = list(gt::cells_stub(rows = aggregate_rows), gt::cells_body(rows = aggregate_rows))) |>
+    gt::tab_style(style = gt::cell_fill(color = "#FFF3CC"),
+      locations = list(gt::cells_stub(rows = cluster_row), gt::cells_body(rows = cluster_row))) |>
+    gt::cols_width(Organisation ~ gt::px(350), everything() ~ gt::px(84)) |>
+    gt::tab_source_note("All columns show modelled projections. Provider totals are disclosure-rounded independently, so aggregates may differ slightly from the sum of displayed trust figures. Unavailable estimates are shown as n.a.") |>
+    gt::tab_options(table.font.names = c("Arial", "sans-serif"), table.font.size = gt::px(44 / 3),
+      heading.title.font.size = gt::px(56 / 3), heading.align = "left",
+      table.width = gt::px(350 + 84 * length(years)), table.layout = "fixed",
+      source_notes.font.size = gt::px(44 / 3), footnotes.font.size = gt::px(44 / 3),
+      container.width = "100%", container.overflow.x = TRUE)
+  for (year in years) {
+    partial_keys <- shown$Key[shown$Year == year & grepl("^Partial", shown$Coverage_note)]
+    partial_rows <- which(organisations$Key %in% partial_keys)
+    if (length(partial_rows)) table <- gt::tab_footnote(table,
+      footnote = "Partial projection: includes available allocations only; see provider coverage in section 3.3.",
+      locations = gt::cells_body(columns = all_of(as.character(year)), rows = partial_rows))
+  }
+  table
 }
 
 population_age_grid <- function(data) {

@@ -594,7 +594,7 @@ resident_projection_totals_table <- function(data) {
     E08000031 = "Black Country ICB")
   areas <- read_area_config() |> filter(area_code %in% names(resident_icb))
   stopifnot(nrow(areas) == 6L, !anyDuplicated(areas$area_code))
-  years <- sort(unique(data$year))
+  years <- c(2025, 2030, 2035, 2040, 2045, 2047)
   shown <- tidyr::expand_grid(area_code = areas$area_code, year = years) |>
     left_join(data |> select(area_code, year, projected_maternities),
       by = c("area_code", "year"), relationship = "one-to-one") |>

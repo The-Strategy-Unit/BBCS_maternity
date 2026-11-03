@@ -1947,7 +1947,7 @@ htmltools::browsable(projection_age_grid(age_band_projections, area_colours))
 
 Annual adjusted maternity totals by residence, before allocation to providers. Black Country ICB sums Dudley, Sandwell, Walsall and Wolverhampton; Birmingham and Solihull ICB sums Birmingham and Solihull. The BBCS cluster total sums all six resident LAs. The ICB and cluster rows aggregate the LA rows.
 
-LA figures use the same disclosure rounding as the Total chart, and the aggregate rows sum the displayed LA figures. Scroll horizontally to see all projection years.
+The table shows 2025, 2030, 2035, 2040, 2045 and 2047. LA figures use the same disclosure rounding as the Total chart, and the aggregate rows sum the displayed LA figures.
 
 ```{r}
 #| label: method-1-resident-projection-totals-table

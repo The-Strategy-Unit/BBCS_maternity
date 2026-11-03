@@ -128,8 +128,8 @@ projection_age_colours <- age_band_colours(projection_age_bands)
 projection_other_feeders <- 10L
 projection_chart_height <- 480
 projection_age_grid_height <- 280
-projection_history_chart_height <- 300
-projection_history_colours <- c("MSDS observed" = "#005EB8", "ONS-based model" = "#D55E00")
+projection_history_chart_height <- 210
+projection_history_colours <- c("MSDS observed" = "#005EB8", "Modelled projections" = "#D55E00")
 
 
 # Input checks ----------------------------------------------------------
@@ -3922,20 +3922,27 @@ build_input_variation_review <- function(cohort, resident_totals, registration_c
     multiplicity_chart = ons_plot("Multiplicity_factor", "Maternities / births (L+S)"))
 }
 
-# 3.10 Retrospective comparison with recorded deliveries -----------------
+# 3.10 Retrospective comparisons with recorded deliveries and bookings ---
 # Pooled calibration includes the comparison years; not independent validation.
-build_projection_backtest <- function() {
-  # Section 3.5.2: compare with actual history.
+build_projection_backtest <- function(allocation = c("Delivery", "Booking"), historical = NULL) {
+  allocation <- match.arg(allocation)
+  booking <- allocation == "Booking"
+  activity <- if (booking) "antenatal bookings" else "deliveries"
+  # Sections 3.5.2 and 3.5.3: compare with actual history.
   # Apply the same full-cohort proportions to historical ONS counts.
   # This is a retrospective diagnostic using current ONS/registration data, not a vintage backtest.
-  historical <- build_first_draft_projections(baseline_fy = "2023/24",
+  if (is.null(historical)) historical <- build_first_draft_projections(baseline_fy = "2023/24",
     ons_reference_year = 2023L, projection_end = 2025L, prepare_outputs = FALSE)
   organisations <- historical$organisations
   years <- projection_history_years
-  # Count the actual deliveries separately for each financial year.
+  # Count each allocation using its own recorded provider. Booking totals
+  # include pregnancies without a delivery and use the report's assigned FY.
   observed <- prepare_report_cohort(projection_filter_records(final_cohort_2326,
-    historical$projection_geography$eligible_las)) |>
-    dplyr::filter(Year %in% years, Birth_recorded, Trust %in% cluster_trusts, Home == 0) |>
+    historical$projection_geography$eligible_las))
+  if (booking) observed$Trust <- projection_booking_destination(observed)
+  else observed <- observed |> dplyr::filter(Birth_recorded, Home == 0)
+  observed <- observed |>
+    dplyr::filter(Year %in% years, Trust %in% cluster_trusts) |>
     dplyr::mutate(Year_label = Year)
   observed_totals <- dplyr::bind_rows(lapply(seq_len(nrow(organisations)), function(i) {
     org <- organisations[i, , drop = FALSE]
@@ -3946,17 +3953,18 @@ build_projection_backtest <- function() {
       Observed = vapply(years, function(year) sum(data$Year_label == year), integer(1)))
   }))
   # Put observed and modelled counts side by side and calculate the difference.
-  comparison <- historical$maternity_projections |>
+  modelled <- if (booking) historical$booking_total_projections else historical$maternity_projections
+  comparison <- modelled |>
     dplyr::transmute(Key, Level, Organisation, Year,
       Year_label = paste0(Year, "/", substr(Year + 1L, 3, 4)), Modelled = Projected, Coverage_status, Coverage_note) |>
     dplyr::left_join(observed_totals, by = c("Key", "Year_label")) |>
-    dplyr::left_join(historical$matched_history |> dplyr::filter(Allocation == "Delivery") |>
+    dplyr::left_join(historical$matched_history |> dplyr::filter(Allocation == allocation) |>
       dplyr::select(Key, Year = Event_year, Observed_matched), by = c("Key", "Year")) |>
     dplyr::mutate(Observed_matched = dplyr::coalesce(Observed_matched, 0L),
       Difference = Modelled - Observed_matched,
       Percent_difference = ifelse(Observed_matched > 0, Difference / Observed_matched, NA_real_)) |>
     dplyr::arrange(match(Key, organisations$Key), Year)
-  # Retrospective charts retain every recorded delivery trust across the three years.
+  # Retain every recorded provider across the three comparison years.
   raw_comparison <- comparison
   comparison <- dc_coverage_note(dc_counts(comparison, c("Observed", "Observed_matched", "Modelled")))
   comparison$Difference <- comparison$Modelled - comparison$Observed_matched
@@ -3966,6 +3974,14 @@ build_projection_backtest <- function() {
   icb_cluster_organisations <- organisations |>
     dplyr::filter(Level %in% c("ICB", "Cluster"))
   chart_organisations <- dplyr::bind_rows(trust_organisations, icb_cluster_organisations)
+  # Both lines share one zero-based scale across every chart within a tab.
+  comparison_range <- function(keys) {
+    rows <- comparison[comparison$Key %in% keys, ]
+    maximum <- max(c(0, rows$Observed, rows$Modelled), na.rm = TRUE)
+    c(0, max(pretty(c(0, max(1, maximum) * 1.05), n = 4)))
+  }
+  trust_range <- comparison_range(trust_organisations$Key)
+  icb_cluster_range <- comparison_range(icb_cluster_organisations$Key)
   outputs <- stats::setNames(lapply(chart_organisations$Key, function(key) {
     data <- comparison[comparison$Key == key, , drop = FALSE]
     chart <- plotly::plot_ly(height = projection_history_chart_height) |>
@@ -3975,8 +3991,8 @@ build_projection_backtest <- function() {
         text = paste0(data$Year_label, "<br>Observed: ", scales::comma(data$Observed, accuracy = 1)),
         hovertemplate = "%{text}<extra></extra>") |>
       plotly::add_trace(x = data$Year, y = data$Modelled, type = "scatter", mode = "lines+markers",
-        name = "ONS-based model", line = list(color = projection_history_colours[["ONS-based model"]], width = 2),
-        marker = list(color = projection_history_colours[["ONS-based model"]], size = 5),
+        name = "Modelled projections", line = list(color = projection_history_colours[["Modelled projections"]], width = 2),
+        marker = list(color = projection_history_colours[["Modelled projections"]], size = 5),
         text = paste0("ONS ", data$Year, "<br>Modelled: ", scales::comma(data$Modelled, accuracy = 1),
           "<br>", data$Coverage_note, "<br>Matched observed: ", data$Observed_matched,
           "<br>Difference from matched observed: ", ifelse(is.na(data$Percent_difference), "n.a.",
@@ -3984,7 +4000,8 @@ build_projection_backtest <- function() {
         hovertemplate = "%{text}<extra></extra>") |>
       plotly::layout(xaxis = list(title = "Comparison year",
         tickmode = "array", tickvals = as.integer(substr(years, 1, 4)), ticktext = years),
-        yaxis = list(title = "Deliveries", tickformat = ",.0f", rangemode = "tozero"),
+        yaxis = list(title = if (booking) "Antenatal bookings" else "Deliveries", tickformat = ",.0f",
+          autorange = FALSE, range = if (key %in% trust_organisations$Key) trust_range else icb_cluster_range),
         showlegend = FALSE,
         margin = list(l = 65, r = 12, t = 15, b = 55), font = list(family = "Arial", size = 11)) |>
       plotly::config(displayModeBar = FALSE, responsive = TRUE)
@@ -4020,32 +4037,34 @@ build_projection_backtest <- function() {
   wide <- dplyr::select(wide, Level, Organisation, Coverage_status, dplyr::all_of(column_order))
   percent_columns <- paste0("Percent_difference_", years)
   count_columns <- setdiff(column_order, percent_columns)
-  labels <- stats::setNames(rep(c("All MSDS observed", "Matched observed", "ONS-based model", "Model \u2212 matched", "% difference"),
+  labels <- stats::setNames(rep(c("All MSDS observed", "Matched observed", "Modelled projections", "Model \u2212 matched", "% difference"),
                                   length(years)), column_order)
   all_table <- gt::gt(wide, groupname_col = "Level", rowname_col = "Organisation") |>
-    gt::tab_header(title = "Recorded versus projected deliveries: all organisations") |>
+    gt::tab_header(title = paste0("Recorded versus projected ", activity, ": all organisations")) |>
     gt::cols_label(Coverage_status = "Projection coverage", .list = as.list(labels)) |>
     gt::fmt_number(columns = dplyr::all_of(count_columns), decimals = 0) |>
     gt::fmt_percent(columns = dplyr::all_of(percent_columns), decimals = 1) |>
     gt::sub_missing(missing_text = "n.a.") |>
-    gt::tab_source_note(source_note = "% difference = (modelled \u2212 matched observed) / matched observed \u00d7 100. Observed retains all recorded deliveries within the projection residence scope; Observed_matched uses the model's usable LA/age cells. Partial modelled counts retain available allocations. n.a. identifies a zero matched observed count or no usable estimate.") |>
+    gt::tab_source_note(source_note = paste0("% difference = (modelled \u2212 matched observed) / matched observed \u00d7 100. Observed retains all recorded ", activity, " within the projection residence scope; Observed_matched uses the model's usable LA/age cells. Partial modelled counts retain available allocations. n.a. identifies a zero matched observed count or no usable estimate.")) |>
     gt::tab_options(table.font.names = c("Open Sans", "Arial", "sans-serif"),
                     container.width = "100%", container.overflow.x = TRUE,
                     table.width = gt::px(1500), table.font.size = gt::px(12))
   for (year in years) all_table <- gt::tab_spanner(all_table, label = year,
     columns = paste0(metrics, "_", year), id = paste0("backtest-", year), gather = FALSE)
-  coverage_table <- make_projection_coverage_table(historical$coverage, "2023/24")
-  coverage_details_table <- dc_counts(historical$coverage_details, "N") |>
+  coverage_table <- if (!booking) make_projection_coverage_table(historical$coverage, "2023/24") else NULL
+  coverage_details_table <- if (!booking) dc_counts(historical$coverage_details, "N") |>
     dplyr::select(Level, Organisation, LA_name, LA, Age, Reason, N) |>
     gt::gt() |>
     gt::tab_header(title = "2023/24 records without an available allocation") |>
     gt::cols_label(LA_name = "Resident LA", LA = "LA code", Age = "Maternal age",
       Reason = "Reason", N = "Observed deliveries") |>
-    gt::fmt_number(columns = "N", decimals = 0)
-  list(note = historical$note, organisations = organisations, baseline = historical,
+    gt::fmt_number(columns = "N", decimals = 0) else NULL
+  list(note = historical$note, allocation = allocation, layout_version = "retrospective-shared-scale-v1",
+       organisations = organisations, baseline = historical,
        data = raw_comparison, display_data = comparison, outputs = outputs, trust_grid = trust_grid,
        icb_cluster_grid = icb_cluster_grid, all_table = all_table,
-       coverage = historical$coverage, coverage_details = historical$coverage_details,
+       coverage = if (booking) historical$provider_coverage |> dplyr::filter(Allocation == "Booking") else historical$coverage,
+       coverage_details = if (booking) historical$provider_projection_gaps |> dplyr::filter(Allocation == "Booking") else historical$coverage_details,
        coverage_table = coverage_table, coverage_details_table = coverage_details_table)
 }
 
@@ -4055,6 +4074,7 @@ message("Preparing projection charts and retrospective comparisons...")
 first_draft_projections <- build_first_draft_projections(history_master = projection_master_all_years)
 projection_backtest <- build_projection_backtest()
 first_draft_projections$backtest <- projection_backtest
+first_draft_projections$booking_backtest <- build_projection_backtest("Booking", historical = projection_backtest$baseline)
 first_draft_projections$age_boundary_review <- build_msds_age_review(
   final_cohort_2326, first_draft_projections, projection_backtest$baseline,
   trust_labels, cluster_trusts)

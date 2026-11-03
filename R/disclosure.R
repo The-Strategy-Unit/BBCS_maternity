@@ -151,7 +151,7 @@ audit_disclosure_widgets <- function(html) {
       stop("Original Plotly construction data remains in the HTML")
     if (grepl('"(person_id_mother|uniq_preg_id|private_unused_sentinel)"', payload))
       stop("A raw record field remains in a widget payload")
-    y_count <- grepl('^Pregnancies$|^Projected (deliveries|antenatal bookings)$|^Deliveries$|^Deliveries /|^Antenatal bookings /|^Recorded (non-home|/ modelled non-home) deliveries$',
+    y_count <- grepl('^Pregnancies$|^Projected (deliveries|antenatal bookings)$|^Deliveries$|^Deliveries /|^Antenatal bookings($| /)|^Recorded (non-home|/ modelled non-home) deliveries$',
       axis_title(x$layout$yaxis))
     x_count <- axis_title(x$layout$xaxis) %in% c("Deliveries", "Pregnancies")
     for (trace in x$data) {

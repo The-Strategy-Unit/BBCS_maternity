@@ -179,7 +179,7 @@ report_line_chart <- function(chart, legend_position = c("top", "bottom"), title
 
 # Presentation-only alternative for the provider total charts and their grids.
 # Keep the original recorded/modelled traces (including gaps and hover notes).
-report_msds_only <- function(x) {
+report_msds_only <- function(x, height_scale = 1) {
   if (inherits(x, "plotly")) {
     built <- plotly::plotly_build(x)
     built$x$data <- Filter(function(trace) !identical(trace$meta$Series, "ONS base"), built$x$data)
@@ -196,13 +196,17 @@ report_msds_only <- function(x) {
     else layout$yaxis$title <- sub(" / ONS live-birth base$", "", layout$yaxis$title)
     layout$meta$source_key_below <- FALSE
     layout$margin$b <- 80
+    if (height_scale != 1) {
+      height <- if (is.null(layout$height)) built$height else layout$height
+      built$height <- layout$height <- round(height * height_scale)
+    }
     built$x$layout <- layout
     # Duplicated panels need their own DOM IDs when both versions are rendered.
     built$elementId <- NULL
     return(built)
   }
-  if (inherits(x, "shiny.tag")) x$children <- lapply(x$children, report_msds_only)
-  else if (is.list(x)) for (i in seq_along(x)) x[i] <- list(report_msds_only(x[[i]]))
+  if (inherits(x, "shiny.tag")) x$children <- lapply(x$children, report_msds_only, height_scale = height_scale)
+  else if (is.list(x)) for (i in seq_along(x)) x[i] <- list(report_msds_only(x[[i]], height_scale))
   x
 }
 

@@ -6,6 +6,37 @@
   const canvas = document.createElement('canvas');
   const context = canvas.getContext('2d');
   let pending = false;
+  // CSS pixels: the same 11pt body / 14pt title scale as the static R charts.
+  const typography = {family: 'Arial, sans-serif', body: 44 / 3, title: 56 / 3};
+  const chartFont = (font = {}, size = typography.body) => ({...font, family: typography.family, size});
+
+  async function styleChart(plot) {
+    const layout = plot.layout;
+    const update = {
+      font: chartFont(layout.font),
+      'title.font': chartFont(layout.title?.font, typography.title),
+      'legend.font': chartFont(layout.legend?.font),
+      'legend.title.font': chartFont(layout.legend?.title?.font),
+      'hoverlabel.font': chartFont(layout.hoverlabel?.font),
+      uniformtext: {minsize: typography.body, mode: 'show'},
+      annotations: (layout.annotations || []).map(note => ({...note, font: chartFont(note.font)}))
+    };
+    Object.keys(layout).filter(key => /^[xy]axis\d*$/.test(key)).forEach(key => {
+      update[`${key}.tickfont`] = chartFont(layout[key].tickfont);
+      update[`${key}.title.font`] = chartFont(layout[key].title?.font);
+      update[`${key}.automargin`] = true;
+    });
+    const textTraces = plot.data.map((trace, i) => i)
+      .filter(i => ['bar', 'scatter', 'sankey', 'pie'].includes(plot.data[i].type));
+    if (textTraces.length) await Plotly.restyle(plot,
+      {textfont: textTraces.map(i => chartFont(plot.data[i].textfont))}, textTraces);
+    const barTraces = textTraces.filter(i => ['bar', 'pie'].includes(plot.data[i].type));
+    if (barTraces.length) await Plotly.restyle(plot, {
+      insidetextfont: barTraces.map(i => chartFont(plot.data[i].insidetextfont)),
+      outsidetextfont: barTraces.map(i => chartFont(plot.data[i].outsidetextfont))
+    }, barTraces);
+    await Plotly.relayout(plot, update);
+  }
 
   function labelTabsets() {
     const letter = i => i < 26 ? String.fromCharCode(65 + i) : letter(Math.floor(i / 26) - 1) + letter(i % 26);
@@ -102,7 +133,7 @@
   }
 
   function wrap(text, width, size) {
-    context.font = `${size}px Arial`;
+    context.font = `${size}px ${typography.family}`;
     return String(text).split(/<br\s*\/?>/i).map(part => {
       const lines = [''];
       part.split(/\s+/).forEach(word => {
@@ -149,24 +180,36 @@
 
   async function fit(plot, state) {
     if (!plot._fullLayout || !plot.clientWidth || !plot.getClientRects().length || state.busy) return;
-    const width = Math.floor(plot.parentElement.getBoundingClientRect().width);
+    const parentStyle = getComputedStyle(plot.parentElement);
+    // The canvas must fit inside the card padding, including in screenshots.
+    const width = Math.floor(plot.parentElement.clientWidth -
+      parseFloat(parentStyle.paddingLeft) - parseFloat(parentStyle.paddingRight));
     if (width < 100) return; // Hidden tabs are measured when they become visible.
     // Category charts need their row spacing even in a short browser window.
     // Let the page scroll instead of squeezing paired bars and axis labels.
-    let height = state.sankey || state.compactPopulation || state.compactProfile || state.overviewBar ? state.height : Math.min(state.height, Math.max(320, window.innerHeight - 48));
+    // Keep the existing card size: larger text takes space from the plot area.
+    const height = state.sankey || state.compactPopulation || state.compactProfile || state.overviewBar
+      ? state.height : Math.min(state.height, Math.max(320, window.innerHeight - 48));
     const key = `${width}:${height}`;
     if (state.key === key && Math.abs(plot._fullLayout.width - width) < 1 &&
         plot._fullLayout.height === (state.fittedHeight || height) && plot.clientHeight === (state.fittedHeight || height)) return;
     state.busy = true;
     try {
+      const compactLegend = state.compactLegend || state.compactPopulation;
+      if (!state.styled) {
+        await styleChart(plot);
+        state.annotations = (plot.layout.annotations || []).map(a => ({...a}));
+        state.styled = true;
+      }
       const update = {width, height, autosize: false};
       if (plot.data.some(trace => trace.type === 'scatter' && trace.mode?.includes('lines')))
-        update['legend.itemwidth'] = state.compactLegend ? 30 : 50;
+        update['legend.itemwidth'] = compactLegend ? 30 : 50;
       const margin = {...state.margin};
       let titleInset = 12;
+      let legendOffset = null;
       if (state.nativeLegend) margin.autoexpand = false;
-      if (state.nativeLegend && state.title) {
-        const size = plot.layout.title?.font?.size || 18;
+      if (state.title) {
+        const size = typography.title;
         const title = wrap(state.title, Math.max(120, width - 32), size);
         update['title.text'] = title;
         const titleHeight = title.split('<br>').length * size * 1.3;
@@ -174,7 +217,7 @@
         margin.t = Math.max(margin.t || 0, titleHeight + (state.sourceKeyBelow ? 40 : 15));
       }
       if (state.overviewBar) {
-        context.font = `${plot.layout.font?.size || 13}px Arial`;
+        context.font = `${typography.body}px ${typography.family}`;
         const lines = (plot.layout.yaxis.ticktext || []).flatMap(t => String(t).split(/<br\s*\/?>/i));
         margin.l = Math.ceil(Math.max(32, ...lines.map(t => context.measureText(t).width))) + 8;
       }
@@ -192,56 +235,56 @@
           note.yanchor = 'bottom';
           const noteHeight = note.text.split('<br>').length * (note.font?.size || 12) * 1.4;
           if (state.sankey) margin.t = Math.max(margin.t || 0, noteHeight + 24);
-          else { topOffset += noteHeight + 8; margin.t = Math.max(margin.t || 0, topOffset + 8); }
+          else { topOffset += noteHeight + 8; margin.t = Math.max(margin.t || 0, topOffset + (state.title ? 40 : 8)); }
         });
+      // Footnotes occupy their own rows, followed by the legend. Do not overlay
+      // several notes at the same fixed offset or shrink text to make them fit.
+      let bottomOffset = 65;
+      const bottomNotes = annotations.filter(a => a.xref === 'paper' && a.yref === 'paper' && a.y < 0);
+      bottomNotes.sort((a, b) => b.y - a.y).forEach(note => {
+          note.y = 0;
+          note.yshift = -bottomOffset;
+          note.yanchor = 'top';
+          bottomOffset += note.text.split('<br>').length * typography.body * 1.4 + 8;
+        });
+      if (bottomNotes.length) margin.b = Math.max(margin.b || 0, bottomOffset);
       // Horizontal legends wrap long organisation names and reserve enough space
       // below the axes. Never replace an overflowing legend with a scroll box.
       if (state.horizontal && !state.compactProfile && plot.layout.showlegend !== false) {
-        const size = plot.layout.legend?.font?.size || 11;
-        const available = Math.max(140, state.compactLegend ? width - 24 : width - (margin.l || 60) - (margin.r || 20));
-        const sampleWidth = state.compactLegend ? 40 : 60;
+        const size = typography.body;
+        const available = Math.max(140, compactLegend ? width - 24 : width - (margin.l || 60) - (margin.r || 20));
+        const sampleWidth = compactLegend ? 40 : 60;
         const names = state.names.map(name => wrap(name, available - sampleWidth, size));
         await Plotly.restyle(plot, {name: names});
         let rowsHeight = 0, rowWidth = 0, rowHeight = 0;
         plot._fullData.forEach((trace, i) => {
           if (!trace.showlegend || trace.visible === false) return;
           const lines = names[i].split('<br>');
-          context.font = `${size}px Arial`;
-          const itemWidth = Math.max(state.compactLegend ? 90 : 0,
+          context.font = `${size}px ${typography.family}`;
+          const itemWidth = Math.max(compactLegend ? 90 : 0,
             Math.max(...lines.map(line => context.measureText(line).width)) + sampleWidth);
-          const itemHeight = state.compactLegend ? lines.length * size * 1.4 + 4 : Math.max(29, lines.length * size * 1.4 + 14);
+          const itemHeight = compactLegend ? lines.length * size * 1.4 + 4 : Math.max(29, lines.length * size * 1.4 + 14);
           if (rowWidth && rowWidth + itemWidth > available) {
             rowsHeight += rowHeight; rowWidth = 0; rowHeight = 0;
           }
           rowWidth += itemWidth; rowHeight = Math.max(rowHeight, itemHeight);
         });
         rowsHeight += rowHeight;
-        const belowNotes = state.annotations.some(a => a.yref === 'paper' && a.y < 0);
-        const legendOffset = state.sourceKeyBelow ? 150 : state.compactLegend ? 58 : belowNotes ? 110 : 70;
+        legendOffset = Math.max(bottomOffset, state.sourceKeyBelow ? 150 : compactLegend ? 58 : 70);
         margin.b = Math.max(state.margin.b || 0, rowsHeight + legendOffset + 12);
-        if (state.nativeLegend) {
-          height = Math.max(height, (margin.t || 60) + margin.b + (state.compactLegend ? 80 : 160));
-          update.height = height;
-        }
         const plotHeight = Math.max(80, height - (margin.t || 60) - margin.b);
-        update['legend.x'] = state.compactLegend ? (12 - (margin.l || 60)) / Math.max(1, width - (margin.l || 60) - (margin.r || 20)) : 0;
+        update['legend.x'] = compactLegend ? (12 - (margin.l || 60)) / Math.max(1, width - (margin.l || 60) - (margin.r || 20)) : 0;
         update['legend.xanchor'] = 'left';
         update['legend.y'] = -legendOffset / plotHeight;
         update['legend.yanchor'] = 'top';
       }
       update.margin = margin;
-      if (state.nativeLegend && state.title) update['title.y'] = 1 - titleInset / height;
-      update.annotations = annotations.map(a => {
-        const note = {...a};
-        if (a.xref === 'paper') {
-          if (a.yref === 'paper' && a.y < 0) {
-            note.y = 0;
-            note.yshift = -65;
-            note.yanchor = 'top';
-          }
-        }
-        return note;
-      });
+      if (legendOffset !== null) update['legend.y'] = -legendOffset / Math.max(80, height - (margin.t || 60) - margin.b);
+      if (state.title) {
+        update['title.y'] = 1 - titleInset / height;
+        update['title.yanchor'] = 'top';
+      }
+      update.annotations = annotations;
       plot.style.width = '100%';
       plot.style.height = `${height}px`;
       for (let i = 0; i < plot.data.length; i++) {
@@ -258,13 +301,17 @@
         }
       }
       await Plotly.relayout(plot, update);
-      // Plotly can add automatic margins after measuring the native legend.
-      // Keep the compact plots readable after that final measurement as well.
-      const minimumPlotHeight = state.compactLegend ? 80 : 160;
-      if (state.nativeLegend && plot._fullLayout._size.h < minimumPlotHeight) {
-        height += minimumPlotHeight - plot._fullLayout._size.h;
-        plot.style.height = `${height}px`;
-        await Plotly.relayout(plot, {height, ...(state.title ? {'title.y': 1 - titleInset / height} : {})});
+      // Use the rendered legend height as well: Plotly may use equal-width
+      // columns where our word-width estimate packs more entries into a row.
+      // Reserve that space within the same card, reducing the plotting area.
+      const legend = plot.querySelector('.legend');
+      if (legendOffset !== null && legend) {
+        const required = Math.ceil(legendOffset + legend.getBBox().height + 12);
+        if (required > margin.b) {
+          margin.b = required;
+          await Plotly.relayout(plot, {margin,
+            'legend.y': -legendOffset / Math.max(1, height - (margin.t || 0) - margin.b)});
+        }
       }
       state.fittedHeight = height;
       state.key = key;

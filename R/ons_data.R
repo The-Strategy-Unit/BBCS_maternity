@@ -545,7 +545,7 @@ build_source_summary <- function(data_dir = ons_data_dir()) {
 ## 6. Shared chart and table formatting --------------------------------------
 # Colours are passed in from local_authorities.csv, not taken from another plot.
 ons_plot_theme <- function(plot_margin = ggplot2::margin(8, 12, 8, 8)) {
-  ggplot2::theme_minimal(base_family = "sans") +
+  ggplot2::theme_minimal(base_family = "Arial", base_size = 11) +
     ggplot2::theme(
       plot.background = ggplot2::element_rect(fill = "white", colour = NA),
       panel.background = ggplot2::element_rect(fill = "white", colour = NA),
@@ -583,6 +583,52 @@ projection_plot <- function(data, caption, colours) {
       y = "Adjusted resident maternities", colour = NULL, caption = caption) +
     ons_line_guides() +
     ons_plot_theme()
+}
+
+# Resident geography totals, before allocation to booking/delivery providers.
+# Aggregate the same disclosed LA values shown in the section 3.2 total chart.
+resident_projection_totals_table <- function(data) {
+  resident_icb <- c(E08000025 = "Birmingham and Solihull ICB",
+    E08000027 = "Black Country ICB", E08000028 = "Black Country ICB",
+    E08000029 = "Birmingham and Solihull ICB", E08000030 = "Black Country ICB",
+    E08000031 = "Black Country ICB")
+  areas <- read_area_config() |> filter(area_code %in% names(resident_icb))
+  stopifnot(nrow(areas) == 6L, !anyDuplicated(areas$area_code))
+  years <- sort(unique(data$year))
+  shown <- tidyr::expand_grid(area_code = areas$area_code, year = years) |>
+    left_join(data |> select(area_code, year, projected_maternities),
+      by = c("area_code", "year"), relationship = "one-to-one") |>
+    left_join(areas |> select(area_code, area_name), by = "area_code", relationship = "many-to-one") |>
+    mutate(Resident_ICB = unname(resident_icb[area_code]),
+      Value = dc_count(projected_maternities))
+  # A missing LA/year makes its subtotal unavailable, rather than a partial sum.
+  icb_rows <- shown |> group_by(Resident_ICB, year) |>
+    summarise(Value = sum(Value), .groups = "drop") |>
+    transmute(Residence = Resident_ICB, year, Value)
+  cluster_label <- "BBCS cluster (all six resident LAs)"
+  cluster_rows <- shown |> group_by(year) |>
+    summarise(Value = sum(Value), .groups = "drop") |>
+    mutate(Residence = cluster_label)
+  row_order <- c(areas$area_name, "Black Country ICB", "Birmingham and Solihull ICB", cluster_label)
+  totals <- bind_rows(shown |> transmute(Residence = area_name, year, Value), icb_rows, cluster_rows) |>
+    mutate(Residence = factor(Residence, levels = row_order)) |>
+    arrange(Residence, year) |>
+    tidyr::pivot_wider(names_from = year, values_from = Value) |>
+    select(Residence, all_of(as.character(years)))
+  totals |> gt::gt(rowname_col = "Residence") |>
+    gt::tab_header(title = "Adjusted resident maternity projections") |>
+    gt::tab_stubhead(label = "Resident area") |>
+    gt::fmt_number(columns = all_of(as.character(years)), decimals = 0, use_seps = TRUE) |>
+    gt::sub_missing(missing_text = "n.a.") |>
+    gt::tab_style(style = list(gt::cell_text(weight = "bold"), gt::cell_fill(color = "#F5F4F3")),
+      locations = list(gt::cells_stub(rows = 7:9), gt::cells_body(rows = 7:9))) |>
+    gt::tab_style(style = gt::cell_fill(color = "#FFF3CC"),
+      locations = list(gt::cells_stub(rows = 9), gt::cells_body(rows = 9))) |>
+    gt::cols_width(Residence ~ gt::px(300), everything() ~ gt::px(84)) |>
+    gt::tab_options(table.font.names = c("Arial", "sans-serif"), table.font.size = gt::px(44 / 3),
+      heading.title.font.size = gt::px(56 / 3), heading.align = "left",
+      table.width = gt::px(300 + 84 * length(years)), table.layout = "fixed",
+      container.width = "100%", container.overflow.x = TRUE)
 }
 
 population_age_grid <- function(data) {

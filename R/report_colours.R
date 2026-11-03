@@ -87,6 +87,35 @@ identity_colours <- function(codes, priority = character()) {
 
 organisation_line_colours <- function(keys) identity_colours(keys)
 
+# Match the HTML chart scale (14.667 / 18.667 CSS pixels = 11 / 14 points).
+# Explicit child sizes prevent ggplot's relative defaults shrinking ticks/captions.
+report_chart_theme <- function() {
+  if (.Platform$OS.type == "windows")
+    grDevices::windowsFonts(Arial = grDevices::windowsFont("Arial"))
+  text <- ggplot2::element_text(family = "Arial", size = 11)
+  ggplot2::theme(text = text, axis.text = text, axis.title = text,
+    legend.text = text, legend.title = text, strip.text = text,
+    plot.subtitle = text, plot.caption = text,
+    plot.title = ggplot2::element_text(family = "Arial", size = 14))
+}
+
+# Wrap using the output device's actual text metrics, including long footnotes.
+report_wrap_text <- function(text, width, size = 11) {
+  if (is.null(text) || !is.character(text)) return(text)
+  measure <- function(x) grid::convertWidth(grid::grobWidth(grid::textGrob(x,
+    gp = grid::gpar(fontfamily = "Arial", fontsize = size))), "in", valueOnly = TRUE)
+  vapply(text, function(label) paste(vapply(strsplit(label, "\n", fixed = TRUE)[[1]], function(part) {
+    lines <- ""
+    for (word in strsplit(part, "\\s+")[[1]]) {
+      i <- length(lines)
+      next_line <- trimws(paste(lines[i], word))
+      if (nzchar(lines[i]) && measure(next_line) > width) lines <- c(lines, word)
+      else lines[i] <- next_line
+    }
+    paste(lines, collapse = "\n")
+  }, character(1)), collapse = "\n"), character(1), USE.NAMES = FALSE)
+}
+
 # One accessible colour key per chart grid; individual charts retain hover data.
 # Tab-top keys belong above the chart/card headings, never inside plot margins.
 report_colour_key <- function(colours, class = NULL, lines = FALSE) {
@@ -148,13 +177,57 @@ report_line_chart <- function(chart, legend_position = c("top", "bottom"), title
   htmltools::tagList(key, built)
 }
 
+# Presentation-only alternative for the provider total charts and their grids.
+# Keep the original recorded/modelled traces (including gaps and hover notes).
+report_msds_only <- function(x) {
+  if (inherits(x, "plotly")) {
+    built <- plotly::plotly_build(x)
+    built$x$data <- Filter(function(trace) !identical(trace$meta$Series, "ONS base"), built$x$data)
+    layout <- built$x$layout
+    layout$annotations <- Filter(function(note)
+      !isTRUE(note$text %in% c("MSDS / modelled", "ONS base")), layout$annotations)
+    # The source key is drawn in pixels in paper coordinates. The historical
+    # shading and divider use the year axis and must remain in both versions.
+    layout$shapes <- Filter(function(shape) !(identical(shape$xref, "paper") &&
+      identical(shape$yref, "paper") && identical(shape$xsizemode, "pixel") &&
+      identical(shape$ysizemode, "pixel")), layout$shapes)
+    if (is.list(layout$yaxis$title))
+      layout$yaxis$title$text <- sub(" / ONS live-birth base$", "", layout$yaxis$title$text)
+    else layout$yaxis$title <- sub(" / ONS live-birth base$", "", layout$yaxis$title)
+    layout$meta$source_key_below <- FALSE
+    layout$margin$b <- 80
+    built$x$layout <- layout
+    # Duplicated panels need their own DOM IDs when both versions are rendered.
+    built$elementId <- NULL
+    return(built)
+  }
+  if (inherits(x, "shiny.tag")) x$children <- lapply(x$children, report_msds_only)
+  else if (is.list(x)) for (i in seq_along(x)) x[i] <- list(report_msds_only(x[[i]]))
+  x
+}
+
 # Static figures default to a key before the title, with an optional key below the axes.
 report_plot_grob <- function(plot, legend_position = c("top", "bottom")) {
   legend_position <- match.arg(legend_position)
   position <- if (identical(plot$theme$legend.position, "none")) "none" else legend_position
-  plot <- plot + ggplot2::theme(legend.position = position, legend.location = "plot",
+  plot <- plot + report_chart_theme() + ggplot2::theme(legend.position = position, legend.location = "plot",
     legend.justification = "left", legend.box.just = "left",
-    legend.text = ggplot2::element_text(size = 12))
+    plot.title.position = "plot", plot.caption.position = "plot",
+    plot.caption = ggplot2::element_text(hjust = 0, colour = "#5f5b58"))
+  available <- max(2, grDevices::dev.size("in")[1] - 0.5)
+  plot <- plot + ggplot2::labs(
+    title = report_wrap_text(plot$labels$title, available, 14),
+    subtitle = report_wrap_text(plot$labels$subtitle, available),
+    caption = report_wrap_text(plot$labels$caption, available))
+  plot$layers <- lapply(plot$layers, function(layer) {
+    if (inherits(layer$geom, "GeomText") || inherits(layer$geom, "GeomLabel")) {
+      params <- layer$aes_params
+      params$family <- "Arial"
+      params$size <- 11 / ggplot2::.pt
+      return(ggplot2::ggproto(NULL, layer, aes_params = params))
+    }
+    layer
+  })
   grob <- ggplot2::ggplotGrob(plot)
   positions <- match(c("title", "subtitle", "guide-box-top"), grob$layout$name)
   if (position == "top" && all(!is.na(positions))) {
@@ -222,7 +295,7 @@ source_line_key_grob <- function() {
     grid::segmentsGrob(x0 = .06, x1 = .30, y0 = .30, y1 = .30,
       gp = grid::gpar(col = "black", lwd = 3, lty = "44")),
     grid::textGrob(c("MSDS / modelled", "ONS"), x = .35, y = c(.70, .30), just = "left",
-      gp = grid::gpar(col = "black", fontsize = 12, fontfamily = "sans")))
+      gp = grid::gpar(col = "black", fontsize = 11, fontfamily = "Arial")))
 }
 
 plotly_source_line_key <- function(position = c("top", "bottom")) {

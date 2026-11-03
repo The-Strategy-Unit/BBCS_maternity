@@ -1942,6 +1942,17 @@ report_static_plot(projection_plot(
 #| label: method-1-projected-maternities-age-grid
 htmltools::browsable(projection_age_grid(age_band_projections, area_colours))
 ```
+
+### Resident totals — table {#method-1-resident-projection-totals-table}
+
+Annual adjusted maternity totals by residence, before allocation to providers. Black Country ICB sums Dudley, Sandwell, Walsall and Wolverhampton; Birmingham and Solihull ICB sums Birmingham and Solihull. The BBCS cluster total sums all six resident LAs. The ICB and cluster rows aggregate the LA rows.
+
+LA figures use the same disclosure rounding as the Total chart, and the aggregate rows sum the displayed LA figures. Scroll horizontally to see all projection years.
+
+```{r}
+#| label: method-1-resident-projection-totals-table
+resident_projection_totals_table(total_maternity_projections)
+```
 :::
 
 ## 3.3 Delivery projections {#delivery-projections}
@@ -2026,6 +2037,42 @@ htmltools::browsable(first_draft_projections$sankey_comparison_cluster_las$displ
 #| label: first-draft-all-totals
 
 first_draft_projections$all_totals_table
+```
+:::
+
+### 3.3.1 B Total deliveries — MSDS history and modelled projections {#projection-total-maternities-msds-only}
+
+These charts show recorded MSDS deliveries in the shaded historical period and modelled deliveries in the future period. They use the same values, organisation colours and reporting-year convention as [3.3.1](#projection-total-maternities), with the ONS base comparison lines omitted. The modelled projections still use the ONS birth projections and adjustments described in section 3.1.
+
+::: panel-tabset
+#### Trusts
+
+```{r}
+#| label: projection-totals-msds-only-trusts
+htmltools::browsable(report_msds_only(report_line_chart(first_draft_projections$total_charts$Trust,
+  legend_position = "bottom", title = "Recorded and projected deliveries by trust")))
+```
+
+#### ICBs and whole cluster
+
+```{r}
+#| label: projection-totals-msds-only-icbs-cluster
+htmltools::browsable(report_msds_only(report_line_chart(first_draft_projections$total_charts$ICB_Cluster,
+  legend_position = "bottom", title = "Recorded and projected deliveries by ICB and combined cluster")))
+```
+
+#### Separate trusts
+
+```{r}
+#| label: projection-totals-msds-only-trust-panels
+htmltools::browsable(report_msds_only(first_draft_projections$delivery_total_grids$Trust))
+```
+
+#### Separate ICBs and whole cluster
+
+```{r}
+#| label: projection-totals-msds-only-icb-panels
+htmltools::browsable(report_msds_only(first_draft_projections$delivery_total_grids$ICB_Cluster))
 ```
 :::
 
@@ -2116,6 +2163,18 @@ htmltools::browsable(report_line_chart(first_draft_projections$change_charts$ICB
   title = "Change from recorded 2025/26 deliveries by ICB and combined cluster"))
 ```
 
+#### Trusts and ICBs — side by side
+
+```{r}
+#| label: projection-changes-side-by-side
+htmltools::browsable(htmltools::div(class = "report-chart-grid report-change-pair",
+  style = "display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px;",
+  htmltools::div(report_line_chart(first_draft_projections$change_charts$Trust,
+    legend_position = "bottom", title = "Change from recorded 2025/26 deliveries by trust")),
+  htmltools::div(report_line_chart(first_draft_projections$change_charts$ICB_Cluster,
+    legend_position = "bottom", title = "Change from recorded 2025/26 deliveries by ICB and combined cluster"))))
+```
+
 #### Separate trusts
 
 ```{r}
@@ -2190,6 +2249,42 @@ first_draft_projections$booking_table
 ```
 :::
 
+### 3.4.1 B Total antenatal bookings — MSDS history and modelled projections {#booking-total-comparison-msds-only}
+
+These charts show recorded MSDS bookings in the shaded historical period and modelled bookings in the future period. They use the same values, organisation colours and reporting-year convention as [3.4.1](#booking-total-comparison), with the ONS base comparison lines omitted. The modelled projections still use the ONS birth projections and adjustments described in section 3.1.
+
+::: panel-tabset
+#### Trusts
+
+```{r}
+#| label: booking-projection-msds-only-combined-trust-total
+htmltools::browsable(report_msds_only(report_line_chart(first_draft_projections$booking_total_charts$Trust,
+  legend_position = "bottom", title = "Recorded and projected antenatal bookings by trust")))
+```
+
+#### ICBs and whole cluster
+
+```{r}
+#| label: booking-projection-msds-only-combined-icb-total
+htmltools::browsable(report_msds_only(report_line_chart(first_draft_projections$booking_total_charts$ICB_Cluster,
+  legend_position = "bottom", title = "Recorded and projected antenatal bookings by ICB and combined cluster")))
+```
+
+#### Separate trusts
+
+```{r}
+#| label: booking-projection-msds-only-trust-total
+htmltools::browsable(report_msds_only(first_draft_projections$booking_grids$total$Trust))
+```
+
+#### Separate ICBs and whole cluster
+
+```{r}
+#| label: booking-projection-msds-only-icb-cluster-total
+htmltools::browsable(report_msds_only(first_draft_projections$booking_grids$total$ICB_Cluster))
+```
+:::
+
 ### 3.4.2 Projected bookings and change by age {#booking-age-comparison}
 
 These charts show projected bookings by age band and percentage change from each band's modelled 2025 booking total at that organisation. A value of 10% means 10% more projected bookings in that band than in modelled 2025. A zero starting count or unavailable estimate has no percentage change.
@@ -2252,6 +2347,18 @@ htmltools::browsable(report_line_chart(first_draft_projections$booking_change_ch
 #| label: booking-projection-combined-icb-change
 htmltools::browsable(report_line_chart(first_draft_projections$booking_change_charts$ICB_Cluster, legend_position = "bottom",
   title = "Change from modelled 2025 bookings by ICB and combined cluster"))
+```
+
+#### Trusts and ICBs — side by side
+
+```{r}
+#| label: booking-projection-changes-side-by-side
+htmltools::browsable(htmltools::div(class = "report-chart-grid report-change-pair",
+  style = "display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px;",
+  htmltools::div(report_line_chart(first_draft_projections$booking_change_charts$Trust,
+    legend_position = "bottom", title = "Change from modelled 2025 bookings by trust")),
+  htmltools::div(report_line_chart(first_draft_projections$booking_change_charts$ICB_Cluster,
+    legend_position = "bottom", title = "Change from modelled 2025 bookings by ICB and combined cluster"))))
 ```
 
 :::

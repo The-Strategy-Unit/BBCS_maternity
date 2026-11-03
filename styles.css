@@ -242,3 +242,29 @@ a { color: var(--su-blue); }
 @media (max-width: 850px) {
   .projection-flow-pair { grid-template-columns: 1fr; }
 }
+
+/* Report figures share the same Arial 11pt / 14pt scale as the R figures.
+   Include HTML keys, inserts and notes surrounding the interactive canvas.
+   Plotly SVG fonts are set in report-charts.html so its measurements match. */
+.cell-output-display:has(.plotly),
+.demo-sankey-panel, .cohort-match-card, .demo-ribbon-key, .chart-grid-note,
+.projection-change-key {
+  font-family: Arial, sans-serif;
+  font-size: 14.6667px;
+  line-height: 1.4;
+}
+.cell-output-display:has(.plotly) :is(div, p, span, small, li),
+.demo-sankey-panel :is(div, p, span, small, li),
+.cohort-match-card :is(div, p, span, small, li),
+.demo-ribbon-key, .chart-grid-note, .projection-change-key {
+  font-family: Arial, sans-serif !important;
+  font-size: 14.6667px !important;
+}
+.cell-output-display:has(.plotly) :is(h3, h4, h5, h6),
+.cell-output-display:has(.plotly) :is(h3, h4, h5, h6) span,
+.demo-sankey-panel :is(h3, h4, h5, h6),
+.cohort-match-card > h4 {
+  font-family: Arial, sans-serif !important;
+  font-size: 18.6667px !important;
+  line-height: 1.35;
+}

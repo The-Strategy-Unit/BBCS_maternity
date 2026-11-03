@@ -202,6 +202,15 @@ a { color: var(--su-blue); }
 .demo-sankey-stages { color: #5f5b58; }
 .population-age-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; }
 .population-age-grid > div { min-width: 0; }
+.resident-projection-panel { background: white; padding: 1rem; }
+.resident-projection-panel > h4 { margin: 0 0 0.75rem; }
+.resident-projection-panel .demo-sankey-panel { padding: 0; }
+.resident-projection-panel .resident-projection-key {
+  justify-content: center;
+  gap: 0.5rem 1.25rem;
+  margin: 1rem 0 0.5rem;
+}
+.resident-projection-panel > .chart-grid-note { margin-bottom: 0; }
 .population-age-key { font-size: 0.95rem; }
 .chart-grid-note { color: #5f5b58; font-size: 0.9rem; margin-top: 0.75rem; }
 @container (max-width: 850px) {

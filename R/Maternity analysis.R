@@ -3519,8 +3519,10 @@ build_first_draft_projections <- function(baseline_fy = projection_baseline,
       result$total_comparison$Booking$Key == key, ], "Antenatal bookings / ONS live-birth base", legend_below = TRUE))
     data <- booking_total_projections[booking_total_projections$Key == key, ]
     incomplete <- key %in% booking_gaps$Key || anyNA(data$Projected)
+    # Age panels need room for their in-card title and seven-band legend.
+    # 360px is 50% taller than the former 240px cards.
     chart <- plotly::plot_ly(height = if (view %in% c("age", "age_change"))
-      projection_chart_height / 2 else projection_chart_height)
+      projection_chart_height * 0.75 else projection_chart_height)
     if (view %in% c("age", "age_change")) {
       data <- booking_age_projections[booking_age_projections$Key == key, ]
       for (band in age_bands) {
@@ -3555,7 +3557,8 @@ build_first_draft_projections <- function(baseline_fy = projection_baseline,
       if (view %in% c("change", "age_change")) paste("% change from modelled ", ons_reference_year, sep = "") else
         "Projected antenatal bookings", percent = view %in% c("change", "age_change"))
     if (view %in% c("age", "age_change")) chart <- plotly::layout(chart, showlegend = TRUE,
-      legend = list(orientation = "h", y = -0.25), margin = list(b = 100))
+      legend = list(orientation = "h", y = -0.25), margin = list(r = 40, b = 100),
+      xaxis = list(tickangle = -60))
     if (!incomplete && !any(data$Projected > 0)) chart <- plotly::layout(chart,
       yaxis = list(range = c(0, 1), tickvals = 0), showlegend = FALSE,
       annotations = list(list(text = "No allocated bookings", x = 0.5, y = 0.5,

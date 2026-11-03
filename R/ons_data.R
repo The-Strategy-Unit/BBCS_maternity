@@ -619,6 +619,8 @@ resident_projection_totals_table <- function(data) {
   totals |> gt::gt(rowname_col = "Residence") |>
     gt::tab_header(title = "Adjusted resident maternity projections") |>
     gt::tab_stubhead(label = "Resident area") |>
+    gt::tab_style(style = gt::cell_text(align = "left"), locations = gt::cells_stub()) |>
+    gt::cols_align(align = "center", columns = all_of(as.character(years))) |>
     gt::fmt_number(columns = all_of(as.character(years)), decimals = 0, use_seps = TRUE) |>
     gt::sub_missing(missing_text = "n.a.") |>
     gt::tab_style(style = list(gt::cell_text(weight = "bold"), gt::cell_fill(color = "#F5F4F3")),
@@ -672,13 +674,8 @@ provider_projection_totals_table <- function(data, measure = c("deliveries", "an
       table.width = gt::px(350 + 84 * length(years)), table.layout = "fixed",
       source_notes.font.size = gt::px(44 / 3), footnotes.font.size = gt::px(44 / 3),
       container.width = "100%", container.overflow.x = TRUE)
-  for (year in years) {
-    partial_keys <- shown$Key[shown$Year == year & grepl("^Partial", shown$Coverage_note)]
-    partial_rows <- which(organisations$Key %in% partial_keys)
-    if (length(partial_rows)) table <- gt::tab_footnote(table,
-      footnote = "Partial projection: includes available allocations only; see provider coverage in section 3.3.",
-      locations = gt::cells_body(columns = all_of(as.character(year)), rows = partial_rows))
-  }
+  if (any(grepl("^Partial", shown$Coverage_note))) table <- gt::tab_source_note(table,
+    "Partial projections include available allocations only; see provider coverage in section 3.3.")
   table
 }
 
@@ -720,7 +717,7 @@ projection_age_grid <- function(data, colours) {
   areas <- unique(as.character(data$area_name))
   charts <- lapply(bands, function(band) {
     rows <- data[as.character(data$age_band) == band, ]
-    chart <- plotly::plot_ly(height = 400)
+    chart <- plotly::plot_ly(height = 270)
     for (area in areas) {
       series <- rows[rows$area_name == area, ]
       series <- series[order(series$year), ]
@@ -729,22 +726,22 @@ projection_age_grid <- function(data, colours) {
         line = list(color = colours[[area]], width = 2.5),
         hovertemplate = paste0(area, "<br>%{x}: %{y:,.0f} maternities<extra></extra>"))
     }
-    chart <- plotly::layout(chart, showlegend = TRUE,
-      title = list(text = paste0("Adjusted resident maternity projections<br>Age ", band),
+    chart <- plotly::layout(chart, showlegend = FALSE,
+      title = list(text = band,
         x = 0.02, xanchor = "left", font = list(size = 14)),
-      legend = list(orientation = "h", x = 0, xanchor = "left", y = -0.25,
-        yanchor = "top", itemwidth = 50, font = list(size = 12)),
-      meta = list(compact_population_grid = TRUE, native_line_legend = TRUE),
+      meta = list(compact_population_grid = TRUE),
       font = list(family = "Arial", size = 13),
-      margin = list(l = 56, r = 20, t = 72, b = 140),
+      margin = list(l = 72, r = 20, t = 42, b = 50),
       xaxis = list(title = "Year", tickvals = sort(unique(c(min(rows$year), 2035, max(rows$year))))),
-      yaxis = list(title = "Adjusted resident maternities", tickformat = ",.0f", rangemode = "tozero"),
+      yaxis = list(title = "Adjusted resident<br>maternities", tickformat = ",.0f", rangemode = "tozero"),
       paper_bgcolor = "white", plot_bgcolor = "white")
     htmltools::div(class = "demo-sankey-panel",
       dc_widget(plotly::config(chart, displayModeBar = FALSE, responsive = TRUE)))
   })
-  htmltools::tagList(
+  htmltools::div(class = "resident-projection-panel",
+    htmltools::h4("Adjusted resident maternity projections"),
     htmltools::div(class = "population-age-grid", charts),
+    report_colour_key(colours[areas], class = "resident-projection-key", lines = TRUE),
     htmltools::p(class = "chart-grid-note",
       "ONS 2022-based projected live births on 2023 geography, with local splits of the youngest and oldest ONS age groups, then stillbirth, multiplicity, Private\u2013NHS and maternity pathway adjustments. Estimates are calculated before allocation to providers; Under 20 covers ages 13\u201319 and 45+ covers ages 45\u201354."))
 }

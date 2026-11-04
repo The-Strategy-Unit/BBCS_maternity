@@ -492,6 +492,7 @@ demo_profile_fields <- function() {
 
 cohort_profile_counts <- function(master, field, categories = NULL) {
   preferred <- switch(field, Age_band = report_age_bands, imd_quintile = as.character(1:5),
+    Age_group = levels(master$Age_group),
     ethnicity_broad = unname(demographic_ethnicity_groups),
     ethnicity_profile = c("White", "Asian", "Black", "All other"),
     stop("Unsupported cohort profile field: ", field))
@@ -506,7 +507,7 @@ cohort_profile_counts <- function(master, field, categories = NULL) {
     c("N", "Total"), list(Share = c("N", "Total")))
   data$Label <- ifelse(is.na(categories), "Unknown", categories)
   if (field == "imd_quintile") data$Label <- imd_quintile_labels(categories)
-  data$Colour <- if (field %in% c("Age_band", "ethnicity_broad", "ethnicity_profile"))
+  data$Colour <- if (field %in% c("Age_band", "Age_group", "ethnicity_broad", "ethnicity_profile"))
     rep("#005EB8", length(categories)) else demo_category_colours(categories, field)
   data
 }
@@ -695,7 +696,7 @@ cohort_match_chart <- function(data, field, proportions = FALSE) {
       c(label, list(x = small$Label[i], xref = "x", y = 1, yref = "paper",
         yshift = 6, yanchor = "bottom"))
   })
-  chart <- plotly::plot_ly(height = if (horizontal) max(330, 36 * length(labels) + 130) else 330)
+  chart <- plotly::plot_ly(height = if (horizontal) max(260, 31 * length(labels) + 90) else 260)
   for (group in names(colours)) {
     rows <- data[data$Group == group, ]
     percent <- ifelse(is.na(rows$Share), "Percentage unavailable (no comparable pregnancies in this category)",
@@ -738,8 +739,8 @@ cohort_match_chart <- function(data, field, proportions = FALSE) {
       yaxis = if (horizontal) category_axis else value_axis,
       margin = list(l = if (horizontal) 120 else 75,
         r = if (horizontal && (!proportions || nrow(small))) 80 else 20,
-        t = if (!horizontal && nrow(small)) 75 else 55,
-        b = if (horizontal) 60 else if (field == "imd_quintile") 85 else 65),
+        t = if (!horizontal && nrow(small)) 58 else 40,
+        b = if (horizontal) 50 else if (field == "imd_quintile") 75 else 55),
       font = list(family = "Arial", size = 15), hoverlabel = list(font = list(size = 15)),
       paper_bgcolor = "white", plot_bgcolor = "white") |>
     plotly::config(displayModeBar = FALSE, responsive = TRUE) |>
@@ -794,13 +795,62 @@ cohort_match_org_profiles <- function(master, field, group, categories) {
     cohort_match_counts(cohort_match_org_rows(eligible, group, code), field, categories)), codes)
   panels <- lapply(codes, function(code)
     cohort_match_panels(counts[[code]], field, cohort_profile_org_label(code, group)))
-  list(data = counts, charts = htmltools::tagList(
-    report_colour_key(c("Same trust" = "#006747", "Different trust or home birth" = "#AE2573"), "cohort-match-key"),
-    htmltools::div(class = "cohort-match-cards", panels)))
+  key <- report_colour_key(c("Same trust" = "#006747", "Different trust or home birth" = "#AE2573"), "cohort-match-key")
+  stacked <- lapply(codes, function(code) htmltools::div(class = "demo-sankey-panel",
+    htmltools::tags$h4(cohort_profile_org_label(code, group)),
+    cohort_match_chart(counts[[code]], field, proportions = TRUE)))
+  list(data = counts, charts = htmltools::tagList(key, htmltools::div(class = "cohort-match-cards", panels)),
+    stacked_grid = htmltools::tagList(key, htmltools::div(class = "cohort-match-stacked-grid", stacked)))
+}
+
+cohort_match_age_group <- function(band) {
+  groups <- c("Under 20" = "<20", "20-24" = "20-29", "25-29" = "20-29",
+    "30-34" = "30-39", "35-39" = "30-39", "40-44" = "40+", "45+" = "40+")
+  factor(unname(groups[as.character(band)]), levels = unique(unname(groups)))
+}
+
+cohort_match_heatmap <- function(rows, title) {
+  rows$Quintile <- factor(rows$imd_quintile, levels = 1:5)
+  rows$Comparison <- factor(rows$Trust_comparison, levels = c("Same trust", "Different trusts"))
+  # Aggregate original pregnancy counts in each joint cell before applying disclosure control.
+  counts <- stats::xtabs(N ~ Age_group + Quintile + Comparison, rows, na.action = stats::na.omit)
+  different <- dc_count(counts[, , "Different trusts"])
+  total <- different + dc_count(counts[, , "Same trust"])
+  share <- dc_divide(different, total)
+  pink <- grDevices::colorRampPalette(c("#FFF3F8", "#AE2573"))(101)
+  cell <- function(i, j) {
+    value <- share[i, j]
+    if (is.na(value)) return(htmltools::tags$td(class = "no-comparisons",
+      title = "No comparable pregnancies", "\u2014"))
+    htmltools::tags$td(style = paste0("background-color:", pink[1 + round(100 * value)],
+      ";color:", if (value >= .82) "white" else "black"),
+      title = paste0(different[i, j], " of ", total[i, j], " comparable pregnancies"),
+      scales::percent(value, accuracy = 1))
+  }
+  body <- lapply(seq_len(nrow(share)), function(i) htmltools::tags$tr(
+    htmltools::tags$th(scope = "row", rownames(share)[i]),
+    lapply(seq_len(ncol(share)), function(j) cell(i, j))))
+  htmltools::div(class = "demo-sankey-panel",
+    htmltools::tags$h4(title),
+    htmltools::tags$table(class = "cohort-match-heatmap", `aria-label` = paste(title, "percentage at a different trust or home"),
+      htmltools::tags$thead(htmltools::tags$tr(htmltools::tags$th(scope = "col", "Age"),
+        lapply(colnames(share), function(q) htmltools::tags$th(scope = "col", paste0("Q", q))))),
+      htmltools::tags$tbody(body)))
+}
+
+cohort_match_heatmap_grid <- function(master, group) {
+  codes <- demo_bbcs_org_codes(group, include_other = TRUE)
+  htmltools::tagList(
+    htmltools::tags$p("Rows show age at pregnancy and columns show IMD quintile, from Q1 (most deprived) to Q5 (least deprived). Each cell shows the percentage of comparable pregnancies delivered at a different trust or at home. Pregnancies with unknown age or IMD are excluded from these maps."),
+    htmltools::div(class = "cohort-match-heatmap-key", "0%", htmltools::span(`aria-hidden` = "true"),
+      "100%", htmltools::tags$small("\u2014  No comparable pregnancies")),
+    htmltools::div(class = "cohort-match-stacked-grid", lapply(codes, function(code)
+      cohort_match_heatmap(cohort_match_org_rows(master, group, code), cohort_profile_org_label(code, group)))))
 }
 
 build_cohort_match_profiles <- function(master) {
   master <- cohort_match_population(cohort_comparison_ethnicity(master))
+  master$Age_group <- cohort_match_age_group(master$Age_band)
   groups <- c("Same trust", "Different trusts", "Neither booking nor delivery recorded",
     "No recorded booking", "No recorded delivery", "Missing or invalid trust code",
     "Outside BBCS comparison scope")
@@ -817,14 +867,16 @@ build_cohort_match_profiles <- function(master) {
     gt::fmt_percent(columns = Share, decimals = 1) |>
     gt::sub_missing(missing_text = "Unavailable") |>
     gt::tab_source_note("Reasons are mutually exclusive.")
-  profiles <- lapply(demo_profile_fields(), function(field) {
+  profiles <- lapply(c(demo_profile_fields(), age_four = "Age_group"), function(field) {
     data <- cohort_match_counts(master, field)
     categories <- data$Category[data$Group == "Same trust"]
     list(data = data,
       Trust = cohort_match_org_profiles(master, field, "Trust", categories),
       ICB_Cluster = cohort_match_org_profiles(master, field, "ICB_Cluster", categories))
   })
-  list(summary = summary, coverage = coverage, profiles = profiles)
+  heatmaps <- list(Trust = cohort_match_heatmap_grid(master, "Trust"),
+    ICB_Cluster = cohort_match_heatmap_grid(master, "ICB_Cluster"))
+  list(summary = summary, coverage = coverage, profiles = profiles, heatmaps = heatmaps)
 }
 
 # 6. DELIVERY PATTERNS WITHIN DEMOGRAPHIC GROUPS -----------------------
@@ -922,7 +974,7 @@ demographics_cleaned <- prepare_demographics(demographics)
 # Section 5 also includes a pooled Other trusts card.
 demo_delivery_profiles <- build_delivery_pattern_profiles(get("Demo Sankeys"))
 demo_sankey_charts <- list(
-  version = "demographic-profile-v29",
+  version = "demographic-profile-v32",
   cohort_total = dc_count(sum(`Demo Sankeys`$N)),
   cohort_profile = build_cohort_profile(`Demo Sankeys`),
   cohort_trust_profiles = build_cohort_trust_profiles(`Demo Sankeys`),

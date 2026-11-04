@@ -636,6 +636,41 @@ resident_projection_totals_table <- function(data) {
       container.width = "100%", container.overflow.x = TRUE)
 }
 
+# Percentage change in the same allocated ONS series shown in the provider totals.
+provider_ons_change_pair <- function(data, reference_year, allocation) {
+  shown <- data |> filter(Series == "ONS base", Year >= reference_year) |>
+    dc_counts("Value") |> dc_coverage_note() |>
+    group_by(Key) |>
+    mutate(Change = dc_divide(Value, Value[match(reference_year, Year)]) - 1) |>
+    ungroup() |> arrange(Year)
+  ticks <- sort(unique(c(reference_year, shown$Year[shown$Year %% 5 == 0], max(shown$Year))))
+  panel <- function(rows, group) {
+    keys <- unique(rows$Key)
+    colours <- organisation_line_colours(keys)
+    chart <- plotly::plot_ly(height = 580)
+    for (key in keys) {
+      line <- rows[rows$Key == key, ]
+      chart <- plotly::add_trace(chart, x = line$Year, y = line$Change,
+        type = "scatter", mode = "lines", name = line$Organisation[1],
+        line = list(color = unname(colours[key]), width = 3, dash = "dash"),
+        connectgaps = FALSE, text = paste0(line$Organisation, "<br>ONS live-birth base, ", line$Year,
+          "<br>Change from ", reference_year, ": ", scales::percent(line$Change, accuracy = 0.1),
+          "<br>", line$Coverage_note), hovertemplate = "%{text}<extra></extra>")
+    }
+    chart |> plotly::layout(
+      xaxis = list(title = "Year", tickvals = ticks),
+      yaxis = list(title = paste("% change from ONS", reference_year), tickformat = ".0%", rangemode = "tozero"),
+      margin = list(l = 85, r = 20, t = 70, b = 125), font = list(family = "Arial")) |>
+      plotly::config(displayModeBar = FALSE, responsive = TRUE) |>
+      report_line_chart(legend_position = "bottom",
+        title = paste("ONS live births by", allocation, group)) |> dc_widget()
+  }
+  htmltools::div(class = "report-chart-grid report-change-pair",
+    style = "display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px;",
+    htmltools::div(panel(filter(shown, Level == "Trust"), "trust")),
+    htmltools::div(panel(filter(shown, Level %in% c("ICB", "Cluster")), "ICB and combined cluster")))
+}
+
 # Selected-year provider totals for the MSDS/modelled chart versions.
 # Use the existing provider aggregates, not the resident-LA subtotals.
 provider_projection_totals_table <- function(data, measure = c("deliveries", "antenatal bookings")) {

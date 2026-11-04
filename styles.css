@@ -183,14 +183,33 @@ a { color: var(--su-blue); }
   gap: 1.5rem;
 }
 .demo-sankey-panel p { margin: 0.2rem 0; font-size: 0.85rem; }
-.cohort-match-cards { display: grid; gap: 1.5rem; }
+.cohort-match-cards { display: grid; gap: 0.75rem; }
 .cohort-match-card { container-type: inline-size; }
 .cohort-match-card > h4 { margin-bottom: 0.5rem; }
 .cohort-match-chart { min-width: 0; }
-/* Give full count labels room before paired comparison charts become cramped. */
-@container (max-width: 1400px) {
-  .cohort-match-card > .demo-outcome-grid { grid-template-columns: 1fr; }
+/* Keep each count/percentage pair together. Small screens can scroll the pair. */
+.cohort-match-card > .demo-outcome-grid {
+  grid-template-columns: repeat(2, minmax(370px, 1fr)) !important;
+  gap: 0.75rem;
+  overflow-x: auto;
 }
+.cohort-match-stacked-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr));
+  gap: 0.75rem;
+}
+/* Fit three age-by-IMD maps per row when each has at least 275px. */
+.cohort-match-stacked-grid:has(.cohort-match-heatmap) {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, max(275px, calc((100% - 1.5rem) / 3))), 1fr));
+}
+.demo-sankey-panel:has(.cohort-match-heatmap) { display: grid; grid-template-rows: 1fr auto; }
+.cohort-match-heatmap { width: 100%; table-layout: fixed; border-collapse: separate; border-spacing: 2px; }
+.cohort-match-heatmap th, .cohort-match-heatmap td { padding: 0.3rem 0.15rem; text-align: center; }
+.cohort-match-heatmap tbody th { text-align: left; }
+.cohort-match-heatmap td { font-size: 12px; font-variant-numeric: tabular-nums; }
+.cohort-match-heatmap .no-comparisons { background: #eee; }
+.cohort-match-heatmap-key { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem; }
+.cohort-match-heatmap-key span { width: 7rem; height: 0.8rem; background: linear-gradient(to right, #fff3f8, #ae2573); }
 .cohort-overview-grid > .demo-sankey-panel { display: flex; flex-direction: column; }
 .cohort-overview-grid .cohort-overview-note { margin-top: 0.5rem; }
 @container (max-width: 1000px) {

@@ -75,8 +75,8 @@ if (!identical(first_draft_projections$projection_geography$version, "english-on
 if (is.null(first_draft_projections$sankey_comparison_cluster_las))
   stop("Regenerate the projection charts with R/Run analysis.R for the grouped LA flow view.")
 demo_sankey_charts <- read_report_rds(".demo_sankeys.rds", report_run$run_id)
-if (!identical(demo_sankey_charts$version, "demographic-profile-v29"))
-  stop("Regenerate the demographic charts with R/Run analysis.R for the latest section 5.3 cohort rules and bar labels.")
+if (!identical(demo_sankey_charts$version, "demographic-profile-v32"))
+  stop("Regenerate the demographic charts with R/Run analysis.R for the whole-percentage labels on the section 5.3 heat maps.")
 ```
 
 ```{r}
@@ -2156,7 +2156,7 @@ htmltools::browsable(first_draft_projections$age_tables$incoming_table)
 
 ### 3.3.3 Change from modelled 2025 deliveries {#projection-percentage-change}
 
-These charts compare each projected year with the organisation's modelled 2025 deliveries, using (modelled deliveries in the selected year ÷ modelled 2025 deliveries − 1) × 100. Under the [reporting-year convention](#reporting-years), ONS 2025 is the 2025/26 baseline. Each line starts at 0% in 2025 wherever that modelled baseline is positive. Published percentages use disclosure-controlled counts for both the selected year and the baseline. Partial projections remain visible, with coverage identified in hover details and tables; they are not complete provider totals. A zero or unavailable modelled baseline has no calculable percentage change.
+The modelled charts compare each projected year with the organisation's modelled 2025 deliveries, using (modelled deliveries in the selected year ÷ modelled 2025 deliveries − 1) × 100. Under the [reporting-year convention](#reporting-years), ONS 2025 is the 2025/26 baseline. Each line starts at 0% in 2025 wherever that modelled baseline is positive. Published percentages use disclosure-controlled counts for both the selected year and the baseline. Partial projections remain visible, with coverage identified in hover details and tables; they are not complete provider totals. A zero or unavailable modelled baseline has no calculable percentage change. Tab G shows the change in allocated ONS live births from each organisation’s own 2025 ONS base.
 
 ::: panel-tabset
 #### Trusts
@@ -2209,6 +2209,16 @@ htmltools::browsable(first_draft_projections$delivery_change_grids$ICB_Cluster)
 #| label: first-draft-all-changes
 
 first_draft_projections$all_changes_table
+```
+
+#### ONS live births — change from 2025
+
+The dashed lines show how projected live births allocated to each delivery provider change from its own 2025 ONS base. They use the delivery shares and disclosure-controlled ONS totals from [section 3.3.1](#projection-total-maternities). A value of +5% means the provider's allocated live births are 5% higher than in 2025. A zero or unavailable 2025 base leaves the line blank.
+
+```{r}
+#| label: projection-changes-ons-base
+htmltools::browsable(provider_ons_change_pair(first_draft_projections$total_comparison$Delivery,
+  first_draft_projections$ons_reference_year, "delivery"))
 ```
 :::
 
@@ -2353,7 +2363,7 @@ htmltools::browsable(first_draft_projections$booking_grids$age$ICB_Cluster)
 
 ### 3.4.3 Change from modelled 2025 bookings {#booking-percentage-change}
 
-These charts compare each projected year with the organisation's modelled 2025 bookings, using (modelled bookings in the selected year ÷ modelled 2025 bookings − 1) × 100. Under the [reporting-year convention](#reporting-years), ONS 2025 is the 2025/26 baseline. Each line starts at 0% in 2025 wherever that modelled baseline is positive. Published percentages use disclosure-controlled counts for both the selected year and the baseline, as in the delivery growth charts. A zero or unavailable modelled baseline has no calculable percentage change.
+The modelled charts compare each projected year with the organisation's modelled 2025 bookings, using (modelled bookings in the selected year ÷ modelled 2025 bookings − 1) × 100. Under the [reporting-year convention](#reporting-years), ONS 2025 is the 2025/26 baseline. Each line starts at 0% in 2025 wherever that modelled baseline is positive. Published percentages use disclosure-controlled counts for both the selected year and the baseline, as in the delivery growth charts. A zero or unavailable modelled baseline has no calculable percentage change. Tab D shows the change in allocated ONS live births from each organisation’s own 2025 ONS base.
 
 ::: panel-tabset
 #### Trusts
@@ -2382,6 +2392,16 @@ htmltools::browsable(htmltools::div(class = "report-chart-grid report-change-pai
     legend_position = "bottom", title = "Change from modelled 2025 bookings by trust")),
   htmltools::div(report_line_chart(first_draft_projections$booking_change_charts$ICB_Cluster,
     legend_position = "bottom", title = "Change from modelled 2025 bookings by ICB and combined cluster"))))
+```
+
+#### ONS live births — change from 2025
+
+The dashed lines show how projected live births allocated to each booking provider change from its own 2025 ONS base. They use the booking shares and disclosure-controlled ONS totals from [section 3.4.1](#booking-total-comparison). A value of +5% means the provider's allocated live births are 5% higher than in 2025. A zero or unavailable 2025 base leaves the line blank.
+
+```{r}
+#| label: booking-projection-changes-ons-base
+htmltools::browsable(provider_ons_change_pair(first_draft_projections$total_comparison$Booking,
+  first_draft_projections$ons_reference_year, "booking"))
 ```
 
 :::
@@ -3119,9 +3139,9 @@ htmltools::browsable(demo_sankey_charts$cohort_icb_profiles$ethnicity_four$grid)
 
 ## 5.3 Same trust or different delivery destination
 
-Compare pregnancies booked and delivered at the same trust (green) with those delivered at a different trust or at home (pink). Counts are shown alongside 100% stacked bars within each demographic category: for example, each 20–24 age bar shows the percentage who delivered at the same trust and the percentage at a different trust or at home. Each non-zero count bar is labelled with its disclosure-controlled pregnancy count. Percentage labels show whole percentages; hover text retains one decimal place. Very small percentage segments have their labels placed outside the bar. Rounded percentage labels may not add to exactly 100%.
+Compare pregnancies booked and delivered at the same trust (green) with those delivered at a different trust or at home (pink). Counts are shown alongside 100% stacked bars within each demographic category: for example, each 20–24 age bar shows the percentage who delivered at the same trust and the percentage at a different trust or at home. Each non-zero count bar is labelled with its disclosure-controlled pregnancy count. Stacked-bar labels show whole percentages; hover text retains one decimal place. Very small percentage segments have their labels placed outside the bar. Rounded percentage labels may not add to exactly 100%.
 
-Percentages use the sum of the two disclosure-controlled counts within the category, so each non-empty bar totals 100%. Categories with no comparable pregnancies have no percentage bar. Unknown age and IMD remain separate categories. Both broad and four-group ethnicity views are available. The four groups are White, Asian, Black and All other; All other includes mixed and other ethnicities, not stated, conflicting and unknown values.
+Percentages use the sum of the two disclosure-controlled counts within the category, so each non-empty bar totals 100%. Categories with no comparable pregnancies have no percentage bar. The bar charts retain unknown age and IMD as separate categories. The four-band age view groups ages into <20, 20–29, 30–39 and 40+. The heat maps cross those bands with IMD quintiles 1–5 and show the percentage delivered at a different trust or at home among comparable pregnancies with known age and IMD. Both broad and four-group ethnicity views are available. The four groups are White, Asian, Black and All other; All other includes mixed and other ethnicities, not stated, conflicting and unknown values.
 
 Pregnancies qualify for this comparison through a booking **or** delivery at a BBCS provider, using the [configured provider scope in section 1.2](#bbcs-cohort). The combined BBCS cluster includes both incoming and outgoing transfers, and home births following a BBCS booking. A recorded home birth has Home as its delivery destination and qualifies through its booking provider; it is not counted as a delivery at the provider responsible for that home birth. Pregnancies with neither event at a BBCS provider do not enter these comparison charts.
 
@@ -3186,6 +3206,13 @@ demo_sankey_charts$cohort_match_profiles$coverage
 htmltools::browsable(demo_sankey_charts$cohort_match_profiles$profiles$age$Trust$charts)
 ```
 
+#### Age (4 bands)
+
+```{r}
+#| label: cohort-match-age-trust-four-bands
+htmltools::browsable(demo_sankey_charts$cohort_match_profiles$profiles$age_four$Trust$charts)
+```
+
 #### IMD quintile
 
 ```{r}
@@ -3219,6 +3246,13 @@ htmltools::browsable(demo_sankey_charts$cohort_match_profiles$profiles$ethnicity
 htmltools::browsable(demo_sankey_charts$cohort_match_profiles$profiles$age$ICB_Cluster$charts)
 ```
 
+#### Age (4 bands)
+
+```{r}
+#| label: cohort-match-age-icb-cluster-four-bands
+htmltools::browsable(demo_sankey_charts$cohort_match_profiles$profiles$age_four$ICB_Cluster$charts)
+```
+
 #### IMD quintile
 
 ```{r}
@@ -3241,6 +3275,98 @@ htmltools::browsable(demo_sankey_charts$cohort_match_profiles$profiles$ethnicity
 ```
 
 :::
+
+### By trust — stacked bars only
+
+::: panel-tabset
+#### Age band
+
+```{r}
+#| label: cohort-match-stacked-trust-age
+htmltools::browsable(demo_sankey_charts$cohort_match_profiles$profiles$age$Trust$stacked_grid)
+```
+
+#### Age (4 bands)
+
+```{r}
+#| label: cohort-match-stacked-trust-age-four-bands
+htmltools::browsable(demo_sankey_charts$cohort_match_profiles$profiles$age_four$Trust$stacked_grid)
+```
+
+#### IMD quintile
+
+```{r}
+#| label: cohort-match-stacked-trust-imd
+htmltools::browsable(demo_sankey_charts$cohort_match_profiles$profiles$imd$Trust$stacked_grid)
+```
+
+#### Ethnicity (broad)
+
+```{r}
+#| label: cohort-match-stacked-trust-ethnicity
+htmltools::browsable(demo_sankey_charts$cohort_match_profiles$profiles$ethnicity$Trust$stacked_grid)
+```
+
+#### Ethnicity (4 groups)
+
+```{r}
+#| label: cohort-match-stacked-trust-ethnicity-four
+htmltools::browsable(demo_sankey_charts$cohort_match_profiles$profiles$ethnicity_four$Trust$stacked_grid)
+```
+:::
+
+### By ICB / cluster — stacked bars only
+
+::: panel-tabset
+#### Age band
+
+```{r}
+#| label: cohort-match-stacked-icb-cluster-age
+htmltools::browsable(demo_sankey_charts$cohort_match_profiles$profiles$age$ICB_Cluster$stacked_grid)
+```
+
+#### Age (4 bands)
+
+```{r}
+#| label: cohort-match-stacked-icb-cluster-age-four-bands
+htmltools::browsable(demo_sankey_charts$cohort_match_profiles$profiles$age_four$ICB_Cluster$stacked_grid)
+```
+
+#### IMD quintile
+
+```{r}
+#| label: cohort-match-stacked-icb-cluster-imd
+htmltools::browsable(demo_sankey_charts$cohort_match_profiles$profiles$imd$ICB_Cluster$stacked_grid)
+```
+
+#### Ethnicity (broad)
+
+```{r}
+#| label: cohort-match-stacked-icb-cluster-ethnicity
+htmltools::browsable(demo_sankey_charts$cohort_match_profiles$profiles$ethnicity$ICB_Cluster$stacked_grid)
+```
+
+#### Ethnicity (4 groups)
+
+```{r}
+#| label: cohort-match-stacked-icb-cluster-ethnicity-four
+htmltools::browsable(demo_sankey_charts$cohort_match_profiles$profiles$ethnicity_four$ICB_Cluster$stacked_grid)
+```
+:::
+
+### Age × IMD heat maps — trusts
+
+```{r}
+#| label: cohort-match-heatmap-trust
+htmltools::browsable(demo_sankey_charts$cohort_match_profiles$heatmaps$Trust)
+```
+
+### Age × IMD heat maps — ICBs and cluster
+
+```{r}
+#| label: cohort-match-heatmap-icbs-cluster
+htmltools::browsable(demo_sankey_charts$cohort_match_profiles$heatmaps$ICB_Cluster)
+```
 
 ::::
 

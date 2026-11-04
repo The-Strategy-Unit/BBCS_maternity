@@ -15,6 +15,7 @@ options(warn = 1) # Keep rendering warnings visible when they occur.
 source("R/disclosure.R", encoding = "UTF-8")
 source("R/report_colours.R", encoding = "UTF-8")
 source("R/ons_data.R", encoding = "UTF-8")
+source("R/retrospective_errors.R", encoding = "UTF-8")
 source("R/age_boundary_review.R", encoding = "UTF-8")
 library(gt)
 library(ggplot2)
@@ -67,16 +68,16 @@ if (!identical(first_draft_projections$chart_layout_version, "projection-chart-l
   stop("Regenerate the projection charts with R/Run analysis.R for the section 3 titles and legends inside each chart.")
 if (!identical(first_draft_projections$projection_change_baseline, "modelled-reference-year-v1"))
   stop("Regenerate the projection charts with R/Run analysis.R so percentage changes use the modelled reference-year baseline.")
-if (!identical(first_draft_projections$backtest$layout_version, "retrospective-shared-scale-v1") ||
-    !identical(first_draft_projections$booking_backtest$layout_version, "retrospective-shared-scale-v1"))
-  stop("Regenerate the retrospective delivery and booking comparisons with R/Run analysis.R for the shared chart scales.")
+if (!identical(first_draft_projections$backtest$layout_version, "retrospective-observed-v2") ||
+    !identical(first_draft_projections$booking_backtest$layout_version, "retrospective-observed-v2"))
+  stop("Regenerate the retrospective charts and tables with R/Run analysis.R to compare modelled totals with observed MSDS activity.")
 if (!identical(first_draft_projections$projection_geography$version, "english-ons-la-v1"))
   stop("Regenerate the projections with R/Run analysis.R to apply the English resident-LA scope.")
 if (is.null(first_draft_projections$sankey_comparison_cluster_las))
   stop("Regenerate the projection charts with R/Run analysis.R for the grouped LA flow view.")
 demo_sankey_charts <- read_report_rds(".demo_sankeys.rds", report_run$run_id)
-if (!identical(demo_sankey_charts$version, "demographic-profile-v32"))
-  stop("Regenerate the demographic charts with R/Run analysis.R for the whole-percentage labels on the section 5.3 heat maps.")
+if (!identical(demo_sankey_charts$version, "demographic-profile-v33"))
+  stop("Regenerate the report charts with R/Run analysis.R to show organisation names in chart labels.")
 ```
 
 ```{r}
@@ -1958,6 +1959,16 @@ The table shows 2025, 2030, 2035, 2040, 2045 and 2047. LA figures use the same d
 #| label: method-1-resident-projection-totals-table
 resident_projection_totals_table(total_maternity_projections)
 ```
+
+### Change from 2025 by LA {#resident-projection-change}
+
+Each line follows one local authority’s residents from 2025 to 2047, before allocation to providers. A value of +5% means the LA’s adjusted maternity projection is 5% higher than its own modelled 2025 total. The percentages use the disclosure-controlled counts in the Total chart. A zero or unavailable 2025 total leaves that LA’s line blank.
+
+```{r}
+#| label: resident-projection-change-chart
+htmltools::browsable(resident_projection_change_chart(total_maternity_projections, area_colours,
+  first_draft_projections$ons_reference_year))
+```
 :::
 
 ## 3.3 Delivery projections {#delivery-projections}
@@ -2447,7 +2458,7 @@ The difference from published ONS maternities is `r scales::percent(resident_lev
 
 These charts apply the model to ONS projected counts for 2023–2025 and compare the results with recorded MSDS deliveries in the corresponding financial years, 2023/24–2025/26. The same supplied cohort contributes to both the provider shares and the recorded comparison, so this shows how the model fits its input data; it is not an independent forecast test. Positive differences mean modelled activity is higher.
 
-The recorded line retains all provider deliveries used by the model. Differences and percentage differences use matched recorded deliveries from the model's usable LA/age cells in each comparison year; the table includes both full and matched observed counts. Partial estimates show available allocations only. Matching coverage does not remove the calendar/projection-year versus financial-year limitation described above.
+The charts and tables compare each organisation’s modelled deliveries with its total recorded MSDS deliveries for the same financial year.
 
 ::: panel-tabset
 #### Trusts
@@ -2473,13 +2484,45 @@ htmltools::browsable(htmltools::tagList(first_draft_projections$backtest$icb_clu
 
 first_draft_projections$backtest$all_table
 ```
+
+#### Annual % error
+
+**Signed percentage error = 100 × (modelled − observed) ÷ observed.** Blue (+) means the model was above observed deliveries. Orange (−) means it was below.
+
+Hover over a percentage, or focus it with the Tab key, to see the observed count, modelled count and size of the difference. For example, 1,100 modelled against 1,000 observed shows **+10.0%**. A dash means the percentage cannot be calculated.
+
+```{r}
+#| label: retrospective-delivery-annual-errors
+delivery_errors <- retrospective_error_data(first_draft_projections$backtest$display_data)
+htmltools::browsable(retrospective_annual_errors(delivery_errors, "deliveries"))
+```
+
+#### Three-year error summary
+
+Across 2023/24–2025/26, how far off was the model in a typical year? The first column averages the annual absolute differences in deliveries. The second averages the annual absolute percentage errors. Both count overestimates and underestimates as misses.
+
+Each year with a calculable error contributes equally to its average. ICB and cluster errors are calculated from their own modelled and observed totals.
+
+```{r}
+#| label: retrospective-delivery-period-errors
+htmltools::browsable(retrospective_period_errors(delivery_errors, "deliveries"))
+```
+
+#### % error over time
+
+Each line shows one organisation’s signed annual error in deliveries. The formula is **100 × (modelled − observed) ÷ observed**. Above zero the model was high, below zero it was low, and zero is an exact match. Both charts use the same percentage scale. Hover over a point to see the counts.
+
+```{r}
+#| label: retrospective-delivery-error-trends
+htmltools::browsable(retrospective_error_trends(delivery_errors))
+```
 :::
 
 ### 3.5.3 Retrospective booking comparison, 2023/24–2025/26 {#booking-retrospective-check}
 
 These charts apply the model to ONS projected counts for 2023–2025 and compare the allocated antenatal bookings with recorded MSDS bookings in 2023/24–2025/26. Bookings use the recorded booking provider and include pregnancies without a recorded delivery. Financial years follow the report's shared pregnancy-year assignment: birth year where supplied, otherwise expected-delivery year. They are not grouped by the booking appointment date.
 
-The same supplied cohort contributes to both the booking-provider shares and the recorded comparison, so this shows how the model fits its input data; it is not an independent forecast test. The recorded line retains all provider bookings within the projection residence scope. Differences and percentage differences use matched recorded bookings from the model's usable LA/age cells in each comparison year; the table includes both full and matched observed counts. Partial estimates show available allocations only. Positive differences mean modelled activity is higher. The calendar/projection-year versus financial-year limitation also applies here.
+The charts and tables compare each organisation’s modelled bookings with its total recorded MSDS bookings for the same financial year. The same cohort contributes to the booking-provider shares and the observed counts, so this measures how closely the model fits its input data.
 
 ::: panel-tabset
 #### Trusts
@@ -2501,6 +2544,38 @@ htmltools::browsable(htmltools::tagList(first_draft_projections$booking_backtest
 ```{r}
 #| label: booking-all-backtests
 first_draft_projections$booking_backtest$all_table
+```
+
+#### Annual % error
+
+**Signed percentage error = 100 × (modelled − observed) ÷ observed.** Blue (+) means the model was above observed antenatal bookings. Orange (−) means it was below.
+
+Hover over a percentage, or focus it with the Tab key, to see the observed count, modelled count and size of the difference. For example, 1,100 modelled against 1,000 observed shows **+10.0%**. A dash means the percentage cannot be calculated.
+
+```{r}
+#| label: retrospective-booking-annual-errors
+booking_errors <- retrospective_error_data(first_draft_projections$booking_backtest$display_data)
+htmltools::browsable(retrospective_annual_errors(booking_errors, "antenatal bookings"))
+```
+
+#### Three-year error summary
+
+Across 2023/24–2025/26, how far off was the model in a typical year? The first column averages the annual absolute differences in antenatal bookings. The second averages the annual absolute percentage errors. Both count overestimates and underestimates as misses.
+
+Each year with a calculable error contributes equally to its average. ICB and cluster errors are calculated from their own modelled and observed totals.
+
+```{r}
+#| label: retrospective-booking-period-errors
+htmltools::browsable(retrospective_period_errors(booking_errors, "antenatal bookings"))
+```
+
+#### % error over time
+
+Each line shows one organisation’s signed annual error in antenatal bookings. The formula is **100 × (modelled − observed) ÷ observed**. Above zero the model was high, below zero it was low, and zero is an exact match. Both charts use the same percentage scale. Hover over a point to see the counts.
+
+```{r}
+#| label: retrospective-booking-error-trends
+htmltools::browsable(retrospective_error_trends(booking_errors))
 ```
 :::
 

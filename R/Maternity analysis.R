@@ -305,16 +305,23 @@ record_completeness_outputs <- function(counts) {
     age <- counts$age_sources |> dplyr::filter(Scope == scope)
     shown <- dc_cells(age, c("N", "Total"), list(Share = c("N", "Total")))
     shown$Age_source <- factor(shown$Age_source, levels = sources)
+    shown$Group_label <- shown$Group
+    if (scope %in% c("Booking provider", "Delivery provider")) {
+      supplied <- !shown$Group %in% c("Unknown (NA)", "Unknown (blank)")
+      shown$Group_label[supplied] <- report_trust_name(shown$Group[supplied], trust_labels)
+    }
+    ticks <- !duplicated(shown$Group)
     chart <- plotly::plot_ly(shown, y = ~Group, x = ~Share, color = ~Age_source,
       colors = colours, type = "bar", orientation = "h",
       height = max(260, 28 * dplyr::n_distinct(shown$Group) + 120),
-      text = ~paste0(Group, "<br>Age source: ", Age_source,
+      text = ~paste0(Group_label, "<br>Age source: ", Age_source,
         "<br>Pregnancies: ", scales::comma(N), " / ", scales::comma(Total),
         "<br>Share: ", scales::percent(Share, accuracy = .1)),
       hovertemplate = "%{text}<extra></extra>") |>
       plotly::layout(barmode = "stack", showlegend = FALSE,
         xaxis = list(title = "Share of all pregnancy rows in this group", tickformat = ".0%"),
-        yaxis = list(title = scope, automargin = TRUE),
+        yaxis = list(title = scope, automargin = TRUE, tickmode = "array",
+          tickvals = shown$Group[ticks], ticktext = sub(" NHS( Foundation)? Trust$", "", shown$Group_label[ticks])),
         margin = list(l = 140, b = 65)) |>
       plotly::config(responsive = TRUE, displaylogo = FALSE)
     age_table <- shown |> dplyr::select(Group, Age_source, N, Total, Share) |>
@@ -372,7 +379,7 @@ classify_patient_flow_stages <- function(cohort) {
 
 full_flow_trust_labels <- function() {
   extra <- setdiff(cluster_trusts, names(flow_trust_labels))
-  c(flow_trust_labels, stats::setNames(extra, extra),
+  c(flow_trust_labels, stats::setNames(report_trust_name(extra), extra),
     `No booking` = "No recorded booking", `No delivery` = "No recorded delivery",
     Home = "Home birth")
 }
@@ -907,7 +914,7 @@ pathway_summary <- function(codes, level) {
       Cluster = rep(TRUE, nrow(starts)))
     org_starts <- starts[keep, ]
     organisation <- if (level == "Trust") {
-      ifelse(is.na(unname(trust_labels[code])), code, unname(trust_labels[code]))
+      report_trust_name(code, trust_labels)
     } else if (level == "Cluster") cluster_label else unname(icb_labels[code])
     data.frame(Level = level, Organisation = organisation,
       Starts = nrow(org_starts), Within = sum(org_starts$outcome == "Within cluster"),
@@ -958,7 +965,7 @@ make_pathway_sankey <- function(row, count_label = "Antenatal bookings", period 
   organisation <- row$Organisation[[1]]
   # Provider code/name lookup
   code <- if ("Code" %in% names(row)) row$Code[[1]] else {
-    labels <- c(trust_labels, icb_labels, Cluster = cluster_label)
+    labels <- c(full_flow_trust_labels(), icb_labels, Cluster = cluster_label)
     matched <- match(organisation, unname(labels))
     if (is.na(matched)) organisation else names(labels)[matched]
   }
@@ -1027,9 +1034,7 @@ trend_starts <- activity_episodes[
 # Show the six named trusts; include any additional cluster booking trusts observed.
 trend_trusts <- unique(c(names(trust_labels)[names(trust_labels) != "Other"],
                          sort(unique(trend_starts$booking_code))))
-trend_trust_names <- unname(trust_labels[trend_trusts])
-trend_trust_names[is.na(trend_trust_names)] <- paste0(
-  "Trust ", trend_trusts[is.na(trend_trust_names)])
+trend_trust_names <- report_trust_name(trend_trusts, trust_labels)
 organisations <- rbind(
   data.frame(Key = paste0("trust-", tolower(trend_trusts)), Level = "Trust",
              Code = trend_trusts, Organisation = trend_trust_names),
@@ -1371,8 +1376,7 @@ build_delivery_geography <- function(years = delivery_years, age_bands = deliver
   la_lookup <- dplyr::bind_rows(la_lookup,
       data.frame(LA = "Unknown LA", LA_name = "Unknown LA"),
       data.frame(LA = "L99999999", LA_name = "Unknown LA"))
-  trust_lookup <- readr::read_csv("data/lookups/trust_names.csv", show_col_types = FALSE) |>
-    dplyr::mutate(Trust_name = stringr::str_replace_all(stringr::str_to_title(Trust_name), "\\bNhs\\b", "NHS"))
+  trust_lookup <- report_trust_lookup
   main_trusts <- names(trust_labels)[names(trust_labels) != "Other"]
   # Keep the six report labels consistent; the national lookup names every other trust.
   trust_lookup$Trust_name[match(main_trusts, trust_lookup$Trust)] <- unname(trust_labels[main_trusts])
@@ -2453,10 +2457,6 @@ for (name in names(required_columns)) {
 # Local lookup files travel with the project; codes match the data and names label the report.
 projection_la_lookup <- readr::read_csv("data/lookups/la_names.csv",
   col_types = readr::cols(LA = readr::col_character(), LA_name = readr::col_character()))
-projection_trust_lookup <- readr::read_csv("data/lookups/trust_names.csv",
-  col_types = readr::cols(Trust = readr::col_character(), Trust_name = readr::col_character())) |>
-  dplyr::mutate(Trust_name = stringr::str_replace_all(stringr::str_to_title(Trust_name),
-                                                    "\\bNhs\\b", "NHS"))
 projection_catchment_las <- readr::read_csv("config/local_authorities.csv",
   show_col_types = FALSE)$area_code
 
@@ -2611,10 +2611,7 @@ build_first_draft_projections <- function(baseline_fy = projection_baseline,
   recorded_booking_trusts <- cohort$Booking_Trust
   trust_codes <- unique(c(names(trust_labels)[names(trust_labels) != "Other"],
     sort(intersect(c(recorded_trusts, recorded_booking_trusts), cluster_trusts))))
-  trust_names <- projection_trust_lookup$Trust_name[match(trust_codes, projection_trust_lookup$Trust)]
-  named_trusts <- trust_codes %in% names(trust_labels)
-  trust_names[named_trusts] <- unname(trust_labels[trust_codes[named_trusts]])
-  trust_names[is.na(trust_names)] <- paste0("Trust ", trust_codes[is.na(trust_names)])
+  trust_names <- report_trust_name(trust_codes, trust_labels)
   organisations <- dplyr::bind_rows(
     data.frame(Key = paste0("trust-", tolower(trust_codes)), Level = "Trust",
                Code = trust_codes, Organisation = trust_names),
@@ -2639,7 +2636,7 @@ build_first_draft_projections <- function(baseline_fy = projection_baseline,
   la_names <- projection_la_lookup
   feeder_names <- data.frame(LA = feeder_las) |>
     dplyr::left_join(la_names, by = "LA") |>
-    dplyr::mutate(LA_name = dplyr::coalesce(LA_name, LA))
+    dplyr::mutate(LA_name = dplyr::coalesce(LA_name, ons_la_names$LA_name[match(LA, ons_la_names$LA)], "Unmatched LA"))
 
   select_org <- function(data, organisation) {
     if (organisation$Level[[1]] == "Trust") {
@@ -3676,9 +3673,9 @@ build_projection_sankeys <- function(observed, projected, organisations,
   trusts <- sankey_category_order(trust_target_order, trusts)
   trusts <- trusts[trusts %in% flows$Trust]
   la_labels <- projection_la_lookup$LA_name[match(origins, projection_la_lookup$LA)]
-  la_labels[is.na(la_labels)] <- origins[is.na(la_labels)]
+  la_labels <- dplyr::coalesce(la_labels, ifelse(origins %in% c(other_label, "Unknown LA"), origins, "Unmatched LA"))
   trust_names <- organisations$Organisation[match(trusts, organisations$Code)]
-  labels <- c(la_labels, paste0(trusts, " - ", trust_names))
+  labels <- c(la_labels, trust_names)
   nodes <- dplyr::bind_rows(
     flows |> dplyr::group_by(Code = LA) |>
       dplyr::summarise(Observed = sum(Observed), Projected = sum(Projected),
@@ -3840,31 +3837,43 @@ build_input_variation_review <- function(cohort, resident_totals, registration_c
 
   # MSDS boxes describe the spread ACROSS cells of each cell's annual departure.
   # Each cell has equal display weight; model proportions still pool the counts.
-  departure_plot <- function(data, group, x_title) {
+  departure_plot <- function(data, group, group_title) {
     data <- dc_cells(data, c("Count", "Denominator", "Pooled_count", "Pooled_denominator"),
       list(Annual = c("Count", "Denominator"), Pooled = c("Pooled_count", "Pooled_denominator")))
     data$Departure_pp <- 100 * (data$Annual - data$Pooled)
     data$Group <- as.character(data[[group]])
-    groups <- if (group == "Age") as.character(sort(unique(data$Age))) else sort(unique(data$Group))
+    by_trust <- group == "Destination"
+    groups <- if (by_trust) sort(unique(data$Group)) else as.character(sort(unique(data$Age)))
+    group_labels <- if (by_trust) report_trust_name(groups, trust_labels) else groups
+    ticks <- stringr::str_wrap(sub(" NHS( Foundation)? Trust$", "", group_labels), width = 28)
+    data$Group_label <- group_labels[match(data$Group, groups)]
+    data$Resident_LA <- dplyr::coalesce(projection_la_lookup$LA_name[match(data$LA, projection_la_lookup$LA)], "Unmatched LA")
     plot_data <- data |> dplyr::filter(is.finite(Departure_pp))
     if (!nrow(plot_data)) return(htmltools::p("No annual denominators available for this comparison."))
-    chart <- plotly::plot_ly(height = 440)
+    chart <- plotly::plot_ly(height = if (by_trust) max(440, 52 * length(groups) + 90) else 440)
     colours <- c("#005EB8", "#D55E00", "#00856A")
     for (i in seq_along(years)) {
       rows <- plot_data[plot_data$FY == years[i], ]
       if (!nrow(rows)) next
-      chart <- plotly::add_trace(chart, type = "box", x = rows$Group, y = rows$Departure_pp,
+      chart <- plotly::add_trace(chart, type = "box", orientation = if (by_trust) "h" else "v",
+        x = if (by_trust) rows$Departure_pp else rows$Group,
+        y = if (by_trust) rows$Group else rows$Departure_pp,
         name = years[i], boxpoints = "outliers", marker = list(color = colours[i]),
         line = list(color = colours[i]),
-        text = paste0(rows$LA, ", Age (SY) ", rows$Age,
+        text = paste0(if (by_trust) paste0(rows$Group_label, "<br>") else "",
+          rows$Resident_LA, ", Age (SY) ", rows$Age,
           "<br>Annual count / total: ", rows$Count, " / ", rows$Denominator,
           "<br>Annual: ", scales::percent(rows$Annual, accuracy = 0.1),
-          "; pooled: ", scales::percent(rows$Pooled, accuracy = 0.1)), hoverinfo = "text+y")
+          "; pooled: ", scales::percent(rows$Pooled, accuracy = 0.1)), hoverinfo = if (by_trust) "text+x" else "text+y")
     }
+    categories <- list(title = group_title, type = "category", categoryorder = "array",
+      categoryarray = if (by_trust) rev(groups) else groups, tickmode = "array", tickvals = groups,
+      ticktext = gsub("\n", "<br>", ticks), automargin = TRUE)
+    departure <- list(title = "Annual minus pooled (percentage points)", zeroline = TRUE, zerolinecolor = "#333333")
     chart |> plotly::layout(boxmode = "group", showlegend = FALSE,
-      xaxis = list(title = x_title, type = "category", categoryorder = "array", categoryarray = groups),
-      yaxis = list(title = "Annual minus pooled (percentage points)", zeroline = TRUE, zerolinecolor = "#333333"),
-      margin = list(l = 85, r = 20, t = 20, b = 75)) |>
+      xaxis = if (by_trust) departure else categories,
+      yaxis = if (by_trust) categories else departure,
+      margin = list(l = if (by_trust) 240 else 85, r = 20, t = 20, b = 75)) |>
       plotly::config(displayModeBar = FALSE, responsive = TRUE)
   }
 
@@ -3961,14 +3970,15 @@ build_projection_backtest <- function(allocation = c("Delivery", "Booking"), his
     dplyr::left_join(historical$matched_history |> dplyr::filter(Allocation == allocation) |>
       dplyr::select(Key, Year = Event_year, Observed_matched), by = c("Key", "Year")) |>
     dplyr::mutate(Observed_matched = dplyr::coalesce(Observed_matched, 0L),
-      Difference = Modelled - Observed_matched,
-      Percent_difference = ifelse(Observed_matched > 0, Difference / Observed_matched, NA_real_)) |>
+      Difference = Modelled - Observed,
+      Percent_difference = dc_divide(Difference, Observed)) |>
     dplyr::arrange(match(Key, organisations$Key), Year)
   # Retain every recorded provider across the three comparison years.
   raw_comparison <- comparison
-  comparison <- dc_coverage_note(dc_counts(comparison, c("Observed", "Observed_matched", "Modelled")))
-  comparison$Difference <- comparison$Modelled - comparison$Observed_matched
-  comparison$Percent_difference <- dc_divide(comparison$Modelled, comparison$Observed_matched) - 1
+  comparison <- comparison |>
+    dplyr::select(Key, Level, Organisation, Year, Year_label, Modelled, Observed) |>
+    dc_counts(c("Observed", "Modelled")) |>
+    dplyr::mutate(Difference = Modelled - Observed, Percent_difference = dc_divide(Difference, Observed))
   trust_organisations <- organisations |>
     dplyr::filter(Level == "Trust", Code %in% c(setdiff(names(trust_labels), "Other"), observed$Trust))
   icb_cluster_organisations <- organisations |>
@@ -3993,9 +4003,10 @@ build_projection_backtest <- function(allocation = c("Delivery", "Booking"), his
       plotly::add_trace(x = data$Year, y = data$Modelled, type = "scatter", mode = "lines+markers",
         name = "Modelled projections", line = list(color = projection_history_colours[["Modelled projections"]], width = 2),
         marker = list(color = projection_history_colours[["Modelled projections"]], size = 5),
-        text = paste0("ONS ", data$Year, "<br>Modelled: ", scales::comma(data$Modelled, accuracy = 1),
-          "<br>", data$Coverage_note, "<br>Matched observed: ", data$Observed_matched,
-          "<br>Difference from matched observed: ", ifelse(is.na(data$Percent_difference), "n.a.",
+        text = paste0(data$Year_label, "<br>Modelled: ", scales::comma(data$Modelled, accuracy = 1),
+          "<br>Observed: ", scales::comma(data$Observed, accuracy = 1),
+          "<br>Modelled minus observed: ", scales::comma(data$Difference, accuracy = 1),
+          "<br>% difference: ", ifelse(is.na(data$Percent_difference), "n.a.",
                                                    scales::percent(data$Percent_difference, accuracy = 0.1))),
         hovertemplate = "%{text}<extra></extra>") |>
       plotly::layout(xaxis = list(title = "Comparison year",
@@ -4029,23 +4040,23 @@ build_projection_backtest <- function(allocation = c("Delivery", "Booking"), his
   icb_cluster_grid <- comparison_grid(icb_cluster_organisations)
 
   # Keep all comparison values together: one organisation per row and metrics under each year.
-  metrics <- c("Observed", "Observed_matched", "Modelled", "Difference", "Percent_difference")
+  metrics <- c("Observed", "Modelled", "Difference", "Percent_difference")
   wide <- comparison |>
-    dplyr::select(Level, Organisation, Coverage_status, Year_label, dplyr::all_of(metrics)) |>
+    dplyr::select(Level, Organisation, Year_label, dplyr::all_of(metrics)) |>
     tidyr::pivot_wider(names_from = Year_label, values_from = dplyr::all_of(metrics), names_sep = "_")
   column_order <- unlist(lapply(years, function(year) paste0(metrics, "_", year)), use.names = FALSE)
-  wide <- dplyr::select(wide, Level, Organisation, Coverage_status, dplyr::all_of(column_order))
+  wide <- dplyr::select(wide, Level, Organisation, dplyr::all_of(column_order))
   percent_columns <- paste0("Percent_difference_", years)
   count_columns <- setdiff(column_order, percent_columns)
-  labels <- stats::setNames(rep(c("All MSDS observed", "Matched observed", "Modelled projections", "Model \u2212 matched", "% difference"),
+  labels <- stats::setNames(rep(c("MSDS observed", "Modelled", "Model \u2212 observed", "% difference"),
                                   length(years)), column_order)
   all_table <- gt::gt(wide, groupname_col = "Level", rowname_col = "Organisation") |>
     gt::tab_header(title = paste0("Recorded versus projected ", activity, ": all organisations")) |>
-    gt::cols_label(Coverage_status = "Projection coverage", .list = as.list(labels)) |>
+    gt::cols_label(.list = as.list(labels)) |>
     gt::fmt_number(columns = dplyr::all_of(count_columns), decimals = 0) |>
     gt::fmt_percent(columns = dplyr::all_of(percent_columns), decimals = 1) |>
     gt::sub_missing(missing_text = "n.a.") |>
-    gt::tab_source_note(source_note = paste0("% difference = (modelled \u2212 matched observed) / matched observed \u00d7 100. Observed retains all recorded ", activity, " within the projection residence scope; Observed_matched uses the model's usable LA/age cells. Partial modelled counts retain available allocations. n.a. identifies a zero matched observed count or no usable estimate.")) |>
+    gt::tab_source_note(source_note = "Difference = modelled minus observed. A positive value means the model was high. The percentage difference uses the observed count as its denominator.") |>
     gt::tab_options(table.font.names = c("Open Sans", "Arial", "sans-serif"),
                     container.width = "100%", container.overflow.x = TRUE,
                     table.width = gt::px(1500), table.font.size = gt::px(12))
@@ -4059,7 +4070,7 @@ build_projection_backtest <- function(allocation = c("Delivery", "Booking"), his
     gt::cols_label(LA_name = "Resident LA", LA = "LA code", Age = "Maternal age",
       Reason = "Reason", N = "Observed deliveries") |>
     gt::fmt_number(columns = "N", decimals = 0) else NULL
-  list(note = historical$note, allocation = allocation, layout_version = "retrospective-shared-scale-v1",
+  list(note = historical$note, allocation = allocation, layout_version = "retrospective-observed-v2",
        organisations = organisations, baseline = historical,
        data = raw_comparison, display_data = comparison, outputs = outputs, trust_grid = trust_grid,
        icb_cluster_grid = icb_cluster_grid, all_table = all_table,

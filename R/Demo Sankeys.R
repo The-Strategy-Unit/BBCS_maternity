@@ -85,9 +85,10 @@ demo_sankey_chart <- function(master, compact = FALSE) {
   nodes <- c(source_order[source_order %in% links$source],
     target_order[target_order %in% links$target])
   extra <- setdiff(nodes, names(short))
-  short <- c(short, stats::setNames(extra, extra))
+  short <- c(short, stats::setNames(sub(" NHS( Foundation)? Trust$", "",
+    unname(demo_provider_labels()[extra])), extra))
   chart <- plotly::plotly_build(chart)
-  chart$x$data[[1]]$node$label <- unname(short[nodes])
+  chart$x$data[[1]]$node$label <- unname(gsub("\n", "<br>", stringr::str_wrap(short[nodes], width = 22)))
   chart$x$data[[1]]$node$pad <- 12
   trace <- chart$x$data[[1]]
   chart$x$data[[1]]$node$y <- sankey_node_y(trace$node$x, trace$link$source,
@@ -266,7 +267,8 @@ demo_org_label <- function(code, group) {
       `No delivery` = "No recorded delivery", Home = "Home birth",
       Cluster = "Combined BBCS cluster", Cohort = "Whole BBCS cohort")
   label <- unname(labels[code])
-  if (is.na(label)) code else label
+  if (!is.na(label)) return(label)
+  if (group == "Trust") report_trust_name(code, trust_labels) else "ICB name unavailable"
 }
 
 demo_pathway_summary <- function(master, group, codes = NULL) {
@@ -974,7 +976,7 @@ demographics_cleaned <- prepare_demographics(demographics)
 # Section 5 also includes a pooled Other trusts card.
 demo_delivery_profiles <- build_delivery_pattern_profiles(get("Demo Sankeys"))
 demo_sankey_charts <- list(
-  version = "demographic-profile-v32",
+  version = "demographic-profile-v33",
   cohort_total = dc_count(sum(`Demo Sankeys`$N)),
   cohort_profile = build_cohort_profile(`Demo Sankeys`),
   cohort_trust_profiles = build_cohort_trust_profiles(`Demo Sankeys`),

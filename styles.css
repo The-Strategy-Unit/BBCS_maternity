@@ -210,6 +210,27 @@ a { color: var(--su-blue); }
 .cohort-match-heatmap .no-comparisons { background: #eee; }
 .cohort-match-heatmap-key { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem; }
 .cohort-match-heatmap-key span { width: 7rem; height: 0.8rem; background: linear-gradient(to right, #fff3f8, #ae2573); }
+
+.retro-error-scroll { overflow-x: auto; margin: 1rem 0; }
+.retro-error-table { width: 100%; border-collapse: separate; border-spacing: 2px; background: white; font-family: Arial, sans-serif; }
+.retro-error-table caption { caption-side: top; text-align: left; font-weight: 600; color: #2c2825; padding: 0.65rem; }
+.retro-error-table th, .retro-error-table td { padding: 0.45rem 0.65rem; text-align: center; vertical-align: middle; font-variant-numeric: tabular-nums; }
+.retro-error-table thead th { background: #edf1f4; font-size: 0.9rem; }
+.retro-error-table th:first-child { text-align: left; }
+.retro-error-table tbody th { width: 34%; font-weight: 500; }
+.retro-error-table tbody th, .retro-error-table tbody td { border-bottom: 1px solid #e5e9ec; }
+.retro-error-cell { position: relative; cursor: help; }
+.retro-error-over { background: #dbeaf7; color: #164f80; }
+.retro-error-under { background: #fce6d3; color: #843b12; }
+.retro-error-exact { background: #f3f4f4; }
+.retro-error-tooltip { display: none; position: absolute; z-index: 2; bottom: calc(100% - 2px); left: 50%;
+  transform: translateX(-50%); padding: 0.4rem 0.65rem; border-radius: 4px; background: #29343d; color: white;
+  white-space: nowrap; text-align: left; font-size: 0.85rem; font-weight: normal; pointer-events: none; }
+.retro-error-tooltip span { display: block; }
+.retro-error-cell:is(:hover, :focus) .retro-error-tooltip { display: block; }
+.retro-error-cell:focus-visible { outline: 2px solid #243d53; outline-offset: -2px; }
+.retro-error-table td:last-child .retro-error-tooltip { left: auto; right: 0; transform: none; }
+.retro-error-missing { background: #f1f1f1; }
 .cohort-overview-grid > .demo-sankey-panel { display: flex; flex-direction: column; }
 .cohort-overview-grid .cohort-overview-note { margin-top: 0.5rem; }
 @container (max-width: 1000px) {

@@ -44,6 +44,17 @@ report_code <- function(x, missing = "Unknown") {
 # per source() rather than repeatedly for each chart/age/year calculation.
 report_la_crosswalk <- read.csv("data/lookups/la_to_2023.csv", stringsAsFactors = FALSE)
 
+report_trust_lookup <- read.csv("data/lookups/trust_names.csv", stringsAsFactors = FALSE)
+report_trust_lookup$Trust_name <- stringr::str_replace_all(
+  stringr::str_to_title(report_trust_lookup$Trust_name), "\\bNhs\\b", "NHS")
+
+report_trust_name <- function(code, preferred = character()) {
+  key <- toupper(trimws(as.character(code)))
+  label <- dplyr::coalesce(unname(preferred[key]),
+    report_trust_lookup$Trust_name[match(key, report_trust_lookup$Trust)])
+  dplyr::coalesce(label, "Provider name unavailable")
+}
+
 # Harmonise MSDS residence only. No rows are replicated, dropped or weighted;
 # source parquet objects and ONS inputs are never modified.
 report_la_code <- function(x, missing = "Unknown LA") {

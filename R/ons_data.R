@@ -585,6 +585,38 @@ projection_plot <- function(data, caption, colours) {
     ons_plot_theme()
 }
 
+resident_projection_change_chart <- function(data, colours, reference_year) {
+  years <- seq.int(reference_year, max(data$year))
+  shown <- data |>
+    select(area_code, area_name, year, projected_maternities) |>
+    dc_counts("projected_maternities") |>
+    group_by(area_code, area_name) |>
+    tidyr::complete(year = years) |>
+    filter(year >= reference_year) |>
+    mutate(baseline = projected_maternities[match(reference_year, year)],
+      change = dc_divide(projected_maternities, baseline) - 1) |>
+    ungroup() |> arrange(area_name, year)
+  chart <- plotly::plot_ly(height = 460)
+  for (code in unique(shown$area_code)) {
+    line <- shown[shown$area_code == code, ]
+    name <- as.character(line$area_name[1])
+    chart <- plotly::add_trace(chart, type = "scatter", mode = "lines",
+      x = line$year, y = line$change, name = name, connectgaps = FALSE,
+      line = list(color = unname(colours[name]), width = 3, dash = "solid"),
+      text = paste0(name, "<br>", line$year, " adjusted maternities: ", scales::comma(line$projected_maternities),
+        "<br>", reference_year, " baseline: ", scales::comma(line$baseline)),
+      hovertemplate = "%{text}<br>Change: %{y:.1%}<extra></extra>")
+  }
+  chart |> plotly::layout(
+    xaxis = list(title = "Projection year", tickvals = sort(unique(c(reference_year, years[years %% 5 == 0], max(years))))),
+    yaxis = list(title = paste("% change from", reference_year), tickformat = ".0%", rangemode = "tozero", zeroline = TRUE),
+    margin = list(l = 80, r = 20, t = 65, b = 85), font = list(family = "Arial")) |>
+    plotly::config(displayModeBar = FALSE, responsive = TRUE) |>
+    report_line_chart(legend_position = "bottom",
+      title = paste("Change in adjusted resident maternities from", reference_year)) |>
+    dc_widget()
+}
+
 # Resident geography totals, before allocation to booking/delivery providers.
 # Complete each LA/ICB/cluster aggregation from original values, then disclose.
 resident_projection_totals_table <- function(data) {

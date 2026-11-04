@@ -69,13 +69,15 @@ retrospective_period_errors <- function(annual, activity) {
     c("Organisation", "Average absolute error (pregnancies)", "Average absolute error (%)"), rows)
 }
 
-retrospective_error_trends <- function(annual) {
-  years <- unique(annual[c("Year", "Year_label")]) |> dplyr::arrange(Year)
-  colours <- organisation_line_colours(unique(annual$Key))
-  limit <- max(abs(annual$pct_error), 0, na.rm = TRUE)
+retrospective_error_trends <- function(annual, bookings = NULL) {
+  combined <- !is.null(bookings)
+  all_rows <- dplyr::bind_rows(annual, bookings)
+  years <- unique(all_rows[c("Year", "Year_label")]) |> dplyr::arrange(Year)
+  colours <- organisation_line_colours(unique(all_rows$Key))
+  limit <- max(abs(all_rows$pct_error), 0, na.rm = TRUE)
   limit <- if (limit > 0) 1.08 * limit else 0.01
-  panel <- function(rows, title) {
-    plot <- plotly::plot_ly(height = 430)
+  panel <- function(rows, title, activity = NULL) {
+    plot <- plotly::plot_ly(height = if (combined) 235 else 430)
     for (key in unique(rows$Key)) {
       org <- rows[rows$Key == key, ]
       line <- org[match(years$Year, org$Year), ]
@@ -88,13 +90,30 @@ retrospective_error_trends <- function(annual) {
           "<br>Modelled: ", scales::comma(line$Modelled, accuracy = 1)),
         hovertemplate = "%{text}<br>Error: %{y:+.1%}<extra></extra>")
     }
-    plot |> plotly::layout(
+    plot <- plot |> plotly::layout(
       xaxis = list(title = "Financial year", tickmode = "array", tickvals = years$Year, ticktext = years$Year_label),
       yaxis = list(title = "Model error (%)", tickformat = ".1%", range = c(-limit, limit),
         zeroline = TRUE, zerolinecolor = "#555555", zerolinewidth = 1.5),
-      margin = list(l = 75, r = 20, t = 65, b = 85)) |>
-      plotly::config(displayModeBar = FALSE, responsive = TRUE) |>
-      report_line_chart(legend_position = "bottom", title = title) |> dc_widget()
+      showlegend = !combined, paper_bgcolor = "white", plot_bgcolor = "white",
+      margin = list(l = 75, r = 20, t = if (combined) 12 else 65, b = if (combined) 52 else 85)) |>
+      plotly::config(displayModeBar = FALSE, responsive = TRUE)
+    if (!combined) return(dc_widget(report_line_chart(plot, legend_position = "bottom", title = title)))
+    htmltools::div(class = "retro-grid-panel",
+      htmltools::tags$h5(htmltools::tags$strong(activity), htmltools::span(title)), dc_widget(plot))
+  }
+  if (combined) {
+    organisations <- unique(all_rows[c("Key", "Level", "Organisation")]) |>
+      dplyr::arrange(match(Level, c("Trust", "ICB", "Cluster")), Organisation)
+    key <- function(rows, label) htmltools::div(class = "retro-grid-key",
+      htmltools::tags$strong(label),
+      report_colour_key(stats::setNames(unname(colours[rows$Key]), rows$Organisation), lines = TRUE))
+    return(htmltools::div(class = "retro-combined-grid",
+      panel(bookings[bookings$Level == "Trust", ], "Trusts", "Antenatal bookings"),
+      panel(annual[annual$Level == "Trust", ], "Trusts", "Deliveries"),
+      panel(bookings[bookings$Level %in% c("ICB", "Cluster"), ], "ICBs and cluster", "Antenatal bookings"),
+      panel(annual[annual$Level %in% c("ICB", "Cluster"), ], "ICBs and cluster", "Deliveries"),
+      key(organisations[organisations$Level == "Trust", ], "Trusts (top row)"),
+      key(organisations[organisations$Level %in% c("ICB", "Cluster"), ], "ICBs and cluster (bottom row)")))
   }
   htmltools::div(class = "report-chart-grid report-change-pair",
     style = "display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px;",

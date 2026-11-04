@@ -589,40 +589,59 @@ build_cohort_org_comparison <- function(master, group) {
   master <- cohort_comparison_ethnicity(master)
   codes <- demo_bbcs_org_codes(group, include_other = TRUE)
   labels <- vapply(codes, cohort_profile_org_label, character(1), group = group)
-  colours <- identity_colours(codes)
   orgs <- lapply(codes, function(code)
     cohort_profile_org_rows(master, c("Booking", "Delivery"), group, code))
   fields <- demo_profile_fields()
-  series <- lapply(fields, function(field) {
+  data <- lapply(fields, function(field) {
     categories <- cohort_profile_counts(master, field)$Category
-    lapply(orgs, cohort_profile_counts, field = field, categories = categories)
+    dplyr::bind_rows(lapply(seq_along(orgs), function(i) {
+      rows <- cohort_profile_counts(orgs[[i]], field, categories)
+      rows$Organisation <- unname(labels[i])
+      rows
+    }))
   })
-  maximum <- max(5, unlist(lapply(series, function(org) vapply(org, function(x) max(x$N), numeric(1)))))
-  charts <- lapply(series, function(org) {
-    categories <- org[[1]]$Label
-    chart <- plotly::plot_ly(height = max(470, length(categories) * (17 * length(codes) + 9) + 70))
-    for (i in seq_along(codes)) {
-      rows <- org[[i]]
+  maximum <- max(5, vapply(data, function(rows) max(rows$N), numeric(1)))
+  n_categories <- max(vapply(data, function(rows) length(unique(rows$Label)), integer(1)))
+  height <- max(470, length(codes) * (17 * n_categories + 9) + 70)
+  keys <- Map(function(rows, field) {
+    categories <- unique(rows[c("Category", "Label")])
+    stats::setNames(demo_category_colours(categories$Category, field), categories$Label)
+  }, data, fields)
+  ticks <- sub(" NHS( Foundation)? Trust$", "", labels)
+  percent_max <- max(1, vapply(data, function(rows)
+    max(tapply(rows$Share, rows$Organisation, sum, na.rm = TRUE)), numeric(1)))
+  make_chart <- function(rows_by_org, colours, percent = FALSE) {
+    chart <- plotly::plot_ly(height = if (percent) length(codes) * 75 + 85 else height)
+    # Stacks follow the colour key left to right. Grouped bars draw bottom to top.
+    categories <- if (percent) names(colours) else rev(names(colours))
+    for (category in categories) {
+      rows <- rows_by_org[rows_by_org$Label == category, ]
       share <- ifelse(is.na(rows$Share), "Percentage unavailable",
         paste0(scales::percent(rows$Share, accuracy = .1), " of this organisation's pregnancies"))
-      chart <- plotly::add_trace(chart, type = "bar", orientation = "h", name = unname(labels[i]),
-        x = rows$N, y = rows$Label, marker = list(color = unname(colours[i])),
-        text = scales::comma(rows$N, accuracy = 1), textposition = "outside", textangle = 0,
+      chart <- plotly::add_trace(chart, type = "bar", orientation = "h", name = category,
+        x = if (percent) rows$Share else rows$N, y = rows$Organisation, marker = list(color = unname(colours[category])),
+        text = if (!percent) scales::comma(rows$N, accuracy = 1),
+        textposition = if (percent) "none" else "outside", textangle = 0,
         textfont = list(color = "#2C2825"), constraintext = "none", cliponaxis = FALSE,
-        offsetgroup = codes[i], customdata = paste0(labels[i], "<br>", rows$Label,
+        offsetgroup = if (!percent) category, customdata = paste0(rows$Organisation, "<br>", category,
           "<br>Pregnancies: ", scales::comma(rows$N, accuracy = 1), "<br>", share),
         hovertemplate = "%{customdata}<extra></extra>")
     }
-    chart |> plotly::layout(barmode = "group", bargap = .12, showlegend = FALSE,
+    chart |> plotly::layout(barmode = if (percent) "stack" else "group",
+      bargap = if (percent) .62 else .12, showlegend = FALSE,
+      annotations = if (percent) stacked_share_annotations(rows_by_org$Organisation, rows_by_org$Share),
       meta = list(compact_cohort_profile = TRUE, organisation_count_labels = TRUE),
-      xaxis = list(title = "Pregnancies", range = c(0, maximum * 1.22), tickformat = ",.0f"),
-      yaxis = list(title = "", type = "category", categoryorder = "array", categoryarray = rev(categories),
-        tickmode = "array", tickvals = categories,
-        ticktext = gsub("\n", "<br>", stringr::str_wrap(categories, 16)), automargin = TRUE),
-      margin = list(l = 55, r = 30, t = 8, b = 55), font = list(family = "Arial")) |>
+      xaxis = if (percent) list(title = "% of pregnancies", range = c(0, percent_max),
+        tickformat = ".0%", dtick = .25) else list(title = "Pregnancies", range = c(0, maximum * 1.22), tickformat = ",.0f"),
+      yaxis = list(title = "", type = "category", categoryorder = "array", categoryarray = rev(unname(labels)),
+        tickmode = "array", tickvals = unname(labels),
+        ticktext = gsub("\n", "<br>", stringr::str_wrap(ticks, 16)), automargin = TRUE),
+      margin = list(l = 55, r = if (percent) 15 else 30, t = 8, b = 55), font = list(family = "Arial")) |>
       plotly::config(displayModeBar = FALSE, responsive = TRUE) |> dc_widget()
-  })
-  list(charts = charts, key = report_colour_key(stats::setNames(colours, labels), "cohort-org-key"))
+  }
+  list(charts = Map(make_chart, data, keys),
+    percent_charts = Map(make_chart, data, keys, MoreArgs = list(percent = TRUE)),
+    keys = lapply(keys, report_colour_key, class = "cohort-org-key"))
 }
 
 cohort_trust_profile_counts <- function(master, field, code, categories, group = "Trust") {
@@ -1011,7 +1030,7 @@ demographics_cleaned <- prepare_demographics(demographics)
 # Section 5 also includes a pooled Other trusts card.
 demo_delivery_profiles <- build_delivery_pattern_profiles(get("Demo Sankeys"))
 demo_sankey_charts <- list(
-  version = "demographic-profile-v35",
+  version = "demographic-profile-v38",
   cohort_total = dc_count(sum(`Demo Sankeys`$N)),
   cohort_profile = build_cohort_profile(`Demo Sankeys`),
   cohort_org_comparisons = list(Trust = build_cohort_org_comparison(`Demo Sankeys`, "Trust"),

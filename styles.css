@@ -231,7 +231,19 @@ a { color: var(--su-blue); }
 .retro-error-cell:focus-visible { outline: 2px solid #243d53; outline-offset: -2px; }
 .retro-error-table td:last-child .retro-error-tooltip { left: auto; right: 0; transform: none; }
 .retro-error-missing { background: #f1f1f1; }
+.retro-combined-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.85rem; }
+@container (max-width: 760px) {
+  .retro-combined-grid { grid-template-columns: repeat(2, minmax(280px, 1fr)) !important; overflow-x: auto; }
+}
+.retro-grid-panel, .retro-grid-key { min-width: 0; background: white; padding: 0.55rem; }
+.retro-grid-panel h5 { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between;
+  gap: 0.4rem; margin: 0; padding: 0.25rem 0.5rem 0.5rem; border-bottom: 1px solid #d6dde1; }
+.retro-grid-panel h5 span { color: #525d64; font-weight: normal; }
+.retro-grid-key .demo-ribbon-key { flex-direction: column; align-items: flex-start; margin-bottom: 0; }
 .cohort-overview-grid > .demo-sankey-panel { display: flex; flex-direction: column; }
+.cohort-org-grid > .demo-sankey-panel { display: flex; flex-direction: column; }
+.cohort-org-grid > .demo-sankey-panel > :last-child { margin-top: auto; }
+.cohort-org-grid .tab-content { margin-bottom: 0; padding: 0; border: 0; }
 .cohort-overview-grid .cohort-overview-note { margin-top: 0.5rem; }
 @container (max-width: 1000px) {
   .cohort-overview-grid { grid-template-columns: 1fr !important; }

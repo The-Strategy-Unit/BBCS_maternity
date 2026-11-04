@@ -76,8 +76,8 @@ if (!identical(first_draft_projections$projection_geography$version, "english-on
 if (is.null(first_draft_projections$sankey_comparison_cluster_las))
   stop("Regenerate the projection charts with R/Run analysis.R for the grouped LA flow view.")
 demo_sankey_charts <- read_report_rds(".demo_sankeys.rds", report_run$run_id)
-if (!identical(demo_sankey_charts$version, "demographic-profile-v35"))
-  stop("Regenerate the report charts with R/Run analysis.R for the bar labels in sections 2.2 and 5.1.")
+if (!identical(demo_sankey_charts$version, "demographic-profile-v38"))
+  stop("Regenerate the report charts with R/Run analysis.R for the demographic colour keys and organisation rows in section 5.1.")
 ```
 
 ```{r}
@@ -2579,6 +2579,15 @@ Each line shows one organisation’s signed annual error in antenatal bookings. 
 #| label: retrospective-booking-error-trends
 htmltools::browsable(retrospective_error_trends(booking_errors))
 ```
+
+#### Deliveries and bookings together
+
+Both columns show signed percentage error, **100 × (modelled − observed) ÷ observed**, on the same scale. Above zero the model overestimated activity; below zero it underestimated activity. Hover over a point to see the modelled and observed counts.
+
+```{r}
+#| label: retrospective-combined-error-grid
+htmltools::browsable(retrospective_error_trends(delivery_errors, booking_errors))
+```
 :::
 
 # 4. Demographic Sankeys {#demographic-sankeys}
@@ -3083,7 +3092,7 @@ htmltools::browsable(demo_sankey_charts$booking_trust$age$proportions)
 
 The whole supplied BBCS cohort, 2023/24–2025/26: `r scales::comma(demo_sankey_charts$cohort_total)` pregnancies. Each pregnancy counts once, including those with missing dates, no recorded booking or delivery, or unknown demographic values.
 
-Bars show pregnancy counts. In the whole-cohort view the labels show percentages of all supplied pregnancies. The organisation tabs show a separate bar for each trust or ICB and the combined cluster within each category. The number at the end of each bar is the pregnancy count. Hover to see its percentage of that organisation’s pregnancies. Demographic definitions follow section 4.
+The whole-cohort bars show counts and are labelled with percentages of all supplied pregnancies. In the organisation tabs, each row is a trust, an ICB or the combined cluster. Colours identify age bands, IMD quintiles or ethnicity groups, with a key above each chart. Tabs B and C show pregnancy counts. Tab D shows percentages within each trust. Tab E shows percentages within each ICB and the combined cluster. Demographic definitions follow section 4.
 
 A pregnancy counts once for an organisation if it was booked or delivered there. A transfer can therefore appear under two trusts or two ICBs. The combined cluster counts each pregnancy once across both BBCS ICBs. Other trusts pools known providers outside the six named trusts. Pregnancies with neither provider identified appear only in the whole-cohort view.
 
@@ -3142,9 +3151,9 @@ htmltools::browsable(demo_sankey_charts$cohort_profile$ethnicity_four$chart)
 ### By trust
 
 ```{r}
-#| label: cohort-org-trust-legend
+#| label: cohort-org-trust-setup
+#| include: false
 profile_view <- demo_sankey_charts$cohort_org_comparisons$Trust
-htmltools::browsable(profile_view$key)
 ```
 
 ::::: {.demo-sankey-grid .cohort-org-grid}
@@ -3153,7 +3162,7 @@ htmltools::browsable(profile_view$key)
 
 ```{r}
 #| label: cohort-org-trust-age
-htmltools::browsable(profile_view$charts$age)
+htmltools::browsable(htmltools::tagList(profile_view$keys$age, profile_view$charts$age))
 ```
 ::::
 :::: {.demo-sankey-panel}
@@ -3161,7 +3170,7 @@ htmltools::browsable(profile_view$charts$age)
 
 ```{r}
 #| label: cohort-org-trust-imd
-htmltools::browsable(profile_view$charts$imd)
+htmltools::browsable(htmltools::tagList(profile_view$keys$imd, profile_view$charts$imd))
 ```
 ::::
 :::: {.demo-sankey-panel}
@@ -3172,14 +3181,14 @@ htmltools::browsable(profile_view$charts$imd)
 
 ```{r}
 #| label: cohort-org-trust-ethnicity
-htmltools::browsable(profile_view$charts$ethnicity)
+htmltools::browsable(htmltools::tagList(profile_view$keys$ethnicity, profile_view$charts$ethnicity))
 ```
 
 ##### 4 groups
 
 ```{r}
 #| label: cohort-org-trust-ethnicity-four
-htmltools::browsable(profile_view$charts$ethnicity_four)
+htmltools::browsable(htmltools::tagList(profile_view$keys$ethnicity_four, profile_view$charts$ethnicity_four))
 ```
 :::
 ::::
@@ -3188,9 +3197,9 @@ htmltools::browsable(profile_view$charts$ethnicity_four)
 ### By ICB and combined cluster
 
 ```{r}
-#| label: cohort-org-icb-legend
+#| label: cohort-org-icb-setup
+#| include: false
 profile_view <- demo_sankey_charts$cohort_org_comparisons$ICB_Cluster
-htmltools::browsable(profile_view$key)
 ```
 
 ::::: {.demo-sankey-grid .cohort-org-grid}
@@ -3199,7 +3208,7 @@ htmltools::browsable(profile_view$key)
 
 ```{r}
 #| label: cohort-org-icb-age
-htmltools::browsable(profile_view$charts$age)
+htmltools::browsable(htmltools::tagList(profile_view$keys$age, profile_view$charts$age))
 ```
 ::::
 :::: {.demo-sankey-panel}
@@ -3207,7 +3216,7 @@ htmltools::browsable(profile_view$charts$age)
 
 ```{r}
 #| label: cohort-org-icb-imd
-htmltools::browsable(profile_view$charts$imd)
+htmltools::browsable(htmltools::tagList(profile_view$keys$imd, profile_view$charts$imd))
 ```
 ::::
 :::: {.demo-sankey-panel}
@@ -3218,14 +3227,110 @@ htmltools::browsable(profile_view$charts$imd)
 
 ```{r}
 #| label: cohort-org-icb-ethnicity
-htmltools::browsable(profile_view$charts$ethnicity)
+htmltools::browsable(htmltools::tagList(profile_view$keys$ethnicity, profile_view$charts$ethnicity))
 ```
 
 ##### 4 groups
 
 ```{r}
 #| label: cohort-org-icb-ethnicity-four
-htmltools::browsable(profile_view$charts$ethnicity_four)
+htmltools::browsable(htmltools::tagList(profile_view$keys$ethnicity_four, profile_view$charts$ethnicity_four))
+```
+:::
+::::
+:::::
+
+### Percentages by trust
+
+Each horizontal bar represents one trust. Its coloured segments show the shares of that trust’s pregnancies in each demographic category. For example, the White segment for Walsall divides pregnancies recorded as White at Walsall by all pregnancies booked or delivered there, including those with unknown ethnicity. A pregnancy booked and delivered at Walsall counts once. Hover for the count and percentage. Disclosure rounding can affect the sum of the displayed percentages.
+
+```{r}
+#| label: cohort-org-pct-trust-setup
+#| include: false
+profile_view <- demo_sankey_charts$cohort_org_comparisons$Trust
+```
+
+::::: {.demo-sankey-grid .cohort-org-grid}
+:::: {.demo-sankey-panel}
+#### Age band {.unnumbered .unlisted}
+
+```{r}
+#| label: cohort-org-pct-trust-age
+htmltools::browsable(htmltools::tagList(profile_view$keys$age, profile_view$percent_charts$age))
+```
+::::
+:::: {.demo-sankey-panel}
+#### IMD quintile {.unnumbered .unlisted}
+
+```{r}
+#| label: cohort-org-pct-trust-imd
+htmltools::browsable(htmltools::tagList(profile_view$keys$imd, profile_view$percent_charts$imd))
+```
+::::
+:::: {.demo-sankey-panel}
+#### Ethnicity {.unnumbered .unlisted}
+
+::: panel-tabset
+##### Broad groups
+
+```{r}
+#| label: cohort-org-pct-trust-ethnicity
+htmltools::browsable(htmltools::tagList(profile_view$keys$ethnicity, profile_view$percent_charts$ethnicity))
+```
+
+##### 4 groups
+
+```{r}
+#| label: cohort-org-pct-trust-ethnicity-four
+htmltools::browsable(htmltools::tagList(profile_view$keys$ethnicity_four, profile_view$percent_charts$ethnicity_four))
+```
+:::
+::::
+:::::
+
+### Percentages by ICB and combined cluster
+
+Each horizontal bar represents one ICB or the combined cluster. Its coloured segments show the demographic mix within that organisation. Each ICB percentage uses all pregnancies booked or delivered in that ICB as its denominator. The combined cluster uses all pregnancies booked or delivered in either BBCS ICB, counting each pregnancy once even if it crossed ICBs. Unknown demographic values are included. Hover for the count and percentage. Disclosure rounding can affect the sum of the displayed percentages.
+
+```{r}
+#| label: cohort-org-pct-icb-setup
+#| include: false
+profile_view <- demo_sankey_charts$cohort_org_comparisons$ICB_Cluster
+```
+
+::::: {.demo-sankey-grid .cohort-org-grid}
+:::: {.demo-sankey-panel}
+#### Age band {.unnumbered .unlisted}
+
+```{r}
+#| label: cohort-org-pct-icb-age
+htmltools::browsable(htmltools::tagList(profile_view$keys$age, profile_view$percent_charts$age))
+```
+::::
+:::: {.demo-sankey-panel}
+#### IMD quintile {.unnumbered .unlisted}
+
+```{r}
+#| label: cohort-org-pct-icb-imd
+htmltools::browsable(htmltools::tagList(profile_view$keys$imd, profile_view$percent_charts$imd))
+```
+::::
+:::: {.demo-sankey-panel}
+#### Ethnicity {.unnumbered .unlisted}
+
+::: panel-tabset
+##### Broad groups
+
+```{r}
+#| label: cohort-org-pct-icb-ethnicity
+htmltools::browsable(htmltools::tagList(profile_view$keys$ethnicity, profile_view$percent_charts$ethnicity))
+```
+
+##### 4 groups
+
+```{r}
+#| label: cohort-org-pct-icb-ethnicity-four
+htmltools::browsable(htmltools::tagList(profile_view$keys$ethnicity_four, profile_view$percent_charts$ethnicity_four))
 ```
 :::
 ::::

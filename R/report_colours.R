@@ -126,6 +126,44 @@ report_colour_key <- function(colours, class = NULL, lines = FALSE) {
           if (lines) "width:32px;height:5px;border:0;" else "")), names(colours)[i])))
 }
 
+# Shares are in stack order within each horizontal bar. Small segments get a
+# staggered labels with leaders to the centres of their coloured segments.
+stacked_share_positions <- function(groups, shares) {
+  rows <- lapply(split(seq_along(shares), groups), function(indices) {
+    indices <- indices[is.finite(shares[indices]) & shares[indices] > 0]
+    values <- shares[indices]
+    centres <- cumsum(values) - values / 2
+    narrow <- values < .18
+    positions <- centres
+    shift <- numeric(length(values))
+    if (any(narrow)) {
+      shift[narrow] <- rep_len(c(-19, 19), sum(narrow))
+      for (lane in split(which(narrow), shift[narrow])) {
+        offsets <- (seq_along(lane) - 1) * min(.21, .84 / max(1, length(lane) - 1))
+        positions[lane] <- offsets + pmin(.92 - max(offsets), pmax(.08, cummax(centres[lane] - offsets)))
+      }
+    }
+    labels <- ifelse(values < .001, "<0.1%", ifelse(values < .01,
+      scales::percent(values, accuracy = .1), scales::percent(values, accuracy = 1)))
+    data.frame(group = as.character(groups[indices]), centre = centres, position = positions,
+      shift = shift, label = labels)
+  })
+  dplyr::bind_rows(rows)
+}
+
+stacked_share_annotations <- function(groups, shares) {
+  rows <- stacked_share_positions(groups, shares)
+  lapply(seq_len(nrow(rows)), function(i) {
+    a <- list(name = "stack-share-label", x = rows$centre[i], xref = "x",
+      y = rows$group[i], yref = "y", text = sub("<", "&lt;", rows$label[i], fixed = TRUE),
+      showarrow = rows$shift[i] != 0, bgcolor = "rgba(255,255,255,0.88)", borderpad = 0,
+      font = list(color = "#2C2825", size = 12))
+    if (a$showarrow) a <- c(a, list(ax = rows$position[i], axref = "x", ay = rows$shift[i],
+      ayref = "pixel", arrowhead = 0, arrowwidth = 1, arrowcolor = "#595959"))
+    a
+  })
+}
+
 booking_delivery_palette <- function() c(
   "Same trust" = "#006747", "Different cluster trust" = "#AE2573",
   "Outside cluster" = "#ED8B00", "No recorded delivery" = "#2C2825",

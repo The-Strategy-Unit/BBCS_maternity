@@ -132,9 +132,18 @@ build_ons_age_review <- function(counts, historic, snpp, women, area_config) {
 build_older_outcome_review <- function(path, pooled, old) {
   composition <- pooled |> dplyr::select(age, live_births, maternities, stillbirths) |>
     tidyr::pivot_longer(-age, names_to = "measure", values_to = "count") |>
-    dplyr::group_by(measure) |> dplyr::mutate(share = count / sum(count)) |> dplyr::ungroup()
+    dplyr::group_by(measure) |> dplyr::mutate(share = count / sum(count)) |> dplyr::ungroup() |>
+    dplyr::arrange(measure, age)
+  labels <- stacked_share_positions(composition$measure, composition$share)
+  labels$bar <- match(labels$group, sort(unique(composition$measure)))
+  labels$row <- labels$bar - .35 * sign(labels$shift)
   composition_plot <- ggplot2::ggplot(composition, ggplot2::aes(measure, share, fill = age)) +
-    ggplot2::geom_col(position = ggplot2::position_stack(reverse = TRUE)) +
+    ggplot2::geom_col(width = .5, position = ggplot2::position_stack(reverse = TRUE)) +
+    ggplot2::geom_segment(data = labels[labels$shift != 0, ], inherit.aes = FALSE,
+      ggplot2::aes(x = bar, xend = row, y = centre, yend = position), colour = "#595959", linewidth = .3) +
+    ggplot2::geom_label(data = labels, inherit.aes = FALSE,
+      ggplot2::aes(x = row, y = position, label = label), size = 3, linewidth = 0,
+      label.padding = grid::unit(.08, "lines")) +
     ggplot2::coord_flip() + ggplot2::scale_y_continuous(labels = scales::label_percent()) +
     ggplot2::scale_x_discrete(labels = c(live_births = "Live births", maternities = "Maternities", stillbirths = "Stillbirths")) +
     ggplot2::scale_fill_manual(values = age_series_colours(composition$age)) +

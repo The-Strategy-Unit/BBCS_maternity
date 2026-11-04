@@ -12,14 +12,16 @@
 
   async function styleChart(plot) {
     const layout = plot.layout;
+    const barLabelSize = layout.meta?.organisation_count_labels ? 12 : typography.body;
     const update = {
       font: chartFont(layout.font),
       'title.font': chartFont(layout.title?.font, typography.title),
       'legend.font': chartFont(layout.legend?.font),
       'legend.title.font': chartFont(layout.legend?.title?.font),
       'hoverlabel.font': chartFont(layout.hoverlabel?.font),
-      uniformtext: {minsize: typography.body, mode: 'show'},
-      annotations: (layout.annotations || []).map(note => ({...note, font: chartFont(note.font)}))
+      uniformtext: {minsize: barLabelSize, mode: 'show'},
+      annotations: (layout.annotations || []).map(note => ({...note,
+        font: chartFont(note.font, note.name === 'stack-share-label' ? 12 : typography.body)}))
     };
     Object.keys(layout).filter(key => /^[xy]axis\d*$/.test(key)).forEach(key => {
       update[`${key}.tickfont`] = chartFont(layout[key].tickfont);
@@ -33,7 +35,7 @@
     const barTraces = textTraces.filter(i => ['bar', 'pie'].includes(plot.data[i].type));
     if (barTraces.length) await Plotly.restyle(plot, {
       insidetextfont: barTraces.map(i => chartFont(plot.data[i].insidetextfont)),
-      outsidetextfont: barTraces.map(i => chartFont(plot.data[i].outsidetextfont))
+      outsidetextfont: barTraces.map(i => chartFont(plot.data[i].outsidetextfont, barLabelSize))
     }, barTraces);
     await Plotly.relayout(plot, update);
   }
@@ -188,7 +190,7 @@
     // Category charts need their row spacing even in a short browser window.
     // Let the page scroll instead of squeezing paired bars and axis labels.
     // Keep the existing card size: larger text takes space from the plot area.
-    const height = state.sankey || state.compactPopulation || state.compactProfile || state.overviewBar
+    const height = state.sankey || state.compactPopulation || state.compactProfile || state.overviewBar || plot.layout.meta?.stacked_share_labels
       ? state.height : Math.min(state.height, Math.max(320, window.innerHeight - 48));
     const key = `${width}:${height}`;
     if (state.key === key && Math.abs(plot._fullLayout.width - width) < 1 &&

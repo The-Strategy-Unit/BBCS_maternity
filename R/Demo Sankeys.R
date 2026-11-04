@@ -568,17 +568,61 @@ cohort_trust_profile_codes <- function(master) {
 }
 
 cohort_profile_org_rows <- function(master, stage, group, code) {
-  column <- if (group == "Trust") stage else paste0(stage, "_ICB")
-  if (group == "Trust" && code == "Other") {
-    known <- master[[column]] == "Other" | grepl("^R[A-Z0-9]{2}$", master[[column]])
-    return(master[known & !master[[column]] %in% demo_bbcs_org_codes("Trust"), , drop = FALSE])
+  at_stage <- function(event) {
+    provider <- master[[if (group == "Trust") event else paste0(event, "_ICB")]]
+    if (group == "Trust" && code == "Other") {
+      known <- provider %in% "Other" | grepl("^R[A-Z0-9]{2}$", provider)
+      return(known & !provider %in% demo_bbcs_org_codes("Trust"))
+    }
+    codes <- if (group == "ICB_Cluster" && code == "Cluster") cluster_icbs else code
+    provider %in% codes
   }
-  codes <- if (group == "ICB_Cluster" && code == "Cluster") cluster_icbs else code
-  master[master[[column]] %in% codes, , drop = FALSE]
+  master[Reduce(`|`, lapply(stage, at_stage)), , drop = FALSE]
 }
 
 cohort_profile_org_label <- function(code, group) {
   if (code == "Cluster") "Combined BBCS cluster" else demo_org_label(code, group)
+}
+
+# Section 5.1 compares whole pregnancy profiles, counting either event once per organisation.
+build_cohort_org_comparison <- function(master, group) {
+  master <- cohort_comparison_ethnicity(master)
+  codes <- demo_bbcs_org_codes(group, include_other = TRUE)
+  labels <- vapply(codes, cohort_profile_org_label, character(1), group = group)
+  colours <- identity_colours(codes)
+  orgs <- lapply(codes, function(code)
+    cohort_profile_org_rows(master, c("Booking", "Delivery"), group, code))
+  fields <- demo_profile_fields()
+  series <- lapply(fields, function(field) {
+    categories <- cohort_profile_counts(master, field)$Category
+    lapply(orgs, cohort_profile_counts, field = field, categories = categories)
+  })
+  maximum <- max(5, unlist(lapply(series, function(org) vapply(org, function(x) max(x$N), numeric(1)))))
+  charts <- lapply(series, function(org) {
+    categories <- org[[1]]$Label
+    chart <- plotly::plot_ly(height = max(470, length(categories) * (17 * length(codes) + 9) + 70))
+    for (i in seq_along(codes)) {
+      rows <- org[[i]]
+      share <- ifelse(is.na(rows$Share), "Percentage unavailable",
+        paste0(scales::percent(rows$Share, accuracy = .1), " of this organisation's pregnancies"))
+      chart <- plotly::add_trace(chart, type = "bar", orientation = "h", name = unname(labels[i]),
+        x = rows$N, y = rows$Label, marker = list(color = unname(colours[i])),
+        text = scales::comma(rows$N, accuracy = 1), textposition = "outside", textangle = 0,
+        textfont = list(color = "#2C2825"), constraintext = "none", cliponaxis = FALSE,
+        offsetgroup = codes[i], customdata = paste0(labels[i], "<br>", rows$Label,
+          "<br>Pregnancies: ", scales::comma(rows$N, accuracy = 1), "<br>", share),
+        hovertemplate = "%{customdata}<extra></extra>")
+    }
+    chart |> plotly::layout(barmode = "group", bargap = .12, showlegend = FALSE,
+      meta = list(compact_cohort_profile = TRUE, organisation_count_labels = TRUE),
+      xaxis = list(title = "Pregnancies", range = c(0, maximum * 1.22), tickformat = ",.0f"),
+      yaxis = list(title = "", type = "category", categoryorder = "array", categoryarray = rev(categories),
+        tickmode = "array", tickvals = categories,
+        ticktext = gsub("\n", "<br>", stringr::str_wrap(categories, 16)), automargin = TRUE),
+      margin = list(l = 55, r = 30, t = 8, b = 55), font = list(family = "Arial")) |>
+      plotly::config(displayModeBar = FALSE, responsive = TRUE) |> dc_widget()
+  })
+  list(charts = charts, key = report_colour_key(stats::setNames(colours, labels), "cohort-org-key"))
 }
 
 cohort_trust_profile_counts <- function(master, field, code, categories, group = "Trust") {
@@ -775,17 +819,8 @@ cohort_match_population <- function(master) {
 # each panel. Do not bind the two event selections or change the stage-specific
 # selector used by the booking/delivery profiles elsewhere in the report.
 cohort_match_org_rows <- function(master, group, code) {
-  at_organisation <- function(stage) {
-    column <- if (group == "Trust") stage else paste0(stage, "_ICB")
-    if (group == "Trust" && code == "Other") {
-      known <- master[[column]] %in% "Other" | grepl("^R[A-Z0-9]{2}$", master[[column]])
-      return(known & !master[[column]] %in% demo_bbcs_org_codes("Trust"))
-    }
-    codes <- if (group == "ICB_Cluster" && code == "Cluster") cluster_icbs else code
-    master[[column]] %in% codes
-  }
-  master[cohort_match_cluster_member(master) &
-    (at_organisation("Booking") | at_organisation("Delivery")), , drop = FALSE]
+  cohort_profile_org_rows(master[cohort_match_cluster_member(master), , drop = FALSE],
+    c("Booking", "Delivery"), group, code)
 }
 
 cohort_match_org_profiles <- function(master, field, group, categories) {
@@ -976,9 +1011,11 @@ demographics_cleaned <- prepare_demographics(demographics)
 # Section 5 also includes a pooled Other trusts card.
 demo_delivery_profiles <- build_delivery_pattern_profiles(get("Demo Sankeys"))
 demo_sankey_charts <- list(
-  version = "demographic-profile-v33",
+  version = "demographic-profile-v35",
   cohort_total = dc_count(sum(`Demo Sankeys`$N)),
   cohort_profile = build_cohort_profile(`Demo Sankeys`),
+  cohort_org_comparisons = list(Trust = build_cohort_org_comparison(`Demo Sankeys`, "Trust"),
+    ICB_Cluster = build_cohort_org_comparison(`Demo Sankeys`, "ICB_Cluster")),
   cohort_trust_profiles = build_cohort_trust_profiles(`Demo Sankeys`),
   cohort_icb_profiles = build_cohort_trust_profiles(`Demo Sankeys`, "ICB_Cluster"),
   cohort_match_profiles = build_cohort_match_profiles(`Demo Sankeys`),

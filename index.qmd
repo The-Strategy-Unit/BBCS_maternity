@@ -76,8 +76,8 @@ if (!identical(first_draft_projections$projection_geography$version, "english-on
 if (is.null(first_draft_projections$sankey_comparison_cluster_las))
   stop("Regenerate the projection charts with R/Run analysis.R for the grouped LA flow view.")
 demo_sankey_charts <- read_report_rds(".demo_sankeys.rds", report_run$run_id)
-if (!identical(demo_sankey_charts$version, "demographic-profile-v33"))
-  stop("Regenerate the report charts with R/Run analysis.R to show organisation names in chart labels.")
+if (!identical(demo_sankey_charts$version, "demographic-profile-v35"))
+  stop("Regenerate the report charts with R/Run analysis.R for the bar labels in sections 2.2 and 5.1.")
 ```
 
 ```{r}
@@ -807,6 +807,8 @@ The first grids show what proportion of an organisation’s deliveries came from
 
 ##### LA contributions
 
+The percentage at the end of each bar is the share of the organisation’s deliveries from that LA.
+
 ::: panel-tabset
 ###### Trusts
 
@@ -827,7 +829,7 @@ htmltools::browsable(delivery_geography$chart_grids$origin$ICB_Cluster)
 
 ##### Age mix within each LA
 
-Each LA bar totals 100%. The numerator is the disclosure-controlled count for an age band; the denominator is the sum of those displayed age-band counts for the same LA and receiving organisation. Unknown age, where present, remains in that total. Small groups can be strongly affected by disclosure control, so these bars show the protected age mix rather than exact underlying percentages.
+Each LA bar totals 100%. Labels give the percentage for each age band, with a line to the segment when the label sits outside it. The numerator is the disclosure-controlled count for the age band and the denominator is the sum of the displayed age-band counts for that LA and receiving organisation. Unknown age, where present, remains in that total. Rounding can have a larger effect on small groups.
 
 ::: panel-tabset
 ###### Trusts
@@ -3081,7 +3083,12 @@ htmltools::browsable(demo_sankey_charts$booking_trust$age$proportions)
 
 The whole supplied BBCS cohort, 2023/24–2025/26: `r scales::comma(demo_sankey_charts$cohort_total)` pregnancies. Each pregnancy counts once, including those with missing dates, no recorded booking or delivery, or unknown demographic values.
 
-Bars show counts; labels and hover show percentages of all cohort pregnancies. Demographic definitions follow section 4.
+Bars show pregnancy counts. In the whole-cohort view the labels show percentages of all supplied pregnancies. The organisation tabs show a separate bar for each trust or ICB and the combined cluster within each category. The number at the end of each bar is the pregnancy count. Hover to see its percentage of that organisation’s pregnancies. Demographic definitions follow section 4.
+
+A pregnancy counts once for an organisation if it was booked or delivered there. A transfer can therefore appear under two trusts or two ICBs. The combined cluster counts each pregnancy once across both BBCS ICBs. Other trusts pools known providers outside the six named trusts. Pregnancies with neither provider identified appear only in the whole-cohort view.
+
+:::::: panel-tabset
+### Whole cohort
 
 ::::: {.demo-sankey-grid .cohort-overview-grid}
 :::: {.demo-sankey-panel}
@@ -3131,6 +3138,100 @@ htmltools::browsable(demo_sankey_charts$cohort_profile$ethnicity_four$chart)
 ::::
 :::::
 
+
+### By trust
+
+```{r}
+#| label: cohort-org-trust-legend
+profile_view <- demo_sankey_charts$cohort_org_comparisons$Trust
+htmltools::browsable(profile_view$key)
+```
+
+::::: {.demo-sankey-grid .cohort-org-grid}
+:::: {.demo-sankey-panel}
+#### Age band {.unnumbered .unlisted}
+
+```{r}
+#| label: cohort-org-trust-age
+htmltools::browsable(profile_view$charts$age)
+```
+::::
+:::: {.demo-sankey-panel}
+#### IMD quintile {.unnumbered .unlisted}
+
+```{r}
+#| label: cohort-org-trust-imd
+htmltools::browsable(profile_view$charts$imd)
+```
+::::
+:::: {.demo-sankey-panel}
+#### Ethnicity {.unnumbered .unlisted}
+
+::: panel-tabset
+##### Broad groups
+
+```{r}
+#| label: cohort-org-trust-ethnicity
+htmltools::browsable(profile_view$charts$ethnicity)
+```
+
+##### 4 groups
+
+```{r}
+#| label: cohort-org-trust-ethnicity-four
+htmltools::browsable(profile_view$charts$ethnicity_four)
+```
+:::
+::::
+:::::
+
+### By ICB and combined cluster
+
+```{r}
+#| label: cohort-org-icb-legend
+profile_view <- demo_sankey_charts$cohort_org_comparisons$ICB_Cluster
+htmltools::browsable(profile_view$key)
+```
+
+::::: {.demo-sankey-grid .cohort-org-grid}
+:::: {.demo-sankey-panel}
+#### Age band {.unnumbered .unlisted}
+
+```{r}
+#| label: cohort-org-icb-age
+htmltools::browsable(profile_view$charts$age)
+```
+::::
+:::: {.demo-sankey-panel}
+#### IMD quintile {.unnumbered .unlisted}
+
+```{r}
+#| label: cohort-org-icb-imd
+htmltools::browsable(profile_view$charts$imd)
+```
+::::
+:::: {.demo-sankey-panel}
+#### Ethnicity {.unnumbered .unlisted}
+
+::: panel-tabset
+##### Broad groups
+
+```{r}
+#| label: cohort-org-icb-ethnicity
+htmltools::browsable(profile_view$charts$ethnicity)
+```
+
+##### 4 groups
+
+```{r}
+#| label: cohort-org-icb-ethnicity-four
+htmltools::browsable(profile_view$charts$ethnicity_four)
+```
+:::
+::::
+:::::
+
+::::::
 
 ## 5.2 Booking and delivery profiles by organisation
 

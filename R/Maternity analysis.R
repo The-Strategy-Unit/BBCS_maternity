@@ -275,7 +275,8 @@ booking_age_fallback_outputs <- function(counts) {
       "<br>Birth-age field missing: ", scales::comma(Birth_age_missing, accuracy = 1),
       "<br>Records in this booking-age group: ", scales::comma(Booking_age_known, accuracy = 1),
       "<br>Birth-age field missing: ", ifelse(is.na(Share), "Not available", scales::percent(Share, accuracy = 0.1))),
-    textposition = "none", hovertemplate = "%{text}<extra></extra>") |>
+    texttemplate = "%{y:.1%}", textposition = "outside", cliponaxis = FALSE,
+    hovertemplate = "%{text}<extra></extra>") |>
     plotly::layout(xaxis = list(title = "Age at booking", categoryorder = "array",
       categoryarray = counts$Age_band),
       yaxis = list(title = "Birth-age field missing (%)", tickformat = ".0%", rangemode = "tozero"),
@@ -313,12 +314,14 @@ record_completeness_outputs <- function(counts) {
     ticks <- !duplicated(shown$Group)
     chart <- plotly::plot_ly(shown, y = ~Group, x = ~Share, color = ~Age_source,
       colors = colours, type = "bar", orientation = "h",
-      height = max(260, 28 * dplyr::n_distinct(shown$Group) + 120),
+      height = max(260, 54 * dplyr::n_distinct(shown$Group) + 120),
       text = ~paste0(Group_label, "<br>Age source: ", Age_source,
         "<br>Pregnancies: ", scales::comma(N), " / ", scales::comma(Total),
         "<br>Share: ", scales::percent(Share, accuracy = .1)),
-      hovertemplate = "%{text}<extra></extra>") |>
-      plotly::layout(barmode = "stack", showlegend = FALSE,
+      textposition = "none", hovertemplate = "%{text}<extra></extra>") |>
+      plotly::layout(barmode = "stack", bargap = .55, showlegend = FALSE,
+        meta = list(stacked_share_labels = TRUE),
+        annotations = with(dplyr::arrange(shown, Group, Age_source), stacked_share_annotations(Group, Share)),
         xaxis = list(title = "Share of all pregnancy rows in this group", tickformat = ".0%"),
         yaxis = list(title = scope, automargin = TRUE, tickmode = "array",
           tickvals = shown$Group[ticks], ticktext = sub(" NHS( Foundation)? Trust$", "", shown$Group_label[ticks])),
@@ -861,6 +864,7 @@ cluster_activity$outside_table <- gt::gt(dc_counts(outside_summary, "Episodes"))
 cluster_activity$outside_diagram <- plotly::plot_ly(
   dc_counts(outside_summary, "Episodes"), x = ~Episodes, y = ~ICB, type = "bar", orientation = "h", height = 420,
   marker = list(color = main_chart_colour),
+  texttemplate = "%{x:,.0f}", textposition = "outside", cliponaxis = FALSE,
   hovertemplate = "%{y}<br>Deliveries: %{x:,.0f}<extra></extra>"
 ) |>
   plotly::layout(xaxis = list(title = "Deliveries"),
@@ -1771,12 +1775,13 @@ build_delivery_geography <- function(years = delivery_years, age_bands = deliver
         x = ~Share, y = ~LA, type = "bar", orientation = "h",
         marker = list(color = chart_origin$Share, colorscale = list(c(0, "#DCEAF4"), c(1, delivery_chart_blue)),
           cmin = 0, cmax = max(chart_origin$Share), showscale = FALSE),
+        text = ~scales::percent(Share, accuracy = .1), textposition = "outside", cliponaxis = FALSE,
         hovertext = ~paste0(Resident_LA, "<br>Deliveries: ", scales::comma(N), "<br>% of organisation: ", scales::percent(Share, accuracy = 0.1)),
         hovertemplate = "%{hovertext}<extra></extra>", showlegend = FALSE) |>
         plotly::layout(xaxis = list(title = "% of organisation deliveries", tickformat = ".0%"),
           yaxis = list(title = "", categoryorder = "array", categoryarray = chart_origin$LA, autorange = "reversed",
             tickmode = "array", tickvals = chart_origin$LA, ticktext = chart_origin$Resident_LA, automargin = TRUE),
-          margin = list(l = 25, r = 10, t = 10, b = 45), font = list(family = "Arial", size = 10)) |>
+          margin = list(l = 25, r = 50, t = 10, b = 45), font = list(family = "Arial", size = 10)) |>
         plotly::config(displayModeBar = FALSE, responsive = TRUE)
       plot_ages <- ages |>
         dplyr::mutate(LA = dplyr::case_when(LA %in% unknown ~ "Unknown LA",
@@ -1796,7 +1801,7 @@ build_delivery_geography <- function(years = delivery_years, age_bands = deliver
         dplyr::group_by(LA) |>
         dplyr::mutate(LA_total = sum(N), Age_share = dc_divide(N, LA_total)) |>
         dplyr::ungroup()
-      age_chart <- plotly::plot_ly(height = bar_chart_height(nrow(chart_origin)))
+      age_chart <- plotly::plot_ly(height = max(250, 56 * nrow(chart_origin) + 95))
       for (j in seq_along(age_bands)) {
         band <- plot_ages[plot_ages$Age_band == age_bands[j], , drop = FALSE]
         age_chart <- plotly::add_trace(age_chart, x = band$Age_share, y = band$LA,
@@ -1807,12 +1812,14 @@ build_delivery_geography <- function(years = delivery_years, age_bands = deliver
           hovertemplate = "%{hovertext}<extra></extra>")
       }
       age_chart <- age_chart |>
-        plotly::layout(barmode = "stack", xaxis = list(title = "% of this LA's deliveries here", tickformat = ".0%",
+        plotly::layout(barmode = "stack", bargap = .55, meta = list(stacked_share_labels = TRUE),
+          annotations = stacked_share_annotations(plot_ages$LA, plot_ages$Age_share),
+          xaxis = list(title = "% of this LA's deliveries here", tickformat = ".0%",
           range = c(0, 1)),
           yaxis = list(title = "", autorange = "reversed", categoryorder = "array", categoryarray = chart_origin$LA,
             tickmode = "array", tickvals = chart_origin$LA, ticktext = chart_origin$Resident_LA, automargin = TRUE),
           showlegend = FALSE,
-          margin = list(l = 25, r = 10, t = 10, b = 45), font = list(family = "Arial", size = 10)) |>
+          margin = list(l = 25, r = 10, t = 30, b = 45), font = list(family = "Arial", size = 10)) |>
         plotly::config(displayModeBar = FALSE, responsive = TRUE)
     }
     origin_table <- dc_cells(origin, c("N", "Organisation_total"), list(Share = c("N", "Organisation_total"))) |>

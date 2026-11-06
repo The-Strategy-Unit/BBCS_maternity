@@ -76,7 +76,7 @@ if (!identical(first_draft_projections$projection_geography$version, "english-on
 if (is.null(first_draft_projections$sankey_comparison_cluster_las))
   stop("Regenerate the projection charts with R/Run analysis.R for the grouped LA flow view.")
 demo_sankey_charts <- read_report_rds(".demo_sankeys.rds", report_run$run_id)
-if (!identical(demo_sankey_charts$version, "demographic-profile-v49"))
+if (!identical(demo_sankey_charts$version, "demographic-profile-v50"))
   stop("Regenerate the report charts with R/Run analysis.R to rebuild the count and percentage views in section 5.1.")
 ```
 
@@ -3191,7 +3191,7 @@ htmltools::browsable(profile_view$compact_grid)
 
 ```{r}
 #| label: cohort-org-trust-vertical-legends
-htmltools::browsable(htmltools::div(class = "trust-vertical-legends", profile_view$compact_grid))
+htmltools::browsable(htmltools::div(class = "trust-inset-scroll", profile_view$inset_grid))
 ```
 
 #### V6 · Trust cards
@@ -3213,18 +3213,46 @@ profile_view <- demo_sankey_charts$cohort_org_comparisons$ICB_Cluster
 ```
 
 ::: {.panel-tabset .profile-versions}
-#### V1 · Stacked
+#### V1 · Grouped
 
 ```{r}
-#| label: cohort-org-icb-stacked
+#| label: cohort-org-icb-grouped-panels
+htmltools::browsable(org_bar_panels(profile_view, profile_view$charts))
+```
+
+#### V2 · Stacked
+
+```{r}
+#| label: cohort-org-icb-stacked-panels
 htmltools::browsable(org_bar_panels(profile_view, profile_view$percent_charts))
 ```
 
-#### V2 · Labels outside
+#### V3 · Labels outside
 
 ```{r}
 #| label: cohort-org-icb-stacked-outside
 htmltools::browsable(org_bar_panels(profile_view, profile_view$outside_charts))
+```
+
+#### V4 · Mini bars
+
+```{r}
+#| label: cohort-org-icb-compact-grid
+htmltools::browsable(profile_view$compact_grid)
+```
+
+#### V5 · Vertical legends
+
+```{r}
+#| label: cohort-org-icb-vertical-legends
+htmltools::browsable(htmltools::div(class = "trust-inset-scroll", profile_view$inset_grid))
+```
+
+#### V6 · ICB / cluster cards
+
+```{r}
+#| label: cohort-org-icb-cards
+htmltools::browsable(htmltools::div(class = "trust-wrapped-cards", profile_view$compact_grid))
 ```
 :::
 

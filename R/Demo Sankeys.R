@@ -571,44 +571,46 @@ cohort_profile_org_label <- function(code, group) {
 }
 
 # Section 5.1 compares whole pregnancy profiles, counting either event once per organisation.
-cohort_trust_grid <- function(data, colours) {
+cohort_org_grid <- function(data, colours, group, inset = FALSE) {
   tags <- htmltools::tags
-  trusts <- unique(data$age[c("Organisation", "Total")])
+  organisations <- unique(data$age[c("Organisation", "Total")])
   fields <- c(age = "Age band", ethnicity = "Ethnicity", imd = "IMD quintile")
+  if (inset) fields <- fields[c("age", "imd", "ethnicity")]
   legend <- lapply(names(fields), function(field) {
-    tags$div(tags$strong(fields[[field]]), report_colour_key(colours[[field]]))
+    tags$div(tags$strong(fields[[field]]), if (!inset) report_colour_key(colours[[field]]))
   })
   # A common vertical scale makes bar heights comparable across all trust clusters.
   peak <- max(.1, unlist(lapply(data, function(rows) rows$Share)), na.rm = TRUE)
   highest <- ceiling(peak * 10) / 10
-  cards <- lapply(seq_len(nrow(trusts)), function(i) {
-    trust <- trusts$Organisation[i]
+  cards <- lapply(seq_len(nrow(organisations)), function(i) {
+    organisation <- organisations$Organisation[i]
     clusters <- lapply(names(fields), function(field) {
-      rows <- data[[field]][data[[field]]$Organisation == trust, ]
+      rows <- data[[field]][data[[field]]$Organisation == organisation, ]
       bars <- lapply(seq_len(nrow(rows)), function(j) {
         share <- rows$Share[j]
         category <- rows$Label[j]
         label <- if (is.finite(share)) scales::percent(share, accuracy = 1) else "\u2014"
-        detail <- paste0(trust, " | ", category, " | ",
+        detail <- paste0(organisation, " | ", category, " | ",
           if (is.finite(share)) scales::percent(share, accuracy = .1) else "Percentage unavailable", " | ",
           scales::comma(rows$N[j]), " of ", scales::comma(rows$Total[j]), " pregnancies")
         tags$div(class = "trust-mini-column", title = detail, `aria-label` = detail,
           tags$div(class = "trust-mini-bar", style = paste0("background-color:",
-            colours[[field]][[category]], ";height:",
+            colours[[field]][[category]], ";--share:",
             if (is.finite(share)) sprintf("%.4f%%", 100 * share / highest) else "0%"),
             tags$span(class = "trust-mini-value", label)))
       })
       tags$div(class = "trust-mini-cluster", role = "group", `aria-label` = fields[[field]],
         tags$div(class = "trust-mini-field", fields[[field]]),
-        tags$div(class = "trust-mini-bars", bars))
+        tags$div(class = "trust-mini-bars", bars),
+        if (inset && i == 1L) report_colour_key(colours[[field]], class = "trust-inset-key"))
     })
-    tags$section(class = "trust-mini-card", `aria-label` = trust,
+    tags$section(class = "trust-mini-card", `aria-label` = organisation,
       tags$div(class = "trust-mini-heading",
-        tags$h5(title = trust, sub(" NHS( Foundation)? Trust$", "", trust)),
-        tags$small(paste(scales::comma(trusts$Total[i]), "pregnancies"))), clusters)
+        tags$h5(title = organisation, sub(" NHS( Foundation)? Trust$", "", organisation)),
+        tags$small(paste(scales::comma(organisations$Total[i]), "pregnancies"))), clusters)
   })
-  tags$div(class = "trust-mini-view",
-    tags$div(class = "trust-mini-keys", tags$strong(class = "trust-mini-stub", "Trust"), legend),
+  tags$div(class = if (inset) "trust-mini-view trust-inset-plot" else "trust-mini-view",
+    tags$div(class = "trust-mini-keys", tags$strong(class = "trust-mini-stub", if (group == "Trust") "Trust" else "ICB / cluster"), legend),
     tags$div(class = "trust-mini-cards", cards))
 }
 
@@ -674,7 +676,8 @@ build_cohort_org_comparison <- function(master, group) {
     percent_charts = Map(make_chart, data, keys, MoreArgs = list(view = "stacked")),
     outside_charts = Map(make_chart, data, keys, MoreArgs = list(view = "stacked_outside")),
     count_charts = Map(make_chart, data, keys, MoreArgs = list(view = "counts")),
-    compact_grid = if (group == "Trust") cohort_trust_grid(data, keys),
+    compact_grid = cohort_org_grid(data, keys, group),
+    inset_grid = cohort_org_grid(data, keys, group, inset = TRUE),
     keys = lapply(keys, report_colour_key, class = "cohort-org-key"))
 }
 
@@ -1032,7 +1035,7 @@ demographics_cleaned <- prepare_demographics(demographics)
 # Section 5 also includes a pooled Other trusts card.
 demo_delivery_profiles <- build_delivery_pattern_profiles(get("Demo Sankeys"))
 demo_sankey_charts <- list(
-  version = "demographic-profile-v49",
+  version = "demographic-profile-v50",
   cohort_total = dc_count(sum(`Demo Sankeys`$N)),
   booking_totals = with(`Demo Sankeys`, dc_count(c(
     anywhere = sum(N[Booking != "No booking"]),

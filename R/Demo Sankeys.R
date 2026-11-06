@@ -503,13 +503,15 @@ cohort_profile_counts <- function(master, field, categories = NULL) {
   data
 }
 
-cohort_profile_chart <- function(data, field) {
+cohort_profile_chart <- function(data, field, view = "percent") {
+  count_axis <- view != "percent"
   if (!nrow(data) || all(data$Total == 0)) return(htmltools::div("No supplied cohort pregnancies."))
   percentages <- scales::percent(data$Share, accuracy = 0.1)
   hover <- paste0(data$Label, "<br>Pregnancies: ", scales::comma(data$N),
     "<br>", percentages, " of all cohort pregnancies")
-  count_axis <- list(title = "Pregnancies", range = c(0, max(data$N) * 1.2),
-    rangemode = "tozero", tickformat = ",.0f")
+  value_axis <- if (count_axis) list(title = "Pregnancies", range = c(0, max(data$N) * 1.2),
+    rangemode = "tozero", tickformat = ",.0f") else
+    list(title = "% of cohort pregnancies", range = c(0, 1), tickformat = ".0%", dtick = .25)
   category_axis <- list(title = "", type = "category", categoryorder = "array",
     categoryarray = rev(data$Label),
     tickmode = "array", tickvals = data$Label,
@@ -517,14 +519,15 @@ cohort_profile_chart <- function(data, field) {
       if (grepl("<br>", label, fixed = TRUE)) label else
         paste(strwrap(label, width = if (field == "ethnicity_broad") 24 else 19), collapse = "<br>"), character(1)),
     automargin = TRUE)
-  plotly::plot_ly(type = "bar", orientation = "h", x = data$N, y = data$Label,
-    marker = list(color = data$Colour), text = percentages, textposition = "outside",
+  plotly::plot_ly(type = "bar", orientation = "h", x = if (count_axis) data$N else data$Share, y = data$Label,
+    marker = list(color = data$Colour), text = if (view == "counts") scales::comma(data$N, accuracy = 1) else percentages,
+    textposition = "outside",
     textfont = list(size = 16),
     cliponaxis = FALSE, customdata = hover, hovertemplate = "%{customdata}<extra></extra>",
     meta = list(cohort_profile_field = field),
     height = max(400, 34 * nrow(data) + 90)) |>
     plotly::layout(showlegend = FALSE, bargap = .35,
-      xaxis = count_axis, yaxis = category_axis,
+      xaxis = value_axis, yaxis = category_axis,
       margin = list(l = if (field == "Age_band") 85 else 150, r = 65, t = 20, b = 65),
       font = list(family = "Arial", size = 15), hoverlabel = list(font = list(size = 15)),
       paper_bgcolor = "white", plot_bgcolor = "white") |>
@@ -535,7 +538,9 @@ cohort_profile_chart <- function(data, field) {
 build_cohort_profile <- function(master) {
   lapply(demo_profile_fields(), function(field) {
     data <- cohort_profile_counts(master, field)
-    list(data = data, chart = cohort_profile_chart(data, field))
+    list(data = data, chart = cohort_profile_chart(data, field),
+      count_chart = cohort_profile_chart(data, field, "counts"),
+      mixed_chart = cohort_profile_chart(data, field, "mixed"))
   })
 }
 
@@ -566,6 +571,47 @@ cohort_profile_org_label <- function(code, group) {
 }
 
 # Section 5.1 compares whole pregnancy profiles, counting either event once per organisation.
+cohort_trust_grid <- function(data, colours) {
+  tags <- htmltools::tags
+  trusts <- unique(data$age[c("Organisation", "Total")])
+  fields <- c(age = "Age band", ethnicity = "Ethnicity", imd = "IMD quintile")
+  legend <- lapply(names(fields), function(field) {
+    tags$div(tags$strong(fields[[field]]), report_colour_key(colours[[field]]))
+  })
+  # A common vertical scale makes bar heights comparable across all trust clusters.
+  peak <- max(.1, unlist(lapply(data, function(rows) rows$Share)), na.rm = TRUE)
+  highest <- ceiling(peak * 10) / 10
+  cards <- lapply(seq_len(nrow(trusts)), function(i) {
+    trust <- trusts$Organisation[i]
+    clusters <- lapply(names(fields), function(field) {
+      rows <- data[[field]][data[[field]]$Organisation == trust, ]
+      bars <- lapply(seq_len(nrow(rows)), function(j) {
+        share <- rows$Share[j]
+        category <- rows$Label[j]
+        label <- if (is.finite(share)) scales::percent(share, accuracy = 1) else "\u2014"
+        detail <- paste0(trust, " | ", category, " | ",
+          if (is.finite(share)) scales::percent(share, accuracy = .1) else "Percentage unavailable", " | ",
+          scales::comma(rows$N[j]), " of ", scales::comma(rows$Total[j]), " pregnancies")
+        tags$div(class = "trust-mini-column", title = detail, `aria-label` = detail,
+          tags$div(class = "trust-mini-bar", style = paste0("background-color:",
+            colours[[field]][[category]], ";height:",
+            if (is.finite(share)) sprintf("%.4f%%", 100 * share / highest) else "0%"),
+            tags$span(class = "trust-mini-value", label)))
+      })
+      tags$div(class = "trust-mini-cluster", role = "group", `aria-label` = fields[[field]],
+        tags$div(class = "trust-mini-field", fields[[field]]),
+        tags$div(class = "trust-mini-bars", bars))
+    })
+    tags$section(class = "trust-mini-card", `aria-label` = trust,
+      tags$div(class = "trust-mini-heading",
+        tags$h5(title = trust, sub(" NHS( Foundation)? Trust$", "", trust)),
+        tags$small(paste(scales::comma(trusts$Total[i]), "pregnancies"))), clusters)
+  })
+  tags$div(class = "trust-mini-view",
+    tags$div(class = "trust-mini-keys", tags$strong(class = "trust-mini-stub", "Trust"), legend),
+    tags$div(class = "trust-mini-cards", cards))
+}
+
 build_cohort_org_comparison <- function(master, group) {
   codes <- demo_bbcs_org_codes(group, include_other = TRUE)
   labels <- vapply(codes, cohort_profile_org_label, character(1), group = group)
@@ -580,7 +626,6 @@ build_cohort_org_comparison <- function(master, group) {
       rows
     }))
   })
-  maximum <- max(5, vapply(data, function(rows) max(rows$N), numeric(1)))
   n_categories <- max(vapply(data, function(rows) length(unique(rows$Label)), integer(1)))
   height <- max(470, length(codes) * (17 * n_categories + 9) + 70)
   keys <- Map(function(rows, field) {
@@ -592,37 +637,44 @@ build_cohort_org_comparison <- function(master, group) {
     scales::comma(dc_count(vapply(orgs, function(rows) sum(rows$N), numeric(1)))), " pregnancies")
   percent_max <- max(1, vapply(data, function(rows)
     max(tapply(rows$Share, rows$Organisation, sum, na.rm = TRUE)), numeric(1)))
-  make_chart <- function(rows_by_org, colours, percent = FALSE) {
-    chart <- plotly::plot_ly(height = if (percent) length(codes) * 75 + 85 else height)
+  count_max <- max(5, vapply(data, function(rows) max(rows$N), numeric(1)))
+  make_chart <- function(rows_by_org, colours, view = "grouped") {
+    stacked <- view %in% c("stacked", "stacked_outside")
+    counts <- view == "counts"
+    chart <- plotly::plot_ly(height = if (stacked) length(codes) * 75 + 85 else height)
     # Stacks follow the colour key left to right. Grouped bars draw bottom to top.
-    categories <- if (percent) names(colours) else rev(names(colours))
+    categories <- if (stacked) names(colours) else rev(names(colours))
     for (category in categories) {
       rows <- rows_by_org[rows_by_org$Label == category, ]
       share <- ifelse(is.na(rows$Share), "Percentage unavailable",
         paste0(scales::percent(rows$Share, accuracy = .1), " of this organisation's pregnancies"))
       chart <- plotly::add_trace(chart, type = "bar", orientation = "h", name = category,
-        x = if (percent) rows$Share else rows$N, y = rows$Organisation, marker = list(color = unname(colours[category])),
-        text = if (!percent) scales::comma(rows$N, accuracy = 1),
-        textposition = if (percent) "none" else "outside", textangle = 0,
+        x = if (counts) rows$N else rows$Share, y = rows$Organisation, marker = list(color = unname(colours[category])),
+        text = if (counts) scales::comma(rows$N, accuracy = 1) else if (!stacked) scales::percent(rows$Share, accuracy = .1),
+        textposition = if (stacked) "none" else "outside", textangle = 0,
         textfont = list(color = "#2C2825"), constraintext = "none", cliponaxis = FALSE,
-        offsetgroup = if (!percent) category, customdata = paste0(rows$Organisation, "<br>", category,
+        offsetgroup = if (!stacked) category, customdata = paste0(rows$Organisation, "<br>", category,
           "<br>Pregnancies: ", scales::comma(rows$N, accuracy = 1), "<br>", share),
         hovertemplate = "%{customdata}<extra></extra>")
     }
-    chart |> plotly::layout(barmode = if (percent) "stack" else "group",
-      bargap = if (percent) .62 else .12, showlegend = FALSE,
-      annotations = if (percent) stacked_share_annotations(rows_by_org$Organisation, rows_by_org$Share),
+    chart |> plotly::layout(barmode = if (stacked) "stack" else "group",
+      bargap = if (stacked) .62 else .12, showlegend = FALSE,
+      annotations = if (stacked) stacked_share_annotations(rows_by_org$Organisation, rows_by_org$Share,
+        outside = view == "stacked_outside"),
       meta = list(compact_cohort_profile = TRUE, organisation_count_labels = TRUE),
-      xaxis = if (percent) list(title = "% of pregnancies", range = c(0, percent_max),
-        tickformat = ".0%", dtick = .25) else list(title = "Pregnancies", range = c(0, maximum * 1.22), tickformat = ",.0f"),
+      xaxis = if (counts) list(title = "Pregnancies", range = c(0, count_max * 1.22), tickformat = ",.0f")
+        else list(title = "% of pregnancies", range = c(0, percent_max), tickformat = ".0%", dtick = .25),
       yaxis = list(title = "", type = "category", categoryorder = "array", categoryarray = rev(unname(labels)),
         tickmode = "array", tickvals = unname(labels),
         ticktext = tick_labels, automargin = TRUE),
-      margin = list(l = 55, r = if (percent) 15 else 30, t = 8, b = 55), font = list(family = "Arial")) |>
+      margin = list(l = 55, r = if (stacked) 15 else 30, t = 8, b = 55), font = list(family = "Arial")) |>
       plotly::config(displayModeBar = FALSE, responsive = TRUE) |> dc_widget()
   }
   list(charts = Map(make_chart, data, keys),
-    percent_charts = Map(make_chart, data, keys, MoreArgs = list(percent = TRUE)),
+    percent_charts = Map(make_chart, data, keys, MoreArgs = list(view = "stacked")),
+    outside_charts = Map(make_chart, data, keys, MoreArgs = list(view = "stacked_outside")),
+    count_charts = Map(make_chart, data, keys, MoreArgs = list(view = "counts")),
+    compact_grid = if (group == "Trust") cohort_trust_grid(data, keys),
     keys = lapply(keys, report_colour_key, class = "cohort-org-key"))
 }
 
@@ -980,7 +1032,7 @@ demographics_cleaned <- prepare_demographics(demographics)
 # Section 5 also includes a pooled Other trusts card.
 demo_delivery_profiles <- build_delivery_pattern_profiles(get("Demo Sankeys"))
 demo_sankey_charts <- list(
-  version = "demographic-profile-v44",
+  version = "demographic-profile-v49",
   cohort_total = dc_count(sum(`Demo Sankeys`$N)),
   booking_totals = with(`Demo Sankeys`, dc_count(c(
     anywhere = sum(N[Booking != "No booking"]),

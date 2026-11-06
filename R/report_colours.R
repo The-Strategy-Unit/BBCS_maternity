@@ -128,16 +128,18 @@ report_colour_key <- function(colours, class = NULL, lines = FALSE) {
 
 # Shares are in stack order within each horizontal bar. Small segments get a
 # staggered labels with leaders to the centres of their coloured segments.
-stacked_share_positions <- function(groups, shares) {
+stacked_share_positions <- function(groups, shares, outside = FALSE) {
   rows <- lapply(split(seq_along(shares), groups), function(indices) {
     indices <- indices[is.finite(shares[indices]) & shares[indices] > 0]
+    if (!length(indices)) return(NULL)
     values <- shares[indices]
     centres <- cumsum(values) - values / 2
-    narrow <- values < .18
+    narrow <- outside | values < .18
     positions <- centres
     shift <- numeric(length(values))
     if (any(narrow)) {
-      shift[narrow] <- rep_len(c(-19, 19), sum(narrow))
+      gap <- if (outside) 27 else 19
+      shift[narrow] <- rep_len(c(-gap, gap), sum(narrow))
       for (lane in split(which(narrow), shift[narrow])) {
         offsets <- (seq_along(lane) - 1) * min(.21, .84 / max(1, length(lane) - 1))
         positions[lane] <- offsets + pmin(.92 - max(offsets), pmax(.08, cummax(centres[lane] - offsets)))
@@ -151,8 +153,8 @@ stacked_share_positions <- function(groups, shares) {
   dplyr::bind_rows(rows)
 }
 
-stacked_share_annotations <- function(groups, shares) {
-  rows <- stacked_share_positions(groups, shares)
+stacked_share_annotations <- function(groups, shares, outside = FALSE) {
+  rows <- stacked_share_positions(groups, shares, outside)
   lapply(seq_len(nrow(rows)), function(i) {
     a <- list(name = "stack-share-label", x = rows$centre[i], xref = "x",
       y = rows$group[i], yref = "y", text = sub("<", "&lt;", rows$label[i], fixed = TRUE),

@@ -6,21 +6,31 @@ project:
     - index.qmd
 
 website:
-  title: "BBCS maternity: ONS analysis"
+  title: "BBCS maternity: ONS and MSDS"
   navbar: false
   page-footer:
     left: "The Strategy Unit"
-    right: "ONS data foundation"
+    right: "Maternity demand projections"
 
 format:
   html:
     theme: cosmo
     css: styles.css
+    include-after-body: assets/report-charts.html
+    page-layout: full
+    # Give the charts and tables more space; keep the contents list on the right.
+    grid:
+      sidebar-width: 0px
+      body-width: 1600px
+      margin-width: 250px
+      gutter-width: 1rem
     toc: true
     toc-location: right
     smooth-scroll: true
     code-fold: true
     code-summary: "Show R code"
+    # GT already formats the tables; leave that HTML unchanged.
+    html-table-processing: none
     embed-resources: true
 
 execute:

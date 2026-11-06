@@ -1,0 +1,366 @@
+<script>
+// Embedded in the shareable HTML. Resizing uses only the already-rendered data.
+(() => {
+  'use strict';
+  const charts = new Map();
+  const canvas = document.createElement('canvas');
+  const context = canvas.getContext('2d');
+  let pending = false;
+  // CSS pixels: the same 11pt body / 14pt title scale as the static R charts.
+  const typography = {family: 'Arial, sans-serif', body: 44 / 3, title: 56 / 3};
+  const chartFont = (font = {}, size = typography.body) => ({...font, family: typography.family, size});
+
+  async function styleChart(plot) {
+    const layout = plot.layout;
+    const barLabelSize = layout.meta?.organisation_count_labels ? 12 : typography.body;
+    const update = {
+      font: chartFont(layout.font),
+      'title.font': chartFont(layout.title?.font, typography.title),
+      'legend.font': chartFont(layout.legend?.font),
+      'legend.title.font': chartFont(layout.legend?.title?.font),
+      'hoverlabel.font': chartFont(layout.hoverlabel?.font),
+      uniformtext: {minsize: barLabelSize, mode: 'show'},
+      annotations: (layout.annotations || []).map(note => ({...note,
+        font: chartFont(note.font, note.name === 'stack-share-label' ? 12 : typography.body)}))
+    };
+    Object.keys(layout).filter(key => /^[xy]axis\d*$/.test(key)).forEach(key => {
+      update[`${key}.tickfont`] = chartFont(layout[key].tickfont);
+      update[`${key}.title.font`] = chartFont(layout[key].title?.font);
+      update[`${key}.automargin`] = true;
+    });
+    const textTraces = plot.data.map((trace, i) => i)
+      .filter(i => ['bar', 'scatter', 'sankey', 'pie'].includes(plot.data[i].type));
+    if (textTraces.length) await Plotly.restyle(plot,
+      {textfont: textTraces.map(i => chartFont(plot.data[i].textfont))}, textTraces);
+    const barTraces = textTraces.filter(i => ['bar', 'pie'].includes(plot.data[i].type));
+    if (barTraces.length) await Plotly.restyle(plot, {
+      insidetextfont: barTraces.map(i => chartFont(plot.data[i].insidetextfont)),
+      outsidetextfont: barTraces.map(i => chartFont(plot.data[i].outsidetextfont, barLabelSize))
+    }, barTraces);
+    await Plotly.relayout(plot, update);
+  }
+
+  function labelTabsets() {
+    const letter = i => i < 26 ? String.fromCharCode(65 + i) : letter(Math.floor(i / 26) - 1) + letter(i % 26);
+    document.querySelectorAll('.panel-tabset [role="tablist"]').forEach(list => {
+      const tabs = [...list.querySelectorAll('[role="tab"]')].filter(tab => tab.closest('[role="tablist"]') === list);
+      if (tabs.length < 2) return;
+      const parentPane = list.closest('.tab-pane');
+      const parentTab = parentPane && document.getElementById(parentPane.getAttribute('aria-labelledby'));
+      const parentCode = parentTab?.dataset.reportTabCode;
+      tabs.forEach((tab, i) => {
+        if (tab.dataset.reportTabCode) return;
+        const code = parentCode ? `${parentCode}.${letter(i).toLowerCase()}` : letter(i);
+        const prefix = document.createElement('span');
+        prefix.className = 'report-tab-letter';
+        prefix.textContent = `${code}. `;
+        tab.prepend(prefix);
+        tab.dataset.reportTabCode = code;
+      });
+    });
+  }
+
+  // Only already-disclosed ribbon values enter the layout and added labels.
+  function sankeyLayers(trace, values = trace.link.value) {
+    // R/jsonlite can serialise a one-link metadata vector as a scalar.
+    // Treat it as a one-element series, including in hidden-tab resize passes.
+    if (!Array.isArray(values)) values = [values];
+    const x = trace.node.x;
+    const incoming = x.map(() => 0), outgoing = x.map(() => 0);
+    values.forEach((value, i) => {
+      if (Number.isFinite(value) && value > 0) {
+        outgoing[trace.link.source[i]] += value;
+        incoming[trace.link.target[i]] += value;
+      }
+    });
+    const weights = x.map((_, i) => Math.max(incoming[i], outgoing[i]));
+    const layers = [...new Set(x)].map(stage => x.map((v, i) => i)
+      .filter(i => x[i] === stage && weights[i] > 0)).filter(ids => ids.length);
+    return {weights, layers};
+  }
+
+  function sankeyLabels(trace) {
+    // The equal-width demographic view has count metadata: its outcome shares
+    // must describe pregnancies, not an unweighted average of category shares.
+    const values = trace.meta?.msds_sankey_scale === 'normalised_categories'
+      ? trace.meta.display_counts : trace.link.value;
+    const {weights, layers} = sankeyLayers(trace, values);
+    const labels = [...trace.node.label];
+    layers.forEach(ids => {
+      const total = ids.reduce((sum, i) => sum + weights[i], 0);
+      ids.forEach(i => {
+        if (!/\d(?:\.\d+)?\s*%/.test(labels[i]))
+          labels[i] += `<br>${(100 * weights[i] / total).toFixed(1)}%`;
+      });
+    });
+    return labels;
+  }
+
+  function activeSankey(trace) {
+    const {weights} = sankeyLayers(trace);
+    const ids = weights.map((_, i) => i).filter(i => weights[i] > 0);
+    if (ids.length === weights.length) return null;
+    // Plotly 2.x indexes fixed coordinates by the filtered node list. Drop
+    // zero-width nodes explicitly so later nodes cannot take their positions.
+    const links = trace.link.value.map((_, i) => i).filter(i => trace.link.value[i] > 0);
+    const node = {...trace.node}, link = {...trace.link}, meta = {...trace.meta};
+    Object.keys(node).forEach(k => {if (Array.isArray(node[k]) && node[k].length === weights.length) node[k] = ids.map(i => node[k][i]);});
+    Object.keys(link).forEach(k => {if (Array.isArray(link[k]) && link[k].length === trace.link.value.length) link[k] = links.map(i => link[k][i]);});
+    link.source = link.source.map(i => ids.indexOf(i));
+    link.target = link.target.map(i => ids.indexOf(i));
+    ['display_counts', 'display_denominators'].forEach(k => {if (Array.isArray(meta[k])) meta[k] = links.map(i => meta[k][i]);});
+    return {node: [node], link: [link], meta: [meta]};
+  }
+
+  // Original volume-based layout: regular gaps and independently centred
+  // columns. A column with fewer categories naturally occupies less height.
+  function sankeyNodeY(trace, height) {
+    const x = trace.node.x;
+    const {weights, layers} = sankeyLayers(trace);
+    const y = x.map(() => 0.5);
+    if (!layers.length) return y;
+    const gap = Math.min(trace.node.pad, height / Math.max(1, ...layers.map(ids => ids.length - 1)));
+    const scale = Math.min(...layers.map(ids =>
+      (height - gap * (ids.length - 1)) / ids.reduce((sum, i) => sum + weights[i], 0)));
+    layers.forEach(ids => {
+      const used = ids.reduce((sum, i) => sum + weights[i] * scale, 0) + gap * (ids.length - 1);
+      let top = (height - used) / 2;
+      ids.forEach(i => {
+        const size = weights[i] * scale;
+        y[i] = (top + size / 2) / height;
+        top += size + gap;
+      });
+    });
+    return y;
+  }
+
+  function wrap(text, width, size) {
+    context.font = `${size}px ${typography.family}`;
+    return String(text).split(/<br\s*\/?>/i).map(part => {
+      const lines = [''];
+      part.split(/\s+/).forEach(word => {
+        const last = lines.length - 1;
+        const next = lines[last] ? `${lines[last]} ${word}` : word;
+        if (lines[last] && context.measureText(next).width > width) lines.push(word);
+        else lines[last] = next;
+      });
+      return lines.join('<br>');
+    }).join('<br>');
+  }
+
+  // Separate full count labels on narrow Section 5.3 charts without changing
+  // the bar values or abbreviating counts. Plotly redraws reset their positions.
+  function spaceComparisonCountLabels(plot) {
+    if (!plot.data.some(trace => trace.meta?.measure === 'count' &&
+      trace.meta?.cohort_match_field && trace.orientation !== 'h')) return;
+    const labels = [...plot.querySelectorAll('.bartext')].filter(label => label.textContent.trim());
+    labels.forEach(label => {
+      const current = label.getAttribute('transform') || '';
+      const previous = label.reportCountPosition;
+      const base = previous && current === previous.adjusted ? previous.base : current;
+      label.setAttribute('transform', base);
+      label.reportCountPosition = {base, adjusted: base};
+    });
+    labels.sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top ||
+      a.getBoundingClientRect().left - b.getBoundingClientRect().left);
+    const placed = [];
+    labels.forEach(label => {
+      let box = label.getBoundingClientRect(), shift = 0;
+      for (let attempt = 0; attempt < placed.length; attempt++) {
+        const overlap = placed.find(other => box.left < other.right + 2 && box.right + 2 > other.left &&
+          box.top < other.bottom + 2 && box.bottom + 2 > other.top);
+        if (!overlap) break;
+        shift -= box.bottom - overlap.top + 3;
+        const position = label.reportCountPosition;
+        position.adjusted = `${position.base} translate(0, ${shift})`;
+        label.setAttribute('transform', position.adjusted);
+        box = label.getBoundingClientRect();
+      }
+      placed.push(box);
+    });
+  }
+
+  async function fit(plot, state) {
+    if (!plot._fullLayout || !plot.clientWidth || !plot.getClientRects().length || state.busy) return;
+    const parentStyle = getComputedStyle(plot.parentElement);
+    // The canvas must fit inside the card padding, including in screenshots.
+    const width = Math.floor(plot.parentElement.clientWidth -
+      parseFloat(parentStyle.paddingLeft) - parseFloat(parentStyle.paddingRight));
+    if (width < 100) return; // Hidden tabs are measured when they become visible.
+    // Category charts need their row spacing even in a short browser window.
+    // Let the page scroll instead of squeezing paired bars and axis labels.
+    // Keep the existing card size: larger text takes space from the plot area.
+    const height = state.sankey || state.compactPopulation || state.compactProfile || state.overviewBar || plot.layout.meta?.stacked_share_labels
+      ? state.height : Math.min(state.height, Math.max(320, window.innerHeight - 48));
+    const key = `${width}:${height}`;
+    if (state.key === key && Math.abs(plot._fullLayout.width - width) < 1 &&
+        plot._fullLayout.height === (state.fittedHeight || height) && plot.clientHeight === (state.fittedHeight || height)) return;
+    state.busy = true;
+    try {
+      const compactLegend = state.compactLegend || state.compactPopulation;
+      if (!state.styled) {
+        await styleChart(plot);
+        state.annotations = (plot.layout.annotations || []).map(a => ({...a}));
+        state.styled = true;
+      }
+      const update = {width, height, autosize: false};
+      if (plot.data.some(trace => trace.type === 'scatter' && trace.mode?.includes('lines')))
+        update['legend.itemwidth'] = compactLegend ? 30 : 50;
+      const margin = {...state.margin};
+      let titleInset = 12;
+      let legendOffset = null;
+      if (state.nativeLegend) margin.autoexpand = false;
+      if (state.title) {
+        const size = typography.title;
+        const title = wrap(state.title, Math.max(120, width - 32), size);
+        update['title.text'] = title;
+        const titleHeight = title.split('<br>').length * size * 1.3;
+        if (title.includes('<br>')) titleInset = size + 8;
+        margin.t = Math.max(margin.t || 0, titleHeight + (state.sourceKeyBelow ? 40 : 15));
+      }
+      if (state.overviewBar) {
+        context.font = `${typography.body}px ${typography.family}`;
+        const lines = (plot.layout.yaxis.ticktext || []).flatMap(t => String(t).split(/<br\s*\/?>/i));
+        margin.l = Math.ceil(Math.max(32, ...lines.map(t => context.measureText(t).width))) + 8;
+      }
+      const annotations = state.annotations.map(a => ({...a,
+        text: a.xref === 'paper' ? wrap(a.text || '',
+          Math.max(140, width - (margin.l || 60) - (margin.r || 20)), a.font?.size || 12) : a.text
+      }));
+      // Wrapped coverage notes need more room above a narrow chart, clear of
+      // the historical/future labels anchored to the time axis.
+      let topOffset = 38;
+      annotations.filter(a => a.xref === 'paper' && a.yref === 'paper' && a.y > 1)
+        .sort((a, b) => a.y - b.y).forEach(note => {
+          note.y = 1;
+          note.yshift = state.sankey ? 12 : topOffset;
+          note.yanchor = 'bottom';
+          const noteHeight = note.text.split('<br>').length * (note.font?.size || 12) * 1.4;
+          if (state.sankey) margin.t = Math.max(margin.t || 0, noteHeight + 24);
+          else { topOffset += noteHeight + 8; margin.t = Math.max(margin.t || 0, topOffset + (state.title ? 40 : 8)); }
+        });
+      // Footnotes occupy their own rows, followed by the legend. Do not overlay
+      // several notes at the same fixed offset or shrink text to make them fit.
+      let bottomOffset = 65;
+      const bottomNotes = annotations.filter(a => a.xref === 'paper' && a.yref === 'paper' && a.y < 0);
+      bottomNotes.sort((a, b) => b.y - a.y).forEach(note => {
+          note.y = 0;
+          note.yshift = -bottomOffset;
+          note.yanchor = 'top';
+          bottomOffset += note.text.split('<br>').length * typography.body * 1.4 + 8;
+        });
+      if (bottomNotes.length) margin.b = Math.max(margin.b || 0, bottomOffset);
+      // Horizontal legends wrap long organisation names and reserve enough space
+      // below the axes. Never replace an overflowing legend with a scroll box.
+      if (state.horizontal && !state.compactProfile && plot.layout.showlegend !== false) {
+        const size = typography.body;
+        const available = Math.max(140, compactLegend ? width - 24 : width - (margin.l || 60) - (margin.r || 20));
+        const sampleWidth = compactLegend ? 40 : 60;
+        const names = state.names.map(name => wrap(name, available - sampleWidth, size));
+        await Plotly.restyle(plot, {name: names});
+        let rowsHeight = 0, rowWidth = 0, rowHeight = 0;
+        plot._fullData.forEach((trace, i) => {
+          if (!trace.showlegend || trace.visible === false) return;
+          const lines = names[i].split('<br>');
+          context.font = `${size}px ${typography.family}`;
+          const itemWidth = Math.max(compactLegend ? 90 : 0,
+            Math.max(...lines.map(line => context.measureText(line).width)) + sampleWidth);
+          const itemHeight = compactLegend ? lines.length * size * 1.4 + 4 : Math.max(29, lines.length * size * 1.4 + 14);
+          if (rowWidth && rowWidth + itemWidth > available) {
+            rowsHeight += rowHeight; rowWidth = 0; rowHeight = 0;
+          }
+          rowWidth += itemWidth; rowHeight = Math.max(rowHeight, itemHeight);
+        });
+        rowsHeight += rowHeight;
+        legendOffset = Math.max(bottomOffset, state.sourceKeyBelow ? 150 : compactLegend ? 58 : 70);
+        margin.b = Math.max(state.margin.b || 0, rowsHeight + legendOffset + 12);
+        const plotHeight = Math.max(80, height - (margin.t || 60) - margin.b);
+        update['legend.x'] = compactLegend ? (12 - (margin.l || 60)) / Math.max(1, width - (margin.l || 60) - (margin.r || 20)) : 0;
+        update['legend.xanchor'] = 'left';
+        update['legend.y'] = -legendOffset / plotHeight;
+        update['legend.yanchor'] = 'top';
+      }
+      update.margin = margin;
+      if (legendOffset !== null) update['legend.y'] = -legendOffset / Math.max(80, height - (margin.t || 60) - margin.b);
+      if (state.title) {
+        update['title.y'] = 1 - titleInset / height;
+        update['title.yanchor'] = 'top';
+      }
+      update.annotations = annotations;
+      plot.style.width = '100%';
+      plot.style.height = `${height}px`;
+      for (let i = 0; i < plot.data.length; i++) {
+        let trace = plot.data[i];
+        if (trace.type === 'sankey' && trace.arrangement === 'fixed' && trace.node?.x?.length) {
+          const active = activeSankey(trace);
+          if (active) { await Plotly.restyle(plot, active, [i]); trace = plot.data[i]; }
+          const innerHeight = Math.max(1, height - (margin.t || 0) - (margin.b || 0));
+          const nodeUpdate = {'node.y': [sankeyNodeY(trace, innerHeight)],
+            'node.label': [sankeyLabels(trace)]};
+          if (trace.meta?.demographic_colour_field || trace.meta?.ribbon_colour_field)
+            nodeUpdate['node.color'] = [trace.node.x.map(() => '#959595')];
+          await Plotly.restyle(plot, nodeUpdate, [i]);
+        }
+      }
+      await Plotly.relayout(plot, update);
+      // Use the rendered legend height as well: Plotly may use equal-width
+      // columns where our word-width estimate packs more entries into a row.
+      // Reserve that space within the same card, reducing the plotting area.
+      const legend = plot.querySelector('.legend');
+      if (legendOffset !== null && legend) {
+        const required = Math.ceil(legendOffset + legend.getBBox().height + 12);
+        if (required > margin.b) {
+          margin.b = required;
+          await Plotly.relayout(plot, {margin,
+            'legend.y': -legendOffset / Math.max(1, height - (margin.t || 0) - margin.b)});
+        }
+      }
+      state.fittedHeight = height;
+      state.key = key;
+    } finally { state.busy = false; }
+  }
+
+  function schedule() {
+    if (pending) return;
+    pending = true;
+    requestAnimationFrame(() => {
+      pending = false;
+      charts.forEach((state, plot) => fit(plot, state));
+    });
+  }
+  function initialise() {
+    labelTabsets();
+    if (!window.Plotly) return;
+    const observer = new ResizeObserver(schedule);
+    document.querySelectorAll('.cell-output-display div').forEach(el => {
+      if (getComputedStyle(el).display === 'grid' && el.querySelector('.plotly')) el.classList.add('report-chart-grid');
+    });
+    document.querySelectorAll('.plotly.html-widget').forEach(plot => {
+      if (!plot.layout) return;
+      charts.set(plot, {
+        height: Number(plot.layout.height) || plot.clientHeight || 480,
+        sankey: plot.data.some(trace => trace.type === 'sankey'),
+        margin: {...plot.layout.margin},
+        horizontal: plot.layout.legend?.orientation === 'h',
+        nativeLegend: plot.layout.meta?.native_line_legend === true,
+        compactLegend: plot.layout.meta?.compact_line_legend === true,
+        sourceKeyBelow: plot.layout.meta?.source_key_below === true,
+        title: plot.layout.title?.text || '',
+        compactProfile: plot.layout.meta?.compact_cohort_profile === true,
+        compactPopulation: plot.layout.meta?.compact_population_grid === true,
+        overviewBar: Boolean(plot.layout.meta?.demographic_overview_field || plot.layout.meta?.delivery_pattern_field),
+        names: plot.data.map(t => t.name || ''),
+        annotations: (plot.layout.annotations || []).map(a => ({...a}))
+      });
+      plot.on('plotly_afterplot', () => spaceComparisonCountLabels(plot));
+      spaceComparisonCountLabels(plot);
+      observer.observe(plot.parentElement);
+    });
+    window.addEventListener('resize', schedule);
+    document.addEventListener('shown.bs.tab', schedule);
+    schedule();
+  }
+  if (document.readyState === 'complete') initialise();
+  else window.addEventListener('load', initialise, {once: true});
+})();
+</script>

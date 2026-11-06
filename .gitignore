@@ -3,20 +3,29 @@
 *
 !/data/
 !/R/
+# Share runtime scripts, Heather's scratch file and Sarah's standalone matrix script.
+# Other R scripts (including local checks) stay local unless added here.
+!/R/Run analysis.R
+!/R/HH scratch area.R
+!/R/Read parquet files from azure.R
+!/R/Maternity analysis.R
+!/R/Demo Sankeys.R
+!/R/demographics.R
+!/R/ons_data.R
+!/R/retrospective_errors.R
+!/R/report_colours.R
+!/R/disclosure.R
+!/R/report_cohort.R
+!/R/age_boundary_review.R
+!/R/matrix of booking appts and births.R
 !/assets/
 !/config/
 !/databricks notebooks/
 !/.gitignore
-!/CODEOWNERS
 !/LICENSE
 !/README.md
 !/ONS-analysis-notes.md
-!/terminology-key.md
-!/R/Read parquet files from azure.R
-!/R/matrix of booking appts and births.R
 !/index.qmd
-!/R/additional_analysis.R
-!/R/ons_data.R
 !/_quarto.yml
 !/_brand.yml
 !/styles.css
@@ -25,12 +34,21 @@
 !/assets/logo_black_favicon.png
 !/assets/logo_black_medium.png
 !/assets/logo_yellow_medium.png
+!/assets/projection_process_current.svg
+!/assets/report-charts.html
 !/data/2023birthregistrations.xlsx
 !/data/2024birthregistrations.xlsx
 !/data/2025birthregistrations.xlsx
-!/data/ons_2022_based_births_migration_category.csv
-!/data/ons_2022_based_female_population_projections.csv
+!/data/2022 SNPP Births persons.csv
+!/data/ons_2022_based_female_population_projections_2023_geography.csv
 !/data/ons_live_births_la_2013_2025.csv
+!/data/lookups/
+!/data/lookups/la_names.csv
+!/data/lookups/la_to_2023.csv
+!/data/lookups/trust_names.csv
+!/data/lookups/imd2019_lsoa2011.csv
+!/data/lookups/ethnic_category.csv
+!/data/lookups/ethnicity_pair_rules.csv
 !/ONS Birth Methods Review.docx
 !/databricks notebooks/Maternity cohort over time.ipynb
 !/databricks notebooks/SL_maternity_data_wrangling.ipynb

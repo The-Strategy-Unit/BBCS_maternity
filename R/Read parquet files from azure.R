@@ -1,4 +1,9 @@
 ## Azure setup -----------------------------------------------------------------
+# Validate configuration before attempting authentication; never print secret values.
+required_azure_settings <- c("container", "lake", "folder", "azure_key_vault")
+missing_azure_settings <- required_azure_settings[!nzchar(trimws(Sys.getenv(required_azure_settings)))]
+if (length(missing_azure_settings)) stop("Missing Azure settings: ",
+  paste(missing_azure_settings, collapse = ", "), call. = FALSE)
 # set path to lake mart
 container <- Sys.getenv("container")
 lake <- Sys.getenv("lake")
@@ -34,7 +39,7 @@ az_sas <- tryCatch(
 
 if (is.null(az_sas$value) || nchar(az_sas$value) == 0) {
   cli::cli_abort(
-    "SAS token {.val {sas_name}} is empty.
+    "SAS token {.val {sas_nm}} is empty.
       Please check the Key Vault secret configuration."
   )
 }
@@ -124,7 +129,7 @@ get_su_lakemart_parquet_file <- function(str_file_pattern = "", az_files, az_con
     tibble::as_tibble() |>
     dplyr::filter(stringr::str_detect(
       string = name,
-      pattern = str_file_pattern
+      pattern = stringr::fixed(str_file_pattern)
     )) |>
     dplyr::pull(name)
   

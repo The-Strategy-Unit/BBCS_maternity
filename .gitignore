@@ -20,6 +20,7 @@
 !/R/matrix of booking appts and births.R
 !/assets/
 !/config/
+!/databricks notebooks/
 !/.gitignore
 !/LICENSE
 !/README.md
@@ -49,6 +50,8 @@
 !/data/lookups/ethnic_category.csv
 !/data/lookups/ethnicity_pair_rules.csv
 !/ONS Birth Methods Review.docx
+!/databricks notebooks/Maternity cohort over time.ipynb
+!/databricks notebooks/SL_maternity_data_wrangling.ipynb
 
 # Generated Quarto files and separately supplied data stay local.
 /.quarto/
@@ -60,14 +63,3 @@
 /sankey data/
 /.patient_flows.rds
 
-# Local tests, console investigations and assistant/session material are never shared.
-/R/test*
-/R/check_*
-/R/QA.R
-/R/ONS to MSDS Matching QA.R
-/R/Country matching overview.R
-/assets/test*
-/qa_*
-/.codex/
-/.agents/
-/AGENTS.md

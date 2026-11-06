@@ -118,5 +118,5 @@ retrospective_error_trends <- function(annual, bookings = NULL) {
   htmltools::div(class = "report-chart-grid report-change-pair",
     style = "display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px;",
     htmltools::div(panel(annual[annual$Level == "Trust", ], "Trusts")),
-    htmltools::div(panel(annual[annual$Level %in% c("ICB", "Cluster"), ], "ICBs and combined cluster")))
+    htmltools::div(panel(annual[annual$Level %in% c("ICB", "Cluster"), ], "ICBs and BBCS providers combined")))
 }

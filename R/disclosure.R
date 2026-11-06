@@ -21,6 +21,12 @@ dc_divide <- function(n, d) {
   ratio[!usable | !is.finite(ratio)] <- NA_real_
   ratio
 }
+chart_total <- function(n, unit, period = NULL) {
+  labels <- paste(scales::comma(dc_count(n), accuracy = 1), unit)
+  if (!is.null(period)) labels <- paste0(period, ": ", labels)
+  htmltools::p(class = "chart-total", paste(labels, collapse = " | "))
+}
+
 dc_ratio <- function(n, d) dc_divide(dc_count(n), dc_count(d))
 
 dc_counts <- function(data, columns) {

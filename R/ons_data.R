@@ -619,11 +619,13 @@ resident_projection_change_chart <- function(data, colours, reference_year) {
 
 # Resident geography totals, before allocation to booking/delivery providers.
 # Complete each LA/ICB/cluster aggregation from original values, then disclose.
-resident_projection_totals_table <- function(data) {
-  resident_icb <- c(E08000025 = "Birmingham and Solihull ICB",
+bbcs_resident_icbs <- c(E08000025 = "Birmingham and Solihull ICB",
     E08000027 = "Black Country ICB", E08000028 = "Black Country ICB",
     E08000029 = "Birmingham and Solihull ICB", E08000030 = "Black Country ICB",
     E08000031 = "Black Country ICB")
+
+resident_projection_totals_table <- function(data) {
+  resident_icb <- bbcs_resident_icbs
   areas <- read_area_config() |> filter(area_code %in% names(resident_icb))
   stopifnot(nrow(areas) == 6L, !anyDuplicated(areas$area_code))
   years <- c(2025, 2030, 2035, 2040, 2045, 2047)
@@ -700,7 +702,7 @@ provider_ons_change_pair <- function(data, reference_year, allocation) {
   htmltools::div(class = "report-chart-grid report-change-pair",
     style = "display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px;",
     htmltools::div(panel(filter(shown, Level == "Trust"), "trust")),
-    htmltools::div(panel(filter(shown, Level %in% c("ICB", "Cluster")), "ICB and combined cluster")))
+    htmltools::div(panel(filter(shown, Level %in% c("ICB", "Cluster")), "ICBs and BBCS providers combined")))
 }
 
 # Selected-year provider totals for the MSDS/modelled chart versions.
@@ -714,7 +716,7 @@ provider_projection_totals_table <- function(data, measure = c("deliveries", "an
   stopifnot(all(aggregate_keys %in% organisations$Key), !anyDuplicated(organisations$Key))
   row_order <- c(organisations$Key[organisations$Level == "Trust"], aggregate_keys)
   organisations <- organisations |> arrange(match(Key, row_order)) |>
-    mutate(Organisation = if_else(Level == "Cluster", "BBCS cluster", as.character(Organisation)))
+    mutate(Organisation = if_else(Level == "Cluster", "BBCS providers combined", as.character(Organisation)))
   modelled <- data |> filter(Series == "Modelled projection", Year %in% years) |>
     select(Key, Year, Value, Coverage_note) |> mutate(Value = dc_count(Value))
   shown <- tidyr::expand_grid(Key = organisations$Key, Year = years) |>
@@ -778,10 +780,11 @@ population_age_grid <- function(data) {
   htmltools::tagList(key, htmltools::div(class = "population-age-grid", charts))
 }
 
-projection_age_grid <- function(data, colours, percent_change = FALSE) {
+projection_age_grid <- function(data, colours, reference_year = NULL) {
   data <- dc_counts(data, "projected_maternities")
-  years <- seq.int(min(data$year), max(data$year))
-  first_year <- years[1L]
+  percent_change <- !is.null(reference_year)
+  first_year <- if (percent_change) reference_year else min(data$year)
+  years <- seq.int(first_year, max(data$year))
   y_axis <- list(title = "Adjusted resident<br>maternities", tickformat = ",.0f", rangemode = "tozero")
   hover <- "%{x}: %{y:,.0f} maternities"
   if (percent_change) {

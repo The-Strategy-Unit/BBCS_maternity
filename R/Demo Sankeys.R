@@ -46,6 +46,7 @@ cohort_trust_comparison <- function(episodes) {
 
 # 1. PREPARE THE MASTER TABLE -------------------------------------------
 build_demo_sankeys <- function(cohort, demographics, episodes = prepare_report_cohort(cohort)) {
+  episodes <- bbcs_cohort_episodes(episodes, cluster_trusts, cluster_las)
   lookup <- demographics |>
     dplyr::transmute(person_id_mother, ethnicity_broad, ethnicity_description,
       imd_quintile = as.integer(ceiling(imd_decile / 2))) |>
@@ -169,10 +170,7 @@ demo_ribbon_key <- function(master, field) {
 
 # Pregnancies booked or delivered at the organisation; counted once per panel
 demo_ribbon_org_rows <- function(master, group, code) {
-  booking <- if (group == "Trust") master$Booking else master$Booking_ICB
-  delivery <- if (group == "Trust") master$Delivery else master$Delivery_ICB
-  codes <- if (group != "Trust" && code == "Cluster") cluster_icbs else code
-  master[booking %in% codes | delivery %in% codes, , drop = FALSE]
+  cohort_profile_org_rows(master, c("Booking", "Delivery"), group, code)
 }
 
 demo_ribbon_org_codes <- function(master, group) {
@@ -235,7 +233,7 @@ demo_ribbon_grid <- function(master, field, group) {
     label <- if (code == "Cluster") "Combined cluster" else demo_org_label(code, group)
     htmltools::div(class = "demo-sankey-panel",
       htmltools::tags$h4(label),
-      htmltools::tags$p(paste0(scales::comma(dc_count(sum(rows$N))), " pregnancies booked or delivered here")),
+      htmltools::tags$p(paste0(scales::comma(dc_count(sum(rows$N))), if (code == "Cluster") " BBCS cohort pregnancies" else " pregnancies booked or delivered here")),
       htmltools::tags$p(class = "demo-sankey-stages", "Booking \u2192 Delivery"),
       demo_ribbon_sankey(rows, field, group, compact = TRUE))
   })
@@ -243,7 +241,8 @@ demo_ribbon_grid <- function(master, field, group) {
 }
 
 demo_ribbon_views <- function(master, field) {
-  list(overall = htmltools::tagList(demo_ribbon_key(master, field), demo_ribbon_sankey(master, field)),
+  list(overall = htmltools::tagList(chart_total(sum(master$N), "BBCS cohort pregnancies"),
+    demo_ribbon_key(master, field), demo_ribbon_sankey(master, field)),
     Trust = demo_ribbon_grid(master, field, "Trust"),
     ICB_Cluster = demo_ribbon_grid(master, field, "ICB_Cluster"))
 }
@@ -258,8 +257,8 @@ demo_org_codes <- function(master, mode, group, whole_cohort = FALSE) {
 demo_org_rows <- function(master, mode, group, code) {
   if (group != "Trust" && code == "Cohort") return(master)
   field <- if (group == "Trust") mode else paste0(mode, "_ICB")
-  codes <- if (group != "Trust" && code == "Cluster") cluster_icbs else code
-  master[master[[field]] %in% codes, , drop = FALSE]
+  if (group != "Trust" && code == "Cluster") return(cohort_profile_org_rows(master, mode, group, code))
+  master[master[[field]] %in% code, , drop = FALSE]
 }
 
 demo_org_label <- function(code, group) {
@@ -272,10 +271,16 @@ demo_org_label <- function(code, group) {
   if (group == "Trust") report_trust_name(code, trust_labels) else "ICB name unavailable"
 }
 
+# In section 4.3 only the named trust and ICB panels are booking cohorts.
+demo_pathway_rows <- function(master, group, code) {
+  if (group == "ICB_Cluster" && code == "Cluster") return(master)
+  cohort_profile_org_rows(master, "Booking", group, code)
+}
+
 demo_pathway_summary <- function(master, group, codes = NULL) {
   if (is.null(codes)) codes <- demo_bbcs_org_codes(group)
   dplyr::bind_rows(lapply(codes, function(code) {
-    rows <- cohort_profile_org_rows(master, "Booking", group, code)
+    rows <- demo_pathway_rows(master, group, code)
     organisation <- cohort_profile_org_label(code, group)
     data.frame(Code = code, Organisation = organisation, Starts = sum(rows$N),
       Within = sum(rows$N[rows$Outcome == "Within cluster"]),
@@ -346,7 +351,7 @@ demo_outcome_sankey <- function(rows, field, proportions = FALSE) {
       x = node_x,
       y = sankey_node_y(node_x, links$Source, links$Target, values, chart_height - 32, 22),
       customdata = paste0(labels, "<br>Pregnancies: ", scales::comma(totals),
-        "<br>", percentages, " of organisation pregnancies"),
+        "<br>", percentages, " of pregnancies in this panel"),
       hovertemplate = "%{customdata}<extra></extra>"),
     link = list(source = links$Source, target = links$Target, value = values,
       color = grDevices::adjustcolor(outcome_colours[match(links$Outcome, outcomes)], alpha.f = 0.4),
@@ -354,7 +359,7 @@ demo_outcome_sankey <- function(rows, field, proportions = FALSE) {
         outcome_labels[match(links$Outcome, outcomes)],
         "<br>Pregnancies: ", scales::comma(links$N),
         "<br>", scales::percent(category_share, accuracy = 0.1), " of this demographic category",
-        "<br>", scales::percent(links$Organisation_share, accuracy = 0.1), " of organisation pregnancies"),
+        "<br>", scales::percent(links$Organisation_share, accuracy = 0.1), " of pregnancies in this panel"),
       hovertemplate = "%{customdata}<extra></extra>")) |>
     plotly::layout(font = list(family = "Arial", size = 12),
       margin = list(l = 12, r = 12, t = 12, b = 20), paper_bgcolor = "white", plot_bgcolor = "white") |>
@@ -365,7 +370,7 @@ demo_outcome_sankey <- function(rows, field, proportions = FALSE) {
 demo_pathway_grid <- function(master, group, field = NULL, proportions = FALSE) {
   summary <- demo_pathway_summary(master, group)
   panels <- lapply(seq_len(nrow(summary)), function(i) {
-    rows <- cohort_profile_org_rows(master, "Booking", group, summary$Code[i])
+    rows <- demo_pathway_rows(master, group, summary$Code[i])
     htmltools::div(class = "demo-sankey-panel",
       htmltools::tags$h5(summary$Organisation[i]),
       htmltools::tags$p(paste0(scales::comma(dc_count(summary$Starts[i])), " pregnancies")),
@@ -461,7 +466,7 @@ demo_overview_grid <- function(master, mode, group, field) {
 }
 
 demo_overview_tabs <- function(master, mode, delivery_profiles = NULL) {
-  # 4.1.1 uses 2.2.7.1's booking cohort and five delivery outcomes.
+  # Apply the same booking cohort and outcome definitions as section 5.4.
   # Selecting recorded deliveries first would remove booking-only pregnancies.
   if (mode == "Delivery") {
     if (is.null(delivery_profiles)) delivery_profiles <- build_delivery_pattern_profiles(master)
@@ -540,14 +545,18 @@ cohort_trust_profile_codes <- function(master) {
 }
 
 cohort_profile_org_rows <- function(master, stage, group, code) {
+  if (group == "ICB_Cluster" && code == "Cluster") {
+    if (length(stage) > 1L) return(master)
+    absent <- if (stage == "Booking") "No booking" else "No delivery"
+    return(master[master[[stage]] != absent, , drop = FALSE])
+  }
   at_stage <- function(event) {
     provider <- master[[if (group == "Trust") event else paste0(event, "_ICB")]]
     if (group == "Trust" && code == "Other") {
       known <- provider %in% "Other" | grepl("^R[A-Z0-9]{2}$", provider)
       return(known & !provider %in% demo_bbcs_org_codes("Trust"))
     }
-    codes <- if (group == "ICB_Cluster" && code == "Cluster") cluster_icbs else code
-    provider %in% codes
+    provider %in% code
   }
   master[Reduce(`|`, lapply(stage, at_stage)), , drop = FALSE]
 }
@@ -579,6 +588,8 @@ build_cohort_org_comparison <- function(master, group) {
     stats::setNames(demo_category_colours(categories$Category, field), categories$Label)
   }, data, fields)
   ticks <- sub(" NHS( Foundation)? Trust$", "", labels)
+  tick_labels <- paste0(gsub("\n", "<br>", stringr::str_wrap(ticks, 16)), "<br>",
+    scales::comma(dc_count(vapply(orgs, function(rows) sum(rows$N), numeric(1)))), " pregnancies")
   percent_max <- max(1, vapply(data, function(rows)
     max(tapply(rows$Share, rows$Organisation, sum, na.rm = TRUE)), numeric(1)))
   make_chart <- function(rows_by_org, colours, percent = FALSE) {
@@ -606,7 +617,7 @@ build_cohort_org_comparison <- function(master, group) {
         tickformat = ".0%", dtick = .25) else list(title = "Pregnancies", range = c(0, maximum * 1.22), tickformat = ",.0f"),
       yaxis = list(title = "", type = "category", categoryorder = "array", categoryarray = rev(unname(labels)),
         tickmode = "array", tickvals = unname(labels),
-        ticktext = gsub("\n", "<br>", stringr::str_wrap(ticks, 16)), automargin = TRUE),
+        ticktext = tick_labels, automargin = TRUE),
       margin = list(l = 55, r = if (percent) 15 else 30, t = 8, b = 55), font = list(family = "Arial")) |>
       plotly::config(displayModeBar = FALSE, responsive = TRUE) |> dc_widget()
   }
@@ -775,48 +786,31 @@ cohort_match_chart <- function(data, field, proportions = FALSE) {
     dc_widget()
 }
 
-cohort_match_panels <- function(data, field, title = "Whole BBCS cohort") {
+cohort_match_panels <- function(data, field, title, total) {
   htmltools::div(class = "demo-sankey-panel cohort-match-card",
-    htmltools::tags$h4(title),
+    htmltools::tags$h4(title), chart_total(total, "comparable pregnancies"),
     htmltools::div(class = "demo-outcome-grid",
       htmltools::div(class = "cohort-match-chart", cohort_match_chart(data, field)),
       htmltools::div(class = "cohort-match-chart", cohort_match_chart(data, field, TRUE))))
 }
 
-cohort_match_cluster_member <- function(master) {
-  master$Booking_ICB %in% cluster_icbs | master$Delivery_ICB %in% cluster_icbs
-}
-
-# Section 5.3 requires a BBCS interaction at either event. Keep the original
-# trust comparison in the shared master; account for out-of-scope comparisons
-# here so residence-only outside/outside rows cannot enter these charts.
-cohort_match_population <- function(master) {
-  outside <- !cohort_match_cluster_member(master) &
-    master$Trust_comparison %in% c("Same trust", "Different trusts")
-  master$Trust_comparison[outside] <- "Outside BBCS comparison scope"
-  master
-}
-
-# A transfer belongs to both relevant organisation panels, but only once within
-# each panel. Do not bind the two event selections or change the stage-specific
-# selector used by the booking/delivery profiles elsewhere in the report.
 cohort_match_org_rows <- function(master, group, code) {
-  cohort_profile_org_rows(master[cohort_match_cluster_member(master), , drop = FALSE],
-    c("Booking", "Delivery"), group, code)
+  cohort_profile_org_rows(master, c("Booking", "Delivery"), group, code)
 }
 
 cohort_match_org_profiles <- function(master, field, group, categories) {
-  master <- cohort_match_population(master)
   eligible <- master[master$Trust_comparison %in% c("Same trust", "Different trusts"), , drop = FALSE]
   codes <- demo_bbcs_org_codes(group, include_other = TRUE)
   codes <- setdiff(codes, c("Unknown", "No booking", "No delivery", "Home"))
-  counts <- stats::setNames(lapply(codes, function(code)
-    cohort_match_counts(cohort_match_org_rows(eligible, group, code), field, categories)), codes)
+  selected <- stats::setNames(lapply(codes, function(code) cohort_match_org_rows(eligible, group, code)), codes)
+  totals <- vapply(selected, function(rows) sum(rows$N), numeric(1))
+  counts <- lapply(selected, cohort_match_counts, field = field, categories = categories)
   panels <- lapply(codes, function(code)
-    cohort_match_panels(counts[[code]], field, cohort_profile_org_label(code, group)))
+    cohort_match_panels(counts[[code]], field, cohort_profile_org_label(code, group), totals[[code]]))
   key <- report_colour_key(c("Same trust" = "#006747", "Different trust or home birth" = "#AE2573"), "cohort-match-key")
   stacked <- lapply(codes, function(code) htmltools::div(class = "demo-sankey-panel",
     htmltools::tags$h4(cohort_profile_org_label(code, group)),
+    chart_total(totals[[code]], "comparable pregnancies"),
     cohort_match_chart(counts[[code]], field, proportions = TRUE)))
   list(data = counts, charts = htmltools::tagList(key, htmltools::div(class = "cohort-match-cards", panels)),
     stacked_grid = htmltools::tagList(key, htmltools::div(class = "cohort-match-stacked-grid", stacked)))
@@ -851,6 +845,7 @@ cohort_match_heatmap <- function(rows, title) {
     lapply(seq_len(ncol(share)), function(j) cell(i, j))))
   htmltools::div(class = "demo-sankey-panel",
     htmltools::tags$h4(title),
+    chart_total(sum(counts), "comparable pregnancies with known age and IMD"),
     htmltools::tags$table(class = "cohort-match-heatmap", `aria-label` = paste(title, "percentage at a different trust or home"),
       htmltools::tags$thead(htmltools::tags$tr(htmltools::tags$th(scope = "col", "Age"),
         lapply(colnames(share), function(q) htmltools::tags$th(scope = "col", paste0("Q", q))))),
@@ -868,11 +863,9 @@ cohort_match_heatmap_grid <- function(master, group) {
 }
 
 build_cohort_match_profiles <- function(master) {
-  master <- cohort_match_population(master)
   master$Age_group <- cohort_match_age_group(master$Age_band)
   groups <- c("Same trust", "Different trusts", "Neither booking nor delivery recorded",
-    "No recorded booking", "No recorded delivery", "Missing or invalid trust code",
-    "Outside BBCS comparison scope")
+    "No recorded booking", "No recorded delivery", "Missing or invalid trust code")
   stopifnot(all(master$Trust_comparison %in% groups))
   summary <- dc_cells(data.frame(Group = groups,
     N = vapply(groups, function(group) sum(master$N[master$Trust_comparison %in% group]), numeric(1)),
@@ -901,9 +894,10 @@ build_cohort_match_profiles <- function(master) {
 # 6. DELIVERY PATTERNS WITHIN DEMOGRAPHIC GROUPS -----------------------
 delivery_pattern_key <- function() {
   data.frame(Outcome = c("Same trust", "Different cluster trust", "Outside cluster",
-    "No recorded delivery", "Unknown location"),
+    "No recorded delivery", "Unknown location", "Booking provider unknown"),
     Label = c("Same trust as booking", "Different trust within cluster",
-      "Outside cluster or home birth", "No recorded delivery", "Delivery location unknown"),
+      "Outside cluster or home birth", "No recorded delivery", "Delivery location unknown",
+      "BBCS delivery, booking trust unknown"),
     Colour = unname(booking_delivery_palette()))
 }
 
@@ -954,20 +948,19 @@ delivery_pattern_chart <- function(data, field, code, group) {
 
 build_delivery_pattern_profiles <- function(master, include_other = FALSE) {
   # Booking providers define panels. Projection residence exclusions do not apply.
-  if (!include_other) master <- master[master$Booking %in% cluster_trusts, ]
+  master <- master[master$Booking != "No booking", , drop = FALSE]
   key <- delivery_pattern_key()
   fields <- demo_profile_fields()
   stats::setNames(lapply(c("Trust", "ICB_Cluster"), function(group) {
     codes <- demo_bbcs_org_codes(group, include_other = include_other)
     lapply(fields, function(field) {
       categories <- cohort_profile_counts(master, field)$Category
-      counts <- stats::setNames(lapply(codes, function(code) {
-        rows <- cohort_profile_org_rows(master, "Booking", group, code)
-        delivery_pattern_counts(rows, field, categories)
-      }), codes)
+      selected <- stats::setNames(lapply(codes, function(code) cohort_profile_org_rows(master, "Booking", group, code)), codes)
+      counts <- lapply(selected, delivery_pattern_counts, field = field, categories = categories)
       panels <- lapply(codes, function(code) {
         htmltools::div(class = "demo-sankey-panel",
           htmltools::h4(cohort_profile_org_label(code, group)),
+          chart_total(sum(selected[[code]]$N), "pregnancies with a recorded booking"),
           delivery_pattern_chart(counts[[code]], field, code, group))
       })
       list(data = counts, grid = htmltools::tagList(
@@ -987,8 +980,11 @@ demographics_cleaned <- prepare_demographics(demographics)
 # Section 5 also includes a pooled Other trusts card.
 demo_delivery_profiles <- build_delivery_pattern_profiles(get("Demo Sankeys"))
 demo_sankey_charts <- list(
-  version = "demographic-profile-v41",
+  version = "demographic-profile-v44",
   cohort_total = dc_count(sum(`Demo Sankeys`$N)),
+  booking_totals = with(`Demo Sankeys`, dc_count(c(
+    anywhere = sum(N[Booking != "No booking"]),
+    bbcs_provider = sum(N[Booking_ICB %in% cluster_icbs])))),
   cohort_profile = build_cohort_profile(`Demo Sankeys`),
   cohort_org_comparisons = list(Trust = build_cohort_org_comparison(`Demo Sankeys`, "Trust"),
     ICB_Cluster = build_cohort_org_comparison(`Demo Sankeys`, "ICB_Cluster")),
@@ -998,7 +994,8 @@ demo_sankey_charts <- list(
   delivery_pattern_profiles = build_delivery_pattern_profiles(get("Demo Sankeys"), include_other = TRUE),
   overview_delivery = demo_overview_tabs(get("Demo Sankeys"), "Delivery", demo_delivery_profiles),
   overview_booking = demo_overview_tabs(`Demo Sankeys`, "Booking"),
-  overall = demo_sankey_chart(`Demo Sankeys`),
+  overall = htmltools::tagList(chart_total(sum(`Demo Sankeys`$N), "BBCS cohort pregnancies"),
+    demo_sankey_chart(`Demo Sankeys`)),
   ethnicity = demo_sankey_grid(`Demo Sankeys`, "ethnicity_broad"),
   imd = demo_sankey_grid(`Demo Sankeys`, "imd_quintile"),
   age = demo_sankey_grid(`Demo Sankeys`, "Age_band"),

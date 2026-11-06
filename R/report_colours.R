@@ -167,7 +167,7 @@ stacked_share_annotations <- function(groups, shares) {
 booking_delivery_palette <- function() c(
   "Same trust" = "#006747", "Different cluster trust" = "#AE2573",
   "Outside cluster" = "#ED8B00", "No recorded delivery" = "#2C2825",
-  "Unknown location" = "#959595")
+  "Unknown location" = "#959595", "Booking provider unknown" = "#5881C1")
 
 # Native titles and legends stay inside the white chart canvas, including exports.
 report_native_line_chart <- function(chart, title = NULL, legend_name = NULL, compact = FALSE) {

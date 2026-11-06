@@ -278,6 +278,12 @@ prepare_la_antenatal_only <- function(residents, missing_count_zero = FALSE) {
     dplyr::summarise(count = sum(count), .groups = "drop")
 }
 
+bbcs_cohort_episodes <- function(episodes, trusts, las) {
+  included <- episodes$LA %in% las | episodes$Booking_Trust %in% trusts |
+    (episodes$Birth_recorded & !episodes$Home %in% 1L & episodes$Trust %in% trusts)
+  episodes[included, , drop = FALSE]
+}
+
 prepare_report_cohort <- function(cohort) {
   required <- c("person_id_mother", "uniq_preg_id", "birth_yr", "birth_flag",
     "birth_date", "la_of_mother", "age_at_birth_mother", "age_at_booking_mother", "birth_provider",

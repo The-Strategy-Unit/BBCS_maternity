@@ -52,7 +52,7 @@ source("R/age_boundary_review.R", encoding = "UTF-8")
 analysis_years <- 2023:2025
 latest_year <- max(analysis_years)
 cluster_icbs <- c("QUA", "QHL")
-cluster_label <- "Combined cluster"
+cluster_label <- "BBCS providers combined"
 outcome_columns <- c("Within", "Outside", "No_delivery", "Unknown")
 outcome_labels <- c("Delivery at cluster trust", "Other trust or home birth",
                     "No recorded delivery", "Delivery location unknown")
@@ -245,7 +245,7 @@ required_objects <- "final_cohort_2326"
 missing_objects <- required_objects[!vapply(required_objects, function(name) exists(name, inherits = TRUE), logical(1))]
 if (length(missing_objects)) stop("Run the preparation scripts first. Missing: ",
                                   paste(missing_objects, collapse = ", "), call. = FALSE)
-report_episodes <- prepare_report_cohort(final_cohort_2326)
+report_episodes <- bbcs_cohort_episodes(prepare_report_cohort(final_cohort_2326), cluster_trusts, cluster_las)
 
 maternal_age_completeness_table <- function(counts) {
   dc_cells(counts, c("N", "Denominator"), list(Percent = c("N", "Denominator"))) |>
@@ -324,7 +324,8 @@ record_completeness_outputs <- function(counts) {
         annotations = with(dplyr::arrange(shown, Group, Age_source), stacked_share_annotations(Group, Share)),
         xaxis = list(title = "Share of all pregnancy rows in this group", tickformat = ".0%"),
         yaxis = list(title = scope, automargin = TRUE, tickmode = "array",
-          tickvals = shown$Group[ticks], ticktext = sub(" NHS( Foundation)? Trust$", "", shown$Group_label[ticks])),
+          tickvals = shown$Group[ticks], ticktext = paste0(sub(" NHS( Foundation)? Trust$", "", shown$Group_label[ticks]),
+            "<br>", scales::comma(shown$Total[ticks]), " pregnancies")),
         margin = list(l = 140, b = 65)) |>
       plotly::config(responsive = TRUE, displaylogo = FALSE)
     age_table <- shown |> dplyr::select(Group, Age_source, N, Total, Share) |>
@@ -762,9 +763,10 @@ for (year in names(by_year)) {
 activity_episodes <- report_episodes |>
   dplyr::transmute(Row, person_id_mother = Person, uniq_preg_id = Pregnancy,
     delivery_date = Delivery_date, delivery_year = Delivery_year,
-    birth_code = Trust, booking_code = Booking_Trust, residence_code = Resident_ICB,
+    birth_code = Trust, booking_code = Booking_Trust, residence_code = Resident_ICB, residence_la = LA,
     booking_date = Booking_date, booking_year = Pregnancy_year,
     pregnancy_fy = Pregnancy_FY, pregnancy_year_source = Pregnancy_year_source,
+    has_booking = Booking_provider_supplied | Booking_date_supplied,
     birth_flag = Birth_flag, birth_recorded = Birth_recorded, home_birth = Home)
 
 # Shared pathway definition for the latest-year and three-year outputs.
@@ -785,6 +787,7 @@ classify_pathway_outcome <- function(episodes) {
 classify_booking_delivery_outcome <- function(episodes) {
   cluster_outcome <- classify_pathway_outcome(episodes)
   dplyr::case_when(
+    cluster_outcome == "Within cluster" & !grepl("^R[A-Z0-9]{2}$", episodes$booking_code) ~ "Booking provider unknown",
     cluster_outcome == "Within cluster" & episodes$birth_code == episodes$booking_code ~
       "Same trust",
     cluster_outcome == "Within cluster" ~ "Different cluster trust",
@@ -798,13 +801,14 @@ classify_booking_icb_delivery_outcome <- function(episodes) {
   booking_icb <- unname(provider_icb[episodes$booking_code])
   delivery_icb <- unname(provider_icb[episodes$birth_code])
   dplyr::case_when(
+    cluster_outcome == "Within cluster" & is.na(booking_icb) ~ "Booking provider unknown",
     cluster_outcome == "Within cluster" & delivery_icb == booking_icb ~ "Same ICB",
     cluster_outcome == "Within cluster" ~ "Different cluster ICB",
     TRUE ~ cluster_outcome)
 }
 
 cluster_activity <- list(
-  note = "The combined cluster includes Black Country and Birmingham and Solihull. Delivery totals count each pregnancy with a recorded live birth or stillbirth at a cluster provider once, in its assigned pregnancy financial year. Home births and records with unknown home status are excluded from these hospital totals. Antenatal bookings count pregnancies by booking provider and assigned pregnancy financial year, retaining every recorded outcome, including home births, unknown delivery locations and no recorded delivery."
+  note = "The provider total covers events at Black Country and Birmingham and Solihull providers. Residence is classified using the six BBCS LAs. Delivery totals count each pregnancy with a recorded live birth or stillbirth at a cluster provider once, in its assigned pregnancy financial year. Home births and records with unknown home status are excluded from these hospital totals. Antenatal bookings count pregnancies by booking provider and assigned pregnancy financial year, retaining every recorded outcome, including home births, unknown delivery locations and no recorded delivery."
 )
 
 safe_share <- function(n, total) dc_ratio(n, total)
@@ -816,8 +820,8 @@ activity_episodes$residence_group <- ifelse(
   ifelse(grepl("^Q[A-Z0-9]{2}$", activity_episodes$residence_code), "Other", "Unknown")
 )
 activity_episodes$residence_type <- ifelse(
-  activity_episodes$residence_group %in% cluster_icbs, "Cluster residents",
-  ifelse(activity_episodes$residence_group == "Unknown", "Unknown residence", "Outside-cluster residents")
+  activity_episodes$residence_la %in% cluster_las, "Cluster residents",
+  ifelse(report_la_country(activity_episodes$residence_la) == "Unknown/other code", "Unknown residence", "Outside-cluster residents")
 )
 deliveries <- activity_episodes[
   activity_episodes$birth_recorded &
@@ -844,7 +848,7 @@ cluster_activity$total_text <- paste0(count_text(total_2526),
 local_deliveries <- data.frame(
   ICB = unname(icb_labels[cluster_icbs]),
   Episodes = vapply(cluster_icbs, function(x)
-    sum(deliveries_2526$residence_group == x), integer(1))
+    sum(bbcs_resident_icbs[deliveries_2526$residence_la] %in% unname(icb_labels[x])), integer(1))
 )
 local_deliveries$Share <- safe_share(local_deliveries$Episodes, total_2526)
 cluster_activity$local_table <- gt::gt(dc_counts(local_deliveries, "Episodes")) |>
@@ -858,9 +862,9 @@ cluster_activity$local_text <- paste0(count_text(sum(local_deliveries$Episodes))
 
 # Outside residents: named ICBs and Other; unknown residence kept separate
 outside_deliveries <- deliveries_2526[deliveries_2526$residence_type == "Outside-cluster residents", ]
-outside_codes <- c(setdiff(names(icb_labels), cluster_icbs))
+outside_codes <- unique(c(setdiff(names(icb_labels), cluster_icbs), outside_deliveries$residence_group))
 outside_summary <- data.frame(
-  ICB = unname(icb_labels[outside_codes]),
+  ICB = unname(c(icb_labels, Unknown = "Unknown ICB")[outside_codes]),
   Episodes = vapply(outside_codes, function(x) sum(outside_deliveries$residence_group == x), integer(1))
 )
 outside_summary <- outside_summary[order(-outside_summary$Episodes), ]
@@ -872,6 +876,7 @@ cluster_activity$outside_table <- gt::gt(dc_counts(outside_summary, "Episodes"))
                  Cluster_share = "% of cluster deliveries") |>
   gt::fmt_number(columns = "Episodes", decimals = 0) |>
   gt::fmt_percent(columns = c("Share", "Cluster_share"), decimals = 1)
+cluster_activity$outside_total <- dc_count(nrow(outside_deliveries))
 cluster_activity$outside_diagram <- plotly::plot_ly(
   dc_counts(outside_summary, "Episodes"), x = ~Episodes, y = ~ICB, type = "bar", orientation = "h", height = 420,
   marker = list(color = main_chart_colour),
@@ -950,7 +955,7 @@ cluster_activity$pathway_text <- paste0(
   count_text(nrow(starts)), " pregnancies were assigned to 2025/26 with a cluster booking provider; ",
   count_text(sum(starts$outcome == "Outside cluster")), " had a recorded delivery outside the cluster or at home and ",
   count_text(sum(starts$outcome == "No recorded delivery")), " had no recorded delivery. ",
-  "The charts group the same bookings by trust, ICB and combined cluster.")
+  "The charts group bookings at BBCS providers by trust, provider ICB and both provider ICBs combined.")
 cluster_activity$pathway_needed <- paste0(
   "No recorded delivery does not necessarily mean there was no birth; ",
   "recent bookings may not yet have enough follow-up.")
@@ -1032,6 +1037,7 @@ pathway_grid <- function(group) {
     htmltools::tagList(lapply(seq_len(nrow(rows)), function(i) {
       htmltools::div(style = "min-width: 0;",
         htmltools::h3(htmltools::span(style = "font-size: calc(1em - 2px);", rows$Organisation[i])),
+        chart_total(rows$Starts[i], "recorded bookings", "2025/26"),
         make_pathway_sankey(rows[i, , drop = FALSE]))
     }))))
 }
@@ -1044,11 +1050,10 @@ cluster_activity$pathway_trust_sankeys <- pathway_grid("Trust")
 pathway_years <- analysis_years
 trend_starts <- activity_episodes[
   !is.na(activity_episodes$booking_year) &
-    activity_episodes$booking_year %in% pathway_years &
-    activity_episodes$booking_code %in% cluster_trusts, , drop = FALSE]
+    activity_episodes$booking_year %in% pathway_years & activity_episodes$has_booking, , drop = FALSE]
 # Show the six named trusts; include any additional cluster booking trusts observed.
 trend_trusts <- unique(c(names(trust_labels)[names(trust_labels) != "Other"],
-                         sort(unique(trend_starts$booking_code))))
+                         sort(intersect(trend_starts$booking_code, cluster_trusts))))
 trend_trust_names <- report_trust_name(trend_trusts, trust_labels)
 organisations <- rbind(
   data.frame(Key = paste0("trust-", tolower(trend_trusts)), Level = "Trust",
@@ -1056,7 +1061,7 @@ organisations <- rbind(
   data.frame(Key = paste0("icb-", tolower(cluster_icbs)), Level = "ICB",
              Code = cluster_icbs, Organisation = unname(icb_labels[cluster_icbs])),
   data.frame(Key = "cluster", Level = "Cluster", Code = "Cluster",
-             Organisation = cluster_label)
+             Organisation = "BBCS cohort with a recorded booking")
 )
 
 relative_share_change <- function(current, reference) {
@@ -1073,14 +1078,12 @@ build_delivery_outcome_trends <- function(starts, trend_outcomes, trend_labels, 
   organisations <- organisations[organisations$Level %in% group_levels, , drop = FALSE]
   booking_group_text <- if ("Trust" %in% group_levels) "booking trust, ICB or combined cluster" else
     "booking ICB or combined cluster"
-  aggregation_note <- if ("Trust" %in% group_levels)
-    "Trust, ICB and cluster totals group the same antenatal bookings." else
-    "The combined cluster pools the two booking ICBs after comparing each delivery ICB with its booking ICB."
+  aggregation_note <- "The BBCS cohort panel includes recorded bookings anywhere among BBCS cohort pregnancies. Named panels select bookings at that organisation."
   delivery_over_time <- list()
   summarise_pathway_trend <- function(organisation) {
     keep <- switch(organisation$Level[[1]],
       Trust = trend_starts$booking_code == organisation$Code[[1]],
-      ICB = unname(provider_icb[trend_starts$booking_code]) == organisation$Code[[1]],
+      ICB = unname(provider_icb[trend_starts$booking_code]) %in% organisation$Code[[1]],
       Cluster = rep(TRUE, nrow(trend_starts)))
     selected <- trend_starts[keep, , drop = FALSE]
     result <- do.call(rbind, lapply(pathway_years, function(year) {
@@ -1205,8 +1208,10 @@ build_delivery_outcome_trends <- function(starts, trend_outcomes, trend_labels, 
       htmltools::div(style = paste0("display: grid; grid-template-columns: repeat(",
                                     columns, ", minmax(0, 1fr)); gap: 24px;"),
         htmltools::tagList(lapply(seq_len(nrow(rows)), function(i) {
+          totals <- unique(pathway_trends[pathway_trends$Key == rows$Key[i], c("Year", "Denominator")])
           htmltools::div(style = "min-width: 0;",
             htmltools::h3(htmltools::span(style = "font-size: 14px;", rows$Organisation[i])),
+            chart_total(totals$Denominator, "bookings", totals$Year),
             make_delivery_trend_chart(rows$Key[i], measure = measure, compact = TRUE))
         }))))
   }
@@ -1290,17 +1295,16 @@ delivery_over_time <- build_delivery_outcome_trends(trend_starts,
 # Section 2.2.7: distinguish delivery at the booking trust from another cluster trust.
 booking_delivery_starts <- trend_starts
 booking_delivery_starts$outcome <- classify_booking_delivery_outcome(booking_delivery_starts)
-booking_delivery_outcomes <- c("Same trust", "Different cluster trust",
-  "Outside cluster", "No recorded delivery", "Unknown location")
+booking_delivery_outcomes <- names(booking_delivery_palette())
 booking_delivery_labels <- c("Delivery at same trust as booking",
   "Delivery at different trust within cluster", "Delivery outside cluster or home birth",
-  "No recorded delivery", "Delivery location unknown")
+  "No recorded delivery", "Delivery location unknown", "BBCS delivery, booking trust unknown")
 booking_delivery_colours <- unname(booking_delivery_palette())
 booking_delivery_over_time <- build_delivery_outcome_trends(booking_delivery_starts,
   trend_outcomes = booking_delivery_outcomes, trend_labels = booking_delivery_labels,
   trend_colours = booking_delivery_colours,
   outcome_short_labels = c("Same trust as booking", "Different cluster trust", "Outside cluster or home",
-    "No recorded delivery", "Location unknown"), section_number = "2.2.7",
+    "No recorded delivery", "Location unknown", "Booking trust unknown"), section_number = "2.2.7",
   table_title = "Booking trust and delivery trust over time",
   comparison_note = "Same/different trust is decided before grouping booking trusts into ICB and cluster totals.")
 
@@ -1308,12 +1312,12 @@ booking_delivery_over_time <- build_delivery_outcome_trends(booking_delivery_sta
 booking_icb_delivery_starts <- trend_starts
 booking_icb_delivery_starts$outcome <- classify_booking_icb_delivery_outcome(booking_icb_delivery_starts)
 booking_icb_delivery_over_time <- build_delivery_outcome_trends(booking_icb_delivery_starts,
-  trend_outcomes = c("Same ICB", "Different cluster ICB", "Outside cluster", "No recorded delivery", "Unknown location"),
+  trend_outcomes = c("Same ICB", "Different cluster ICB", "Outside cluster", "No recorded delivery", "Unknown location", "Booking provider unknown"),
   trend_labels = c("Delivery ICB same as booking ICB", "Delivery ICB different to booking ICB but within cluster",
-    "Delivery outside cluster or home birth", "No recorded delivery", "Delivery location unknown"),
+    "Delivery outside cluster or home birth", "No recorded delivery", "Delivery location unknown", "BBCS delivery, booking ICB unknown"),
   trend_colours = booking_delivery_colours,
   outcome_short_labels = c("Same ICB as booking", "Different cluster ICB", "Outside cluster or home",
-    "No recorded delivery", "Location unknown"), section_number = "2.2.7",
+    "No recorded delivery", "Location unknown", "Booking ICB unknown"), section_number = "2.2.7",
   table_title = "Booking ICB and delivery ICB over time", group_levels = c("ICB", "Cluster"),
   comparison_note = "Booking and delivery ICBs come from the trusts, not residence. Transfers between trusts in the same ICB count as same ICB.")
 
@@ -1375,7 +1379,7 @@ build_delivery_geography <- function(years = delivery_years, age_bands = deliver
   }
 
   # Step 1: keep recorded deliveries and put LA, age and destination into clear groups.
-  delivery_episodes <- prepare_report_cohort(final_cohort_2326) |>
+  delivery_episodes <- report_episodes |>
     dplyr::filter(Year %in% years, Birth_recorded) |>
     dplyr::mutate(Destination = dplyr::case_when(Home == 1 ~ "Home", Home == 0 ~ Trust,
                                                TRUE ~ "Unknown location"))
@@ -1408,15 +1412,14 @@ build_delivery_geography <- function(years = delivery_years, age_bands = deliver
                Code = trust_codes, Organisation = trust_names),
     data.frame(Key = paste0("icb-", tolower(cluster_icbs)), Level = "ICB", Code = cluster_icbs,
                Organisation = unname(icb_labels[cluster_icbs])),
-    data.frame(Key = "cluster", Level = "Cluster", Code = "Cluster", Organisation = "Combined cluster"))
+    data.frame(Key = "cluster", Level = "Cluster", Code = "Cluster", Organisation = "BBCS providers combined"))
   hospital_deliveries <- delivery_episodes |>
     dplyr::filter(Home == 0, Trust %in% cluster_trusts)
 
   # Step 3: make the 2025/26 LA-to-destination matrix, including home births.
-  # Include cluster residents and deliveries associated with cluster providers.
-  # Provider-associated home births stay home destinations, including outside residents.
+  # Keep every recorded delivery in the three-route BBCS cohort, including home births.
   matrix_episodes <- delivery_episodes |>
-    dplyr::filter(Year == "2025/26", Resident_ICB %in% cluster_icbs | Trust %in% cluster_trusts)
+    dplyr::filter(Year == "2025/26")
   destination_matrix <- matrix_episodes |>
     dplyr::count(LA, Resident_LA, Destination, name = "N") |>
     dplyr::group_by(LA) |>
@@ -1632,6 +1635,7 @@ build_delivery_geography <- function(years = delivery_years, age_bands = deliver
       links <- sankey_by_la_links[[origin]]
       htmltools::div(style = "min-width: 0;",
         htmltools::h3(style = "font-size: 13px; margin: 0 0 6px;", origin_labels[match(origin, origins)]),
+        chart_total(sum(links$N), "recorded deliveries", "2025/26"),
         small_sankey(links, origin, links$Destination_group, "recorded deliveries from this LA group"))
     })))
 
@@ -1642,6 +1646,7 @@ build_delivery_geography <- function(years = delivery_years, age_bands = deliver
       links <- sankey_by_destination_links[[destination]]
       htmltools::div(style = "min-width: 0;",
         htmltools::h3(style = "font-size: 13px; margin: 0 0 6px;", destination_labels[match(destination, destinations)]),
+        chart_total(sum(links$N), "recorded deliveries", "2025/26"),
         small_sankey(links, links$Origin, destination, "recorded deliveries at this destination"))
     })))
 
@@ -1880,6 +1885,7 @@ build_delivery_geography <- function(years = delivery_years, age_bands = deliver
         htmltools::tagList(lapply(seq_len(nrow(rows)), function(i) {
           htmltools::div(style = "min-width: 0;",
             htmltools::h4(style = "font-size: 13px; margin: 0 0 6px;", rows$Organisation[i]),
+            chart_total(sum(hospital_mapping$N[hospital_mapping$Key == rows$Key[i] & hospital_mapping$Year == "2025/26"]), "recorded deliveries", "2025/26"),
             organisation_plots[[rows$Key[i]]][[field]])
         }))))
   }
@@ -1917,7 +1923,8 @@ build_delivery_geography <- function(years = delivery_years, age_bands = deliver
             colours = trend_colours, show_legend = FALSE)
         }
         htmltools::div(style = "min-width: 0;",
-          htmltools::h4(style = "font-size: 13px; margin: 0 0 6px;", rows$Organisation[i]), chart)
+          htmltools::h4(style = "font-size: 13px; margin: 0 0 6px;", rows$Organisation[i]),
+          chart_total(vapply(years, function(year) sum(hospital_mapping$N[hospital_mapping$Key == rows$Key[i] & hospital_mapping$Year == year]), numeric(1)), "deliveries", years), chart)
       }))))
   }
   chart_grids <- list(
@@ -2348,13 +2355,14 @@ allocation_table_wide <- function(rates, prefix = "Delivery") {
 # Same calculations and pooled rates; only the projection years differ.
 # Keep all source years for resident charts; forward destination charts start at 2025.
 private_nhs_source <- read_private_nhs_counts()
-projection_master_all_years <- build_projection_master(final_cohort_2326, total_births_by_LA_2326,
+bbcs_pregnancies <- final_cohort_2326[report_episodes$Row, , drop = FALSE]
+projection_master_all_years <- build_projection_master(bbcs_pregnancies, total_births_by_LA_2326,
   snpp, registration_counts, include_las = area_config$area_code, start_year = min(snpp$year),
   private_nhs_counts = private_nhs_source)
 projection_master <- projection_master_all_years[
   projection_master_all_years$Year >= projection_reference_year, ]
 # Same pooled rates for the historical comparison: retrospective, not held-out validation.
-projection_master_backtest <- build_projection_master(final_cohort_2326, total_births_by_LA_2326,
+projection_master_backtest <- build_projection_master(bbcs_pregnancies, total_births_by_LA_2326,
   snpp, registration_counts, baseline_fy = "2023/24", reference_year = 2023L,
   end_year = 2025L, include_las = read_area_config()$area_code, private_nhs_counts = private_nhs_source)
 # 3.8 Expose the factors, proportions and column key for inspection -------
@@ -2615,7 +2623,7 @@ build_first_draft_projections <- function(baseline_fy = projection_baseline,
   }
   # One supplied row per pregnancy; no additional deduplication.
   geography_scope <- attr(wide_master, "projection_geography")
-  cohort <- prepare_report_cohort(projection_filter_records(final_cohort_2326,
+  cohort <- prepare_report_cohort(projection_filter_records(bbcs_pregnancies,
     geography_scope$eligible_las))
   episodes <- cohort |> dplyr::filter(Year == baseline_fy, Birth_recorded)
   # Location classification: a flagged home birth is never a delivery at a trust.
@@ -2635,7 +2643,7 @@ build_first_draft_projections <- function(baseline_fy = projection_baseline,
                Code = trust_codes, Organisation = trust_names),
     data.frame(Key = paste0("icb-", tolower(cluster_icbs)), Level = "ICB",
                Code = cluster_icbs, Organisation = unname(icb_labels[cluster_icbs])),
-    data.frame(Key = "cluster", Level = "Cluster", Code = "Cluster", Organisation = "Combined cluster"))
+    data.frame(Key = "cluster", Level = "Cluster", Code = "Cluster", Organisation = "BBCS providers combined"))
 
   # Source counts and projected rows were prepared in the model steps above.
   resident_denominators <- attr(wide_master, "allocation_tables")$calibration |>
@@ -3368,6 +3376,15 @@ build_first_draft_projections <- function(baseline_fy = projection_baseline,
   }))
 
   # Section 3.3.2: use the same organisation groups for the age-growth charts.
+  projection_panel_total <- function(key, booking = FALSE) {
+    series <- if (booking) booking_total_projections else maternity_projections
+    row <- series[series$Key == key & series$Year == ons_reference_year, , drop = FALSE]
+    if (!nrow(row) || !is.finite(row$Projected[1]))
+      return(htmltools::p(paste(ons_reference_year, "modelled baseline unavailable")))
+    unit <- if (booking) "modelled bookings" else "modelled deliveries"
+    if (row$Coverage_status[1] %in% "Partial") unit <- paste(unit, "(partial coverage)")
+    chart_total(row$Projected[1], unit, ons_reference_year)
+  }
   age_grid <- function(rows, field) {
     bands <- age_bands
     if (any(age_projections$Key %in% rows$Key &
@@ -3395,7 +3412,7 @@ build_first_draft_projections <- function(baseline_fy = projection_baseline,
               margin = list(l = 65, r = 15, t = 15, b = 65))
           }
           htmltools::div(style = "min-width: 0;",
-            htmltools::h3(style = "font-size: 14px; margin: 0 0 8px;", rows$Organisation[i]), chart)
+            htmltools::h3(style = "font-size: 14px; margin: 0 0 8px;", rows$Organisation[i]), projection_panel_total(rows$Key[i]), chart)
         }))))
   }
   age_grids <- lapply(age_groups, function(rows) list(
@@ -3435,14 +3452,14 @@ build_first_draft_projections <- function(baseline_fy = projection_baseline,
   change_charts <- lapply(age_groups, function(rows) combined_change_chart(
     maternity_projections, rows, paste("% change from modelled", ons_reference_year), line_width = 3))
   organisation_grid <- function(charts, rows, shared_colours = NULL, legend_below = FALSE, bottom_margin = 65,
-                                columns = 2L) {
+                                columns = 2L, booking = FALSE) {
     age_key <- !is.null(shared_colours)
     if (legend_below) return(htmltools::div(
       style = paste0("display: grid; grid-template-columns: repeat(", columns, ", minmax(0, 1fr)); gap: 24px;"),
       htmltools::tagList(lapply(seq_len(nrow(rows)), function(i) {
         chart <- report_native_line_chart(charts[[rows$Key[i]]], title = rows$Organisation[i],
           legend_name = if (age_key) NULL else gsub(" NHS.*$", "", rows$Organisation[i]), compact = age_key)
-        htmltools::div(style = "min-width: 0;", chart)
+        htmltools::div(style = "min-width: 0;", projection_panel_total(rows$Key[i], booking), chart)
       }))))
     if (is.null(shared_colours)) shared_colours <- stats::setNames(
       unname(organisation_line_colours(rows$Key)), rows$Organisation)
@@ -3454,7 +3471,7 @@ build_first_draft_projections <- function(baseline_fy = projection_baseline,
         chart <- charts[[rows$Key[i]]]
         if (!is.null(shared_colours) && inherits(chart, "plotly"))
           chart <- plotly::layout(chart, showlegend = FALSE, margin = list(b = bottom_margin))
-        htmltools::div(style = "min-width: 0;", htmltools::h3(rows$Organisation[i]), chart)
+        htmltools::div(style = "min-width: 0;", htmltools::h3(rows$Organisation[i]), projection_panel_total(rows$Key[i], booking), chart)
       })))
     if (legend_below) htmltools::tagList(grid, key) else htmltools::tagList(key, grid)
   }
@@ -3591,7 +3608,7 @@ build_first_draft_projections <- function(baseline_fy = projection_baseline,
       if (view %in% c("age", "age_change")) stats::setNames(age_colours, age_bands) else NULL,
       legend_below = TRUE,
       bottom_margin = if (view == "total") 150 else 65,
-      columns = if (view %in% c("age", "age_change")) 3L else 2L))), booking_views)
+      columns = if (view %in% c("age", "age_change")) 3L else 2L, booking = TRUE))), booking_views)
   result$booking_total_charts <- lapply(booking_groups, function(rows) provider_total_chart(
     result$total_comparison$Booking[result$total_comparison$Booking$Key %in% rows$Key, ],
     "Antenatal bookings / ONS live-birth base", legend_below = TRUE))
@@ -3964,7 +3981,7 @@ build_projection_backtest <- function(allocation = c("Delivery", "Booking"), his
   years <- projection_history_years
   # Count each allocation using its own recorded provider. Booking totals
   # include pregnancies without a delivery and use the report's assigned FY.
-  observed <- prepare_report_cohort(projection_filter_records(final_cohort_2326,
+  observed <- prepare_report_cohort(projection_filter_records(bbcs_pregnancies,
     historical$projection_geography$eligible_las))
   if (booking) observed$Trust <- projection_booking_destination(observed)
   else observed <- observed |> dplyr::filter(Birth_recorded, Home == 0)
@@ -4051,6 +4068,8 @@ build_projection_backtest <- function(allocation = c("Delivery", "Booking"), his
         htmltools::tagList(lapply(seq_len(nrow(rows)), function(i) {
           htmltools::div(style = "min-width: 0;",
             htmltools::h3(style = "font-size: 14px; margin: 0 0 8px;", rows$Organisation[i]),
+            chart_total(comparison$Observed[comparison$Key == rows$Key[i]], paste("recorded", activity),
+              comparison$Year_label[comparison$Key == rows$Key[i]]),
             outputs[[rows$Key[i]]]$chart)
         }))))
   }
@@ -4105,10 +4124,10 @@ projection_backtest <- build_projection_backtest()
 first_draft_projections$backtest <- projection_backtest
 first_draft_projections$booking_backtest <- build_projection_backtest("Booking", historical = projection_backtest$baseline)
 first_draft_projections$age_boundary_review <- build_msds_age_review(
-  final_cohort_2326, first_draft_projections, projection_backtest$baseline,
+  bbcs_pregnancies, first_draft_projections, projection_backtest$baseline,
   trust_labels, cluster_trusts)
 first_draft_projections$input_variation <- build_input_variation_review(
-  final_cohort_2326, total_births_by_LA_2326, registration_counts,
+  bbcs_pregnancies, total_births_by_LA_2326, registration_counts,
   first_draft_projections$allocation_tables)
 print_projection_scope_check(first_draft_projections)
 save_report_rds(first_draft_projections, ".projections.rds")

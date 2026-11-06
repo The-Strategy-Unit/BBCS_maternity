@@ -778,8 +778,16 @@ population_age_grid <- function(data) {
   htmltools::tagList(key, htmltools::div(class = "population-age-grid", charts))
 }
 
-projection_age_grid <- function(data, colours) {
+projection_age_grid <- function(data, colours, percent_change = FALSE) {
   data <- dc_counts(data, "projected_maternities")
+  years <- seq.int(min(data$year), max(data$year))
+  first_year <- years[1L]
+  y_axis <- list(title = "Adjusted resident<br>maternities", tickformat = ",.0f", rangemode = "tozero")
+  hover <- "%{x}: %{y:,.0f} maternities"
+  if (percent_change) {
+    y_axis <- list(title = paste("Change from", first_year), tickformat = ".0%", rangemode = "tozero")
+    hover <- paste0("%{x}: %{y:+.1%} from ", first_year)
+  }
   bands <- c("Under 20", "20-24", "25-29", "30-34", "35-39", "40-44", "45+")
   areas <- unique(as.character(data$area_name))
   charts <- lapply(bands, function(band) {
@@ -787,11 +795,13 @@ projection_age_grid <- function(data, colours) {
     chart <- plotly::plot_ly(height = 270)
     for (area in areas) {
       series <- rows[rows$area_name == area, ]
-      series <- series[order(series$year), ]
-      chart <- plotly::add_trace(chart, x = series$year, y = series$projected_maternities,
+      # Align to the common calendar so an absent year leaves a gap in the line.
+      values <- series$projected_maternities[match(years, series$year)]
+      if (percent_change) values <- dc_divide(values, values[1L]) - 1
+      chart <- plotly::add_trace(chart, x = years, y = values, connectgaps = FALSE,
         type = "scatter", mode = "lines", name = area,
         line = list(color = colours[[area]], width = 2.5),
-        hovertemplate = paste0(area, "<br>%{x}: %{y:,.0f} maternities<extra></extra>"))
+        hovertemplate = paste0(area, "<br>", hover, "<extra></extra>"))
     }
     chart <- plotly::layout(chart, showlegend = FALSE,
       title = list(text = band,
@@ -799,14 +809,15 @@ projection_age_grid <- function(data, colours) {
       meta = list(compact_population_grid = TRUE),
       font = list(family = "Arial", size = 13),
       margin = list(l = 72, r = 20, t = 42, b = 50),
-      xaxis = list(title = "Year", tickvals = sort(unique(c(min(rows$year), 2035, max(rows$year))))),
-      yaxis = list(title = "Adjusted resident<br>maternities", tickformat = ",.0f", rangemode = "tozero"),
+      xaxis = list(title = "Year", tickvals = intersect(c(first_year, 2035, max(years)), years)),
+      yaxis = y_axis,
       paper_bgcolor = "white", plot_bgcolor = "white")
     htmltools::div(class = "demo-sankey-panel",
       dc_widget(plotly::config(chart, displayModeBar = FALSE, responsive = TRUE)))
   })
   htmltools::div(class = "resident-projection-panel",
-    htmltools::h4("Adjusted resident maternity projections"),
+    htmltools::h4(if (percent_change) paste("Adjusted resident maternity projections: % change from", first_year)
+      else "Adjusted resident maternity projections"),
     htmltools::div(class = "population-age-grid", charts),
     report_colour_key(colours[areas], class = "resident-projection-key", lines = TRUE),
     htmltools::p(class = "chart-grid-note",

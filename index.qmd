@@ -76,8 +76,8 @@ if (!identical(first_draft_projections$projection_geography$version, "english-on
 if (is.null(first_draft_projections$sankey_comparison_cluster_las))
   stop("Regenerate the projection charts with R/Run analysis.R for the grouped LA flow view.")
 demo_sankey_charts <- read_report_rds(".demo_sankeys.rds", report_run$run_id)
-if (!identical(demo_sankey_charts$version, "demographic-profile-v38"))
-  stop("Regenerate the report charts with R/Run analysis.R for the demographic colour keys and organisation rows in section 5.1.")
+if (!identical(demo_sankey_charts$version, "demographic-profile-v41"))
+  stop("Regenerate the report charts with R/Run analysis.R to update the demographic Sankey labels and hover percentages.")
 ```
 
 ```{r}
@@ -1951,6 +1951,15 @@ report_static_plot(projection_plot(
 htmltools::browsable(projection_age_grid(age_band_projections, area_colours))
 ```
 
+### By age band — % change from 2023 {#resident-projection-age-change}
+
+Each line compares one local authority’s projected maternities with its own 2023 projection for the same age band. A value of +10% means 10% more projected maternities than in 2023. Percentages use the disclosure-controlled counts shown in tab B. A zero or missing 2023 count leaves that line blank.
+
+```{r}
+#| label: resident-projection-age-change-grid
+htmltools::browsable(projection_age_grid(age_band_projections, area_colours, percent_change = TRUE))
+```
+
 ### Resident totals — table {#method-1-resident-projection-totals-table}
 
 Annual adjusted maternity totals by residence, before allocation to providers. Black Country ICB sums Dudley, Sandwell, Walsall and Wolverhampton; Birmingham and Solihull ICB sums Birmingham and Solihull. The BBCS cluster total sums all six resident LAs. The ICB and cluster rows aggregate the LA rows.
@@ -2594,11 +2603,11 @@ htmltools::browsable(retrospective_error_trends(delivery_errors, booking_errors)
 
 All charts in this section use the whole supplied BBCS cohort, pooled across 2023/24–2025/26. Each supplied pregnancy row contributes once, whether it has a delivery and booking, a delivery without a recorded booking, or a booking without a recorded delivery. Separate pregnancies for the same woman remain separate. Records without either event remain visible too. There is no further event-year filter: missing dates and bookings before the delivery year do not remove a cohort record.
 
-A booking is recorded when a booking provider or appointment date is supplied; a delivery uses the recorded birth flag. Due years do not establish either event. Maternal age follows the [shared assignment](#msds-inputs). Where two residence LSOAs are supplied, one is selected at random with a repeatable choice per mother, then linked to [English IMD 2019 on 2011 LSOAs](https://www.gov.uk/government/statistics/english-indices-of-deprivation-2019). The source deciles are combined into quintiles: deciles 1–2 form quintile 1 (most deprived), 3–4 form quintile 2, 5–6 form quintile 3, 7–8 form quintile 4 and 9–10 form quintile 5 (least deprived). Missing or unmatched LSOAs retain an unknown quintile. Counts are combined before disclosure controls are applied. Ethnicity uses NHS category descriptions and seven broad groups, with paired codes resolved using the agreed combination grid. Unresolved conflicting pairs remain Two conflicting; unknown codes remain visible separately from Not stated. Every ethnicity breakdown offers both broad groups and four groups: White, Asian, Black and All other. All other includes mixed and other ethnicities, not stated, conflicting and unknown values. The four-group view combines raw counts before disclosure control. Counts are controlled independently for display, so displayed subgroup totals can differ from the overall total, particularly when many small groups are shown.
+A booking is recorded when a booking provider or appointment date is supplied; a delivery uses the recorded birth flag. Due years do not establish either event. Maternal age follows the [shared assignment](#msds-inputs). Where two residence LSOAs are supplied, one is selected at random with a repeatable choice per mother, then linked to [English IMD 2019 on 2011 LSOAs](https://www.gov.uk/government/statistics/english-indices-of-deprivation-2019). The source deciles are combined into quintiles: deciles 1–2 form quintile 1 (most deprived), 3–4 form quintile 2, 5–6 form quintile 3, 7–8 form quintile 4 and 9–10 form quintile 5 (least deprived). Missing or unmatched LSOAs retain an unknown quintile. Counts are combined before disclosure controls are applied. Ethnicity uses NHS category descriptions and broad groups, with paired codes resolved using the agreed combination grid. All ethnicity charts use the same six groups in order: Asian or Asian British, Black or Black British, Mixed, Other, White and Unknown. Other combines the Chinese and any other ethnic group categories in the supplied NHS lookup. Unknown includes missing, not stated, unrecognised and unresolved conflicting records. Counts are controlled independently for display, so displayed subgroup totals can differ from the overall total, particularly when many small groups are shown.
 
 ## 4.1 Demographic overview {#demographic-overview}
 
-The supplied cohort contains `r scales::comma(demo_sankey_charts$cohort_total)` pregnancies after display rounding. Both subsections show percentages within each demographic group: every non-empty age, ethnicity or IMD group has a 100% stacked bar. Unknown age and IMD values form their own groups, while ethnicity follows the selected grouping. Percentages divide each disclosure-controlled category count by the sum of those counts within the same demographic group. Labels show one decimal place; hover details also give counts.
+The supplied cohort contains `r scales::comma(demo_sankey_charts$cohort_total)` pregnancies after display rounding. Both subsections show percentages within each demographic group: every non-empty age, ethnicity or IMD group has a 100% stacked bar. Unknown age, IMD and ethnicity values form their own groups. Percentages divide each disclosure-controlled category count by the sum of those counts within the same demographic group. Labels show one decimal place; hover details also give counts.
 
 ### 4.1.1 Delivery outcomes by demographic group
 
@@ -2631,13 +2640,6 @@ htmltools::browsable(demo_sankey_charts$overview_delivery$Trust$imd)
 htmltools::browsable(demo_sankey_charts$overview_delivery$Trust$ethnicity)
 ```
 
-##### Ethnicity (4 groups)
-
-```{r}
-#| label: demo-overview-delivery-trust-ethnicity_four
-htmltools::browsable(demo_sankey_charts$overview_delivery$Trust$ethnicity_four)
-```
-
 :::
 
 #### ICBs and combined cluster
@@ -2662,13 +2664,6 @@ htmltools::browsable(demo_sankey_charts$overview_delivery$ICB_Cluster$imd)
 ```{r}
 #| label: demo-overview-delivery-icb_cluster-ethnicity
 htmltools::browsable(demo_sankey_charts$overview_delivery$ICB_Cluster$ethnicity)
-```
-
-##### Ethnicity (4 groups)
-
-```{r}
-#| label: demo-overview-delivery-icb_cluster-ethnicity_four
-htmltools::browsable(demo_sankey_charts$overview_delivery$ICB_Cluster$ethnicity_four)
 ```
 
 :::
@@ -2704,13 +2699,6 @@ htmltools::browsable(demo_sankey_charts$overview_booking$Trust$imd)
 htmltools::browsable(demo_sankey_charts$overview_booking$Trust$ethnicity)
 ```
 
-##### Ethnicity (4 groups)
-
-```{r}
-#| label: demo-overview-booking-trust-ethnicity-four
-htmltools::browsable(demo_sankey_charts$overview_booking$Trust$ethnicity_four)
-```
-
 :::
 
 #### ICBs and whole cohort
@@ -2737,13 +2725,6 @@ htmltools::browsable(demo_sankey_charts$overview_booking$ICB_Cluster$imd)
 htmltools::browsable(demo_sankey_charts$overview_booking$ICB_Cluster$ethnicity)
 ```
 
-##### Ethnicity (4 groups)
-
-```{r}
-#| label: demo-overview-booking-icb_cluster-ethnicity-four
-htmltools::browsable(demo_sankey_charts$overview_booking$ICB_Cluster$ethnicity_four)
-```
-
 :::
 
 ::::
@@ -2767,13 +2748,6 @@ htmltools::browsable(demo_sankey_charts$overall)
 ```{r}
 #| label: demo-sankey-ethnicity
 htmltools::browsable(demo_sankey_charts$ethnicity)
-```
-
-### Ethnicity (4 groups)
-
-```{r}
-#| label: demo-sankey-ethnicity-four
-htmltools::browsable(demo_sankey_charts$ethnicity_four)
 ```
 
 ### IMD quintile
@@ -2812,32 +2786,6 @@ htmltools::browsable(demo_sankey_charts$demographic_ribbons$ethnicity$Trust)
 ```{r}
 #| label: demo-ribbons-ethnicity-icb-cluster
 htmltools::browsable(demo_sankey_charts$demographic_ribbons$ethnicity$ICB_Cluster)
-```
-
-:::
-
-### Ethnicity (4 groups) by organisation
-
-::: panel-tabset
-#### Overall
-
-```{r}
-#| label: demo-ribbons-ethnicity-four-overall
-htmltools::browsable(demo_sankey_charts$demographic_ribbons$ethnicity_four$overall)
-```
-
-#### Trust grid
-
-```{r}
-#| label: demo-ribbons-ethnicity-four-trust
-htmltools::browsable(demo_sankey_charts$demographic_ribbons$ethnicity_four$Trust)
-```
-
-#### ICB and cluster grid
-
-```{r}
-#| label: demo-ribbons-ethnicity-four-icb-cluster
-htmltools::browsable(demo_sankey_charts$demographic_ribbons$ethnicity_four$ICB_Cluster)
 ```
 
 :::
@@ -2903,7 +2851,7 @@ These extend the outcome Sankeys from [section 2.2.2](#cluster-activity) across 
 Each organisation has one Sankey per demographic variable and view, with categories on the left and delivery outcomes on the right.
 
 - Between category: widths reflect pregnancy counts, showing the relative sizes of categories and outcomes. Node labels show percentages of all pregnancies in the organisation.
-- Within category: each category has the same visual height (100%), making outcome patterns easier to compare. Ribbon widths normalise the controlled outcome counts within each category. The right-hand bars combine these equally weighted categories; they do not show the organisation's overall outcome mix.
+- Within category: each category has the same visual height (100%), making outcome patterns easier to compare. Ribbon widths normalise the controlled outcome counts within each category. The right-hand bar widths combine these equally weighted categories. Their percentage labels show each outcome’s share of all pregnancies in the organisation, using the same controlled totals as the hover text.
 
 In both views, hover over a ribbon for its count, outcome percentage within that demographic category and share of the organisation total. In the within-category view, the category percentage uses the sum of the controlled outcomes and matches the ribbon width. Between-category percentages and shares of the organisation total use independently controlled totals, so displayed components may not sum to exactly 100%. Unknown demographic values remain visible. Deliveries outside the cluster or at home, no recorded delivery, and unknown delivery location remain outcome categories within every applicable panel. No recorded delivery does not establish that there was no birth. Home births and unknown home-birth status follow the existing delivery-outcome rules.
 
@@ -2933,25 +2881,6 @@ htmltools::browsable(demo_sankey_charts$booking_icb$ethnicity$counts)
 ```{r}
 #| label: demo-booking-icb-ethnicity-proportions
 htmltools::browsable(demo_sankey_charts$booking_icb$ethnicity$proportions)
-```
-
-:::
-
-#### Ethnicity (4 groups)
-
-::: panel-tabset
-##### Between category
-
-```{r}
-#| label: demo-booking-icb-ethnicity_four-counts
-htmltools::browsable(demo_sankey_charts$booking_icb$ethnicity_four$counts)
-```
-
-##### Within category
-
-```{r}
-#| label: demo-booking-icb-ethnicity_four-proportions
-htmltools::browsable(demo_sankey_charts$booking_icb$ethnicity_four$proportions)
 ```
 
 :::
@@ -3021,25 +2950,6 @@ htmltools::browsable(demo_sankey_charts$booking_trust$ethnicity$counts)
 ```{r}
 #| label: demo-booking-trust-ethnicity-proportions
 htmltools::browsable(demo_sankey_charts$booking_trust$ethnicity$proportions)
-```
-
-:::
-
-#### Ethnicity (4 groups)
-
-::: panel-tabset
-##### Between category
-
-```{r}
-#| label: demo-booking-trust-ethnicity_four-counts
-htmltools::browsable(demo_sankey_charts$booking_trust$ethnicity_four$counts)
-```
-
-##### Within category
-
-```{r}
-#| label: demo-booking-trust-ethnicity_four-proportions
-htmltools::browsable(demo_sankey_charts$booking_trust$ethnicity_four$proportions)
 ```
 
 :::
@@ -3125,24 +3035,12 @@ htmltools::browsable(demo_sankey_charts$cohort_profile$imd$chart)
 :::: {.demo-sankey-panel}
 #### Ethnicity {.unnumbered .unlisted}
 
-::: panel-tabset
-##### Broad groups
-
 ```{r}
 #| label: cohort-profile-ethnicity
 htmltools::browsable(demo_sankey_charts$cohort_profile$ethnicity$chart)
 ```
 
-##### 4 groups
-
-```{r}
-#| label: cohort-profile-ethnicity-four
-htmltools::browsable(demo_sankey_charts$cohort_profile$ethnicity_four$chart)
-```
-
-:::
-
-[Broad groups retain Not stated, Two conflicting and Unknown separately. The four-group view combines these with mixed and other ethnicities in All other.]{.cohort-overview-note}
+[Unknown includes missing, not stated, unrecognised and unresolved conflicting records.]{.cohort-overview-note}
 
 ::::
 :::::
@@ -3176,21 +3074,10 @@ htmltools::browsable(htmltools::tagList(profile_view$keys$imd, profile_view$char
 :::: {.demo-sankey-panel}
 #### Ethnicity {.unnumbered .unlisted}
 
-::: panel-tabset
-##### Broad groups
-
 ```{r}
 #| label: cohort-org-trust-ethnicity
 htmltools::browsable(htmltools::tagList(profile_view$keys$ethnicity, profile_view$charts$ethnicity))
 ```
-
-##### 4 groups
-
-```{r}
-#| label: cohort-org-trust-ethnicity-four
-htmltools::browsable(htmltools::tagList(profile_view$keys$ethnicity_four, profile_view$charts$ethnicity_four))
-```
-:::
 ::::
 :::::
 
@@ -3222,21 +3109,10 @@ htmltools::browsable(htmltools::tagList(profile_view$keys$imd, profile_view$char
 :::: {.demo-sankey-panel}
 #### Ethnicity {.unnumbered .unlisted}
 
-::: panel-tabset
-##### Broad groups
-
 ```{r}
 #| label: cohort-org-icb-ethnicity
 htmltools::browsable(htmltools::tagList(profile_view$keys$ethnicity, profile_view$charts$ethnicity))
 ```
-
-##### 4 groups
-
-```{r}
-#| label: cohort-org-icb-ethnicity-four
-htmltools::browsable(htmltools::tagList(profile_view$keys$ethnicity_four, profile_view$charts$ethnicity_four))
-```
-:::
 ::::
 :::::
 
@@ -3270,21 +3146,10 @@ htmltools::browsable(htmltools::tagList(profile_view$keys$imd, profile_view$perc
 :::: {.demo-sankey-panel}
 #### Ethnicity {.unnumbered .unlisted}
 
-::: panel-tabset
-##### Broad groups
-
 ```{r}
 #| label: cohort-org-pct-trust-ethnicity
 htmltools::browsable(htmltools::tagList(profile_view$keys$ethnicity, profile_view$percent_charts$ethnicity))
 ```
-
-##### 4 groups
-
-```{r}
-#| label: cohort-org-pct-trust-ethnicity-four
-htmltools::browsable(htmltools::tagList(profile_view$keys$ethnicity_four, profile_view$percent_charts$ethnicity_four))
-```
-:::
 ::::
 :::::
 
@@ -3318,21 +3183,10 @@ htmltools::browsable(htmltools::tagList(profile_view$keys$imd, profile_view$perc
 :::: {.demo-sankey-panel}
 #### Ethnicity {.unnumbered .unlisted}
 
-::: panel-tabset
-##### Broad groups
-
 ```{r}
 #| label: cohort-org-pct-icb-ethnicity
 htmltools::browsable(htmltools::tagList(profile_view$keys$ethnicity, profile_view$percent_charts$ethnicity))
 ```
-
-##### 4 groups
-
-```{r}
-#| label: cohort-org-pct-icb-ethnicity-four
-htmltools::browsable(htmltools::tagList(profile_view$keys$ethnicity_four, profile_view$percent_charts$ethnicity_four))
-```
-:::
 ::::
 :::::
 
@@ -3340,7 +3194,7 @@ htmltools::browsable(htmltools::tagList(profile_view$keys$ethnicity_four, profil
 
 ## 5.2 Booking and delivery profiles by organisation
 
-Paired bars compare pregnancies booked at each organisation (blue) with those delivered there (orange), using the cohort and demographic definitions in section 5.1. Each chart has its own count scale to make patterns within organisations easier to see; compare the labelled counts, rather than bar heights, across charts. Each non-zero bar is labelled with its disclosure-controlled pregnancy count. Hover percentages use each organisation’s booking or delivery total separately. Both broad and four-group ethnicity views are available. The four groups are White, Asian, Black and All other; All other includes mixed and other ethnicities, not stated, conflicting and unknown values.
+Paired bars compare pregnancies booked at each organisation (blue) with those delivered there (orange), using the cohort and demographic definitions in section 5.1. Each chart has its own count scale to make patterns within organisations easier to see; compare the labelled counts, rather than bar heights, across charts. Each non-zero bar is labelled with its disclosure-controlled pregnancy count. Hover percentages use each organisation’s booking or delivery total separately.
 
 Use the By trust or By ICB / cluster tabs. The trust view shows the six BBCS trusts and Other trusts, pooling known providers outside those six. Unknown providers, home births and missing events are not included in Other trusts. The ICB view shows only Black Country ICB, Birmingham and Solihull ICB, and the combined BBCS cluster are shown. ICB panels group each event by its provider’s ICB; the combined cluster includes either BBCS ICB. The cluster overlaps its ICB panels, so these totals should not be added together.
 
@@ -3373,13 +3227,6 @@ htmltools::browsable(demo_sankey_charts$cohort_trust_profiles$imd$grid)
 htmltools::browsable(demo_sankey_charts$cohort_trust_profiles$ethnicity$grid)
 ```
 
-#### Ethnicity (4 groups)
-
-```{r}
-#| label: cohort-trust-profile-ethnicity-four
-htmltools::browsable(demo_sankey_charts$cohort_trust_profiles$ethnicity_four$grid)
-```
-
 :::
 
 ### By ICB / cluster
@@ -3407,13 +3254,6 @@ htmltools::browsable(demo_sankey_charts$cohort_icb_profiles$imd$grid)
 htmltools::browsable(demo_sankey_charts$cohort_icb_profiles$ethnicity$grid)
 ```
 
-#### Ethnicity (4 groups)
-
-```{r}
-#| label: cohort-icb-cluster-profile-ethnicity-four
-htmltools::browsable(demo_sankey_charts$cohort_icb_profiles$ethnicity_four$grid)
-```
-
 :::
 
 ::::
@@ -3422,7 +3262,7 @@ htmltools::browsable(demo_sankey_charts$cohort_icb_profiles$ethnicity_four$grid)
 
 Compare pregnancies booked and delivered at the same trust (green) with those delivered at a different trust or at home (pink). Counts are shown alongside 100% stacked bars within each demographic category: for example, each 20–24 age bar shows the percentage who delivered at the same trust and the percentage at a different trust or at home. Each non-zero count bar is labelled with its disclosure-controlled pregnancy count. Stacked-bar labels show whole percentages; hover text retains one decimal place. Very small percentage segments have their labels placed outside the bar. Rounded percentage labels may not add to exactly 100%.
 
-Percentages use the sum of the two disclosure-controlled counts within the category, so each non-empty bar totals 100%. Categories with no comparable pregnancies have no percentage bar. The bar charts retain unknown age and IMD as separate categories. The four-band age view groups ages into <20, 20–29, 30–39 and 40+. The heat maps cross those bands with IMD quintiles 1–5 and show the percentage delivered at a different trust or at home among comparable pregnancies with known age and IMD. Both broad and four-group ethnicity views are available. The four groups are White, Asian, Black and All other; All other includes mixed and other ethnicities, not stated, conflicting and unknown values.
+Percentages use the sum of the two disclosure-controlled counts within the category, so each non-empty bar totals 100%. Categories with no comparable pregnancies have no percentage bar. The bar charts retain unknown age and IMD as separate categories. The four-band age view groups ages into <20, 20–29, 30–39 and 40+. The heat maps cross those bands with IMD quintiles 1–5 and show the percentage delivered at a different trust or at home among comparable pregnancies with known age and IMD.
 
 Pregnancies qualify for this comparison through a booking **or** delivery at a BBCS provider, using the [configured provider scope in section 1.2](#bbcs-cohort). The combined BBCS cluster includes both incoming and outgoing transfers, and home births following a BBCS booking. A recorded home birth has Home as its delivery destination and qualifies through its booking provider; it is not counted as a delivery at the provider responsible for that home birth. Pregnancies with neither event at a BBCS provider do not enter these comparison charts.
 
@@ -3508,13 +3348,6 @@ htmltools::browsable(demo_sankey_charts$cohort_match_profiles$profiles$imd$Trust
 htmltools::browsable(demo_sankey_charts$cohort_match_profiles$profiles$ethnicity$Trust$charts)
 ```
 
-#### Ethnicity (4 groups)
-
-```{r}
-#| label: cohort-match-ethnicity-trust-four
-htmltools::browsable(demo_sankey_charts$cohort_match_profiles$profiles$ethnicity_four$Trust$charts)
-```
-
 :::
 
 ### By ICB / cluster
@@ -3546,13 +3379,6 @@ htmltools::browsable(demo_sankey_charts$cohort_match_profiles$profiles$imd$ICB_C
 ```{r}
 #| label: cohort-match-ethnicity-icb-cluster
 htmltools::browsable(demo_sankey_charts$cohort_match_profiles$profiles$ethnicity$ICB_Cluster$charts)
-```
-
-#### Ethnicity (4 groups)
-
-```{r}
-#| label: cohort-match-ethnicity-icb-cluster-four
-htmltools::browsable(demo_sankey_charts$cohort_match_profiles$profiles$ethnicity_four$ICB_Cluster$charts)
 ```
 
 :::
@@ -3588,12 +3414,6 @@ htmltools::browsable(demo_sankey_charts$cohort_match_profiles$profiles$imd$Trust
 htmltools::browsable(demo_sankey_charts$cohort_match_profiles$profiles$ethnicity$Trust$stacked_grid)
 ```
 
-#### Ethnicity (4 groups)
-
-```{r}
-#| label: cohort-match-stacked-trust-ethnicity-four
-htmltools::browsable(demo_sankey_charts$cohort_match_profiles$profiles$ethnicity_four$Trust$stacked_grid)
-```
 :::
 
 ### By ICB / cluster — stacked bars only
@@ -3627,12 +3447,6 @@ htmltools::browsable(demo_sankey_charts$cohort_match_profiles$profiles$imd$ICB_C
 htmltools::browsable(demo_sankey_charts$cohort_match_profiles$profiles$ethnicity$ICB_Cluster$stacked_grid)
 ```
 
-#### Ethnicity (4 groups)
-
-```{r}
-#| label: cohort-match-stacked-icb-cluster-ethnicity-four
-htmltools::browsable(demo_sankey_charts$cohort_match_profiles$profiles$ethnicity_four$ICB_Cluster$stacked_grid)
-```
 :::
 
 ### Age × IMD heat maps — trusts
@@ -3657,7 +3471,7 @@ Each bar shows what happened after booking for one demographic category, using t
 
 Charts group the supplied cohort by booking organisation. The trust view shows the six BBCS trusts and a pooled Other trusts panel for known booking providers outside those six. Unknown providers and missing bookings are not part of that panel. Delivery outcomes retain the BBCS destination definitions from 2.2.7.1, including for Other trusts. The ICB view contains only Black Country, Birmingham and Solihull, and their combined cluster. Same/different always compares trusts, including in the ICB and cluster charts; these aggregate panels overlap and should not be added together. All resident LAs remain included here. Unlike 2.2.7.1's year-by-year charts, these profiles pool the supplied cohort.
 
-Age uses the shared birth-age/booking-age assignment. Ethnicity defaults to White, Asian, Black and All other, with the broad view also available; All other includes mixed, other, unknown, not-stated and conflicting categories. Unknown age and IMD stay separate. Percentages use the sum of the five disclosure-controlled outcome counts within each category. A missing delivery record is a recording status, not proof of a clinical outcome.
+Age uses the shared birth-age/booking-age assignment. Unknown age and IMD stay separate. Percentages use the sum of the five disclosure-controlled outcome counts within each category. A missing delivery record is a recording status, not proof of a clinical outcome.
 
 :::: panel-tabset
 ### By trust
@@ -3675,13 +3489,6 @@ htmltools::browsable(demo_sankey_charts$delivery_pattern_profiles$Trust$age$grid
 ```{r}
 #| label: delivery-pattern-trust-imd
 htmltools::browsable(demo_sankey_charts$delivery_pattern_profiles$Trust$imd$grid)
-```
-
-#### Ethnicity (4 groups)
-
-```{r}
-#| label: delivery-pattern-trust-ethnicity-four
-htmltools::browsable(demo_sankey_charts$delivery_pattern_profiles$Trust$ethnicity_four$grid)
 ```
 
 #### Ethnicity (broad)
@@ -3707,13 +3514,6 @@ htmltools::browsable(demo_sankey_charts$delivery_pattern_profiles$ICB_Cluster$ag
 ```{r}
 #| label: delivery-pattern-icb-imd
 htmltools::browsable(demo_sankey_charts$delivery_pattern_profiles$ICB_Cluster$imd$grid)
-```
-
-#### Ethnicity (4 groups)
-
-```{r}
-#| label: delivery-pattern-icb-ethnicity-four
-htmltools::browsable(demo_sankey_charts$delivery_pattern_profiles$ICB_Cluster$ethnicity_four$grid)
 ```
 
 #### Ethnicity (broad)

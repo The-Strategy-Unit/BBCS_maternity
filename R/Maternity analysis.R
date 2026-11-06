@@ -517,7 +517,8 @@ sankey_node_y <- function(x, source, target, value, height, pad) {
 
 make_sankey <- function(flow, labels, source_suffix, target_suffix,
                         source_order, target_order,
-                        empty_message = "No recorded non-home deliveries in this year.") {
+                        empty_message = "No recorded non-home deliveries in this year.",
+                        panel_labels = NULL) {
   links <- flow$links
   source_order <- sankey_category_order(source_order)
   target_order <- sankey_category_order(target_order)
@@ -543,8 +544,18 @@ make_sankey <- function(flow, labels, source_suffix, target_suffix,
   links$n <- dc_count(links$n)
   chart_height <- max(500, length(node_codes) * 38)
   node_x <- c(rep(0.01, length(source_nodes)), rep(0.99, length(target_nodes)))
+  node_percent <- scales::percent(dc_divide(node_totals, total), accuracy = 0.1)
+  node_detail <- paste0(scales::comma(node_totals), "<br>", node_percent)
+  node_hover <- "%{label}<br>Records: %{customdata} of all records<extra></extra>"
+  count_label <- "Records"
+  if (!is.null(panel_labels)) {
+    count_label <- "Pregnancies"
+    node_detail <- paste0(node_labels, "<br>Pregnancies: ", node_detail, " of panel pregnancies")
+    node_hover <- "%{customdata}<extra></extra>"
+    node_labels <- paste0(unname(panel_labels[node_codes]), "<br>", node_percent)
+  }
   hover <- paste0(display_label(links$source), " to ", display_label(links$target),
-                  "<br>Records: ", scales::comma(links$n),
+                  "<br>", count_label, ": ", scales::comma(links$n),
                   "<br>", scales::percent(links$n / source_totals, accuracy = 0.1),
                   " of records from this origin",
                   "<br>", scales::percent(links$n / total, accuracy = 0.1),
@@ -556,10 +567,10 @@ make_sankey <- function(flow, labels, source_suffix, target_suffix,
     node = list(
       label = node_labels, color = unname(colours[node_codes]),
       x = node_x, y = sankey_node_y(node_x, from_id, to_id, links$n, chart_height - 36, 14),
-      customdata = paste0(scales::comma(node_totals), "<br>", scales::percent(dc_divide(node_totals, total), accuracy = 0.1)),
+      customdata = node_detail,
       pad = 14, thickness = 18,
       line = list(color = "rgba(44,40,37,0.35)", width = 0.5),
-      hovertemplate = "%{label}<br>Records: %{customdata} of all records<extra></extra>"
+      hovertemplate = node_hover
     ),
     link = list(
       source = from_id, target = to_id, value = links$n,
